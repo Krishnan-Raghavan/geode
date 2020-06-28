@@ -20,7 +20,6 @@ import static org.apache.geode.internal.offheap.annotations.OffHeapIdentifier.EN
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
 
@@ -62,12 +61,13 @@ import org.apache.geode.internal.cache.PrimaryBucketException;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tx.RemotePutMessage;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A Partitioned Region update message. Meant to be sent only to a bucket's primary owner. In
@@ -384,14 +384,14 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
     Set failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new ForceReattemptException(
-          LocalizedStrings.PutMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
     return processor;
   }
 
 
   /**
-   * create a new EntryEvent to be used in notifying listeners, bridge servers, etc. Caller must
+   * create a new EntryEvent to be used in notifying listeners, cache servers, etc. Caller must
    * release result if it is != to sourceEvent
    */
   @Retained
@@ -477,29 +477,16 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
       this.filterInfo = filterInfo;
     }
   }
-  /*
-   * @Override public void appendOldValueToMessage(EntryEventImpl event) { if (event.hasOldValue())
-   * { this.hasOldValue = true; CachedDeserializable cd = (CachedDeserializable)
-   * event.getSerializedOldValue(); if (cd != null) { this.oldValueIsSerialized = true; Object o =
-   * cd.getValue(); if (o instanceof byte[]) { setOldValBytes((byte[])o); } else { // Defer
-   * serialization until toData is called. setOldValObj(o); } } else { Object old =
-   * event.getRawOldValue(); if (old instanceof byte[]) { this.oldValueIsSerialized = false;
-   * setOldValBytes((byte[]) old); } else { this.oldValueIsSerialized = true; setOldValObj(old); } }
-   * } }
-   */
-  /*
-   * private void setOldValBytes(byte[] valBytes){ this.oldValBytes = valBytes; } public final
-   * byte[] getOldValueBytes(){ return this.oldValBytes; } private Object getOldValObj(){ return
-   * this.oldValObj; } private void setOldValObj(Object o){ this.oldValObj = o; }
-   */
 
+  @Override
   public int getDSFID() {
     return PR_PUT_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
 
     final int extraFlags = in.readUnsignedByte();
     setKey(DataSerializer.readObject(in));
@@ -518,11 +505,6 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
     if ((flags & HAS_EXPECTED_OLD_VAL) != 0) {
       this.expectedOldValue = DataSerializer.readObject(in);
     }
-    /*
-     * this.hasOldValue = in.readBoolean(); if (this.hasOldValue){
-     * //out.writeBoolean(this.hasOldValue); this.oldValueIsSerialized = in.readBoolean();
-     * setOldValBytes(DataSerializer.readByteArray(in)); }
-     */
     if (this.hasFilterInfo) {
       this.filterInfo = new FilterRoutingInfo();
       InternalDataSerializer.invokeFromData(this.filterInfo, in);
@@ -549,7 +531,8 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     PartitionedRegion region = null;
     try {
       boolean flag = internalDs.getConfig().getDeltaPropagation();
@@ -562,7 +545,7 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
     } catch (RuntimeException re) {
       throw new InvalidDeltaException(re);
     }
-    super.toData(out);
+    super.toData(out, context);
 
     int extraFlags = this.deserializationPolicy;
     if (this.bridgeContext != null)
@@ -646,8 +629,9 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
   }
 
   @Override
-  protected void setBooleans(short s, DataInput in) throws IOException, ClassNotFoundException {
-    super.setBooleans(s, in);
+  protected void setBooleans(short s, DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.setBooleans(s, in, context);
     this.ifNew = ((s & IF_NEW) != 0);
     this.ifOld = ((s & IF_OLD) != 0);
     this.requireOldValue = ((s & REQUIRED_OLD_VAL) != 0);
@@ -843,8 +827,8 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
   }
 
   @Override
-  protected boolean mayAddToMultipleSerialGateways(ClusterDistributionManager dm) {
-    return _mayAddToMultipleSerialGateways(dm);
+  protected boolean mayNotifySerialGatewaySender(ClusterDistributionManager dm) {
+    return notifiesSerialGatewaySender(dm);
   }
 
   public static class PutReplyMessage extends ReplyMessage implements OldValueImporter {
@@ -947,8 +931,9 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.result = in.readBoolean();
       this.op = Operation.fromOrdinal(in.readByte());
       this.oldValue = DataSerializer.readObject(in);
@@ -956,8 +941,9 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.result);
       out.writeByte(this.op.ordinal);
       Object ov = getOldValue();
@@ -1055,7 +1041,7 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
       }
       if (this.op == null) {
         throw new ForceReattemptException(
-            LocalizedStrings.PutMessage_DID_NOT_RECEIVE_A_VALID_REPLY.toLocalizedString());
+            "did not receive a valid reply");
       }
       // try {
       // waitForRepliesUninterruptibly();
@@ -1082,13 +1068,14 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
           final PutMessage putMsg = new PutMessage(this.putMessage);
           final DistributionManager dm = getDistributionManager();
           Runnable sendFullObject = new Runnable() {
+            @Override
             public void run() {
               putMsg.resetRecipients();
               putMsg.setRecipient(msg.getSender());
               putMsg.setSendDelta(false);
               if (logger.isDebugEnabled()) {
                 logger.debug("Sending full object({}) to {}", putMsg,
-                    Arrays.toString(putMsg.getRecipients()));
+                    putMsg.getRecipientsDescription());
               }
               dm.putOutgoing(putMsg);
 
@@ -1108,7 +1095,7 @@ public class PutMessage extends PartitionMessageWithDirectReply implements NewVa
           if (isExpectingDirectReply()) {
             sendFullObject.run();
           } else {
-            getDistributionManager().getWaitingThreadPool().execute(sendFullObject);
+            getDistributionManager().getExecutors().getWaitingThreadPool().execute(sendFullObject);
           }
           return;
         }

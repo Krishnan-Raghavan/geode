@@ -15,7 +15,6 @@
 package org.apache.geode.cache.client.internal;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,14 +25,15 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.cache.client.ServerConnectivityException;
 import org.apache.geode.cache.client.ServerOperationException;
 import org.apache.geode.distributed.internal.ServerLocation;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.cache.InternalRegion;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.tier.MessageType;
 import org.apache.geode.internal.cache.tier.sockets.ChunkedMessage;
 import org.apache.geode.internal.cache.tier.sockets.Message;
 import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Does a region getAll on a server
@@ -63,9 +63,9 @@ public class GetAllOp {
   public static VersionedObjectList execute(ExecutablePool pool, Region region, List keys,
       int retryAttempts, Object callback) {
     AbstractOp op = new GetAllOpImpl(region.getFullPath(), keys, callback);
-    ClientMetadataService cms = ((LocalRegion) region).getCache().getClientMetadataService();
+    ClientMetadataService cms = ((InternalRegion) region).getCache().getClientMetadataService();
 
-    Map<ServerLocation, HashSet> serverToFilterMap = cms.getServerToFilterMap(keys, region, true);
+    Map<ServerLocation, Set> serverToFilterMap = cms.getServerToFilterMap(keys, region, true);
 
     if (serverToFilterMap == null || serverToFilterMap.isEmpty()) {
       op.initMessagePart();
@@ -76,8 +76,9 @@ public class GetAllOp {
       List retryList = new ArrayList();
       List callableTasks =
           constructGetAllTasks(region.getFullPath(), serverToFilterMap, (PoolImpl) pool, callback);
-      Map<ServerLocation, Object> results = SingleHopClientExecutor.submitGetAll(serverToFilterMap,
-          callableTasks, cms, (LocalRegion) region);
+      Map<ServerLocation, Object> results =
+          SingleHopClientExecutor.submitGetAll(serverToFilterMap,
+              callableTasks, cms, (LocalRegion) region);
       for (ServerLocation server : results.keySet()) {
         Object serverResult = results.get(server);
         if (serverResult instanceof ServerConnectivityException) {
@@ -115,10 +116,10 @@ public class GetAllOp {
   }
 
   static List constructGetAllTasks(String region,
-      final Map<ServerLocation, HashSet> serverToFilterMap, final PoolImpl pool,
+      final Map<ServerLocation, Set> serverToFilterMap, final PoolImpl pool,
       final Object callback) {
-    final List<SingleHopOperationCallable> tasks = new ArrayList<SingleHopOperationCallable>();
-    ArrayList<ServerLocation> servers = new ArrayList<ServerLocation>(serverToFilterMap.keySet());
+    final List<SingleHopOperationCallable> tasks = new ArrayList<>();
+    ArrayList<ServerLocation> servers = new ArrayList<>(serverToFilterMap.keySet());
 
     if (logger.isDebugEnabled()) {
       logger.debug("Constructing tasks for the servers {}", servers);
@@ -137,7 +138,7 @@ public class GetAllOp {
 
   static class GetAllOpImpl extends AbstractOp {
 
-    private List keyList;
+    private final List keyList;
     private final Object callback;
 
     /**
@@ -147,7 +148,7 @@ public class GetAllOp {
       super(callback != null ? MessageType.GET_ALL_WITH_CALLBACK : MessageType.GET_ALL_70, 3);
       this.keyList = keys;
       this.callback = callback;
-      getMessage().addStringPart(region);
+      getMessage().addStringPart(region, true);
     }
 
     @Override
@@ -183,6 +184,7 @@ public class GetAllOp {
       final VersionedObjectList result = new VersionedObjectList(false);
       final Exception[] exceptionRef = new Exception[1];
       processChunkedResponse((ChunkedMessage) msg, "getAll", new ChunkHandler() {
+        @Override
         public void handle(ChunkedMessage cm) throws Exception {
           Part part = cm.getPart(0);
           try {

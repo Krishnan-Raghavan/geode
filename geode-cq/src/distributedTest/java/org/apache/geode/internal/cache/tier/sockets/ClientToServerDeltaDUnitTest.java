@@ -14,9 +14,11 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DELTA_PROPAGATION;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -26,10 +28,12 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.Properties;
 
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.DeltaTestImpl;
+import org.apache.geode.LogWriter;
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.AttributesMutator;
 import org.apache.geode.cache.Cache;
@@ -51,17 +55,17 @@ import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache.util.CqListenerAdapter;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.i18n.LogWriterI18n;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.TestObjectWithIdentifier;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
+import org.apache.geode.test.dunit.rules.DistributedRestoreSystemProperties;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 import org.apache.geode.test.junit.categories.SerializationTest;
 
@@ -77,7 +81,7 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
    */
   private static Cache cache = null;
 
-  private static LogWriterI18n logger = null;
+  private static LogWriter logger = null;
 
   VM server = null;
   VM server2 = null;
@@ -115,12 +119,17 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
 
   public static String DELTA_KEY = "DELTA_KEY";
 
-  private static final String[] CQs = new String[] {"select * from /" + REGION_NAME,
-      "select * from /" + REGION_NAME + " where intVar = 0",
-      "select * from /" + REGION_NAME + " where intVar > 0",
-      "select * from /" + REGION_NAME + " where intVar < 0"};
+  private static final String[] CQs = new String[] {"select * from " + SEPARATOR + REGION_NAME,
+      "select * from " + SEPARATOR + REGION_NAME + " where intVar = 0",
+      "select * from " + SEPARATOR + REGION_NAME + " where intVar > 0",
+      "select * from " + SEPARATOR + REGION_NAME + " where intVar < 0"};
 
   public static String LAST_KEY = "LAST_KEY";
+
+
+  @Rule
+  public DistributedRestoreSystemProperties restoreSystemProperties =
+      new DistributedRestoreSystemProperties();
 
   @Override
   public final void postSetUp() throws Exception {
@@ -281,6 +290,124 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
     err = ((Boolean) server2.invoke(() -> ClientToServerDeltaDUnitTest.getError())).booleanValue();
     err = ((Boolean) client2.invoke(() -> ClientToServerDeltaDUnitTest.getError())).booleanValue();
     assertFalse("validation fails", err);
+  }
+
+  @Test
+  public void testClientDeltaPropogationPutFetchesTheLatestValueWhenClientVersionIsOlder()
+      throws Exception {
+    // client did not register interest
+    Integer PORT1 = ((Integer) server.invoke(() -> ClientToServerDeltaDUnitTest
+        .createServerCache(Boolean.TRUE, Boolean.FALSE, Boolean.TRUE, Boolean.TRUE))).intValue();
+
+    ClientToServerDeltaDUnitTest.createClientCache(
+        NetworkUtils.getServerHostName(server.getHost()), new Integer(PORT1), Boolean.FALSE,
+        Boolean.FALSE, Boolean.FALSE, null, Boolean.FALSE);
+    Region r = cache.getRegion(REGION_NAME);
+    DeltaTestImpl val = new DeltaTestImpl(0, "0", new Double(0), new byte[0],
+        new TestObjectWithIdentifier("0", 0));
+    r.put(KEY1, val);
+
+    server.invoke(() -> {
+      Region region = cache.getRegion(REGION_NAME);
+      DeltaTestImpl val1 = (DeltaTestImpl) region.get(KEY1);
+      val1.NEED_TO_RESET_T0_DELTA = false;
+      val1.setIntVar(1);
+      region.put(KEY1, val1);
+    });
+
+    DeltaTestImpl val2 = new DeltaTestImpl(0, "0", new Double(0), new byte[0],
+        new TestObjectWithIdentifier("0", 0));
+    val2.setStr("1");
+    val2.NEED_TO_RESET_T0_DELTA = false;
+    r.put(KEY1, val2);
+
+    server.invoke(() -> {
+      Region region = cache.getRegion(REGION_NAME);
+      assertThat((DeltaTestImpl) region.get(KEY1)).isNotNull();
+    });
+
+    DeltaTestImpl expected = new DeltaTestImpl(1, "1", new Double(0), new byte[0],
+        new TestObjectWithIdentifier("0", 0));
+
+    server.invoke(() -> {
+      Region region = cache.getRegion(REGION_NAME);
+      GeodeAwaitility.await()
+          .untilAsserted(() -> assertThat((DeltaTestImpl) region.get(KEY1)).isEqualTo(expected));
+    });
+
+    GeodeAwaitility.await()
+        .untilAsserted(() -> assertThat((DeltaTestImpl) r.get(KEY1)).isEqualTo(expected));
+  }
+
+  @Test
+  public void clientDeltaPutFetchesTheLatestVersionIfNotYetReceivedQueuedEvent() {
+    server.invoke(() -> setSlowStartForTesting());
+    server2.invoke(() -> setSlowStartForTesting());
+    initialise(false);
+
+    DeltaTestImpl original = new DeltaTestImpl(0, "0", new Double(0), new byte[0],
+        new TestObjectWithIdentifier("0", 0));
+    client.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      original.NEED_TO_RESET_T0_DELTA = false;
+      r.put(KEY1, original);
+    });
+
+    client2.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      assertThat(r.get(KEY1)).isEqualTo(original);
+    });
+
+    client.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      DeltaTestImpl val = (DeltaTestImpl) r.get(KEY1);
+      assertThat(val).isEqualTo(original);
+      val.NEED_TO_RESET_T0_DELTA = false;
+      val.setIntVar(1);
+      r.put(KEY1, val);
+    });
+
+    client2.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      DeltaTestImpl val = (DeltaTestImpl) r.get(KEY1);
+      // delta update should not arrive yet due to slow dispatcher
+      assertThat(val).isEqualTo(original);
+      val.NEED_TO_RESET_T0_DELTA = false;
+      val.setStr("1");
+      r.put(KEY1, val);
+      Object o = r.get(KEY1);
+      logger.info("object is " + o);
+    });
+
+    server.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      r.get(KEY1);
+    });
+
+    server2.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      r.get(KEY1);
+    });
+
+    DeltaTestImpl expected = new DeltaTestImpl(1, "1", new Double(0), new byte[0],
+        new TestObjectWithIdentifier("0", 0));
+
+    client.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      GeodeAwaitility.await()
+          .untilAsserted(() -> assertThat((DeltaTestImpl) r.get(KEY1)).isEqualTo(expected));
+    });
+
+    client2.invoke(() -> {
+      Region r = cache.getRegion(REGION_NAME);
+      GeodeAwaitility.await()
+          .untilAsserted(() -> assertThat((DeltaTestImpl) r.get(KEY1)).isEqualTo(expected));
+    });
+  }
+
+  private void setSlowStartForTesting() {
+    CacheClientProxy.isSlowStartForTesting = true;
+    System.setProperty("slowStartTimeForTesting", "5000");
   }
 
   private static void putDeltaForCQ(String key, Integer numOfPuts, Integer[] cqIndices,
@@ -581,7 +708,7 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
     props.setProperty(LOCATORS, "");
     new ClientToServerDeltaDUnitTest().createCache(props);
     pool = (PoolImpl) PoolManager.createFactory().addServer(host, port.intValue())
-        .setThreadLocalConnections(true).setMinConnections(2)
+        .setMinConnections(2)
         .setSubscriptionEnabled(enableSubscription).setSubscriptionRedundancy(0)
         .setReadTimeout(10000).setPingInterval(1000).setSocketBufferSize(32768)
         .create("ClientToServerDeltaDunitTestPool");
@@ -667,7 +794,7 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
     DistributedSystem ds = getSystem(props);
     cache = CacheFactory.create(ds);
     assertNotNull(cache);
-    logger = cache.getLoggerI18n();
+    logger = cache.getLogger();
   }
 
   // to validate updates in listener
@@ -976,7 +1103,7 @@ public class ClientToServerDeltaDUnitTest extends JUnit4DistributedTestCase {
         return "Last key NOT received.";
       }
     };
-    Wait.waitForCriterion(wc, 10 * 1000, 100, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   static class CSDeltaTestImpl extends DeltaTestImpl {

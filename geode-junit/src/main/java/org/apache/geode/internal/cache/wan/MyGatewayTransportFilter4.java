@@ -17,22 +17,26 @@ package org.apache.geode.internal.cache.wan;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.apache.geode.cache.wan.GatewayTransportFilter;
 
 public class MyGatewayTransportFilter4 implements GatewayTransportFilter, Serializable {
   String Id = "MyGatewayTransportFilter4";
 
+  @Override
   public InputStream getInputStream(InputStream stream) {
     // TODO Auto-generated method stub
     return null;
   }
 
+  @Override
   public OutputStream getOutputStream(OutputStream stream) {
     // TODO Auto-generated method stub
     return null;
   }
 
+  @Override
   public void close() {
     // TODO Auto-generated method stub
 
@@ -53,4 +57,10 @@ public class MyGatewayTransportFilter4 implements GatewayTransportFilter, Serial
     MyGatewayTransportFilter4 filter = (MyGatewayTransportFilter4) obj;
     return this.Id.equals(filter.Id);
   }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(Id);
+  }
+
 }

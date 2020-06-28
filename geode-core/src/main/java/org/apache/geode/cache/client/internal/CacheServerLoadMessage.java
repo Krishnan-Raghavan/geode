@@ -29,6 +29,8 @@ import org.apache.geode.distributed.internal.SerialDistributionMessage;
 import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.distributed.internal.ServerLocator;
 import org.apache.geode.internal.InternalDataSerializer;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message from a server to a locator to update the locator with new load information from the
@@ -65,20 +67,20 @@ public class CacheServerLoadMessage extends SerialDistributionMessage {
       InternalLocator l = (InternalLocator) locators.get(i);
       ServerLocator serverLocator = l.getServerLocatorAdvisee();
       if (serverLocator != null) {
-        serverLocator.updateLoad(location, load, this.clientIds);
+        serverLocator.updateLoad(location, this.getSender().getUniqueId(), load, this.clientIds);
       }
     }
   }
 
-
-
+  @Override
   public int getDSFID() {
     return CACHE_SERVER_LOAD_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     load = new ServerLoad();
     InternalDataSerializer.invokeFromData(load, in);
     location = new ServerLocation();
@@ -87,8 +89,9 @@ public class CacheServerLoadMessage extends SerialDistributionMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     InternalDataSerializer.invokeToData(load, out);
     InternalDataSerializer.invokeToData(location, out);
     DataSerializer.writeArrayList(this.clientIds, out);

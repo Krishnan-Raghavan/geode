@@ -14,6 +14,7 @@
  */
 package org.apache.geode.distributed.internal;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -27,11 +28,9 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -39,11 +38,10 @@ import org.junit.Test;
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.distributed.internal.locks.ElderState;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.distributed.internal.membership.MembershipManager;
 import org.apache.geode.test.junit.rules.ConcurrencyRule;
 
 public class ClusterElderManagerTest {
-  private MembershipManager memberManager;
+  private Distribution distribution;
   private CancelCriterion systemCancelCriterion;
   private InternalDistributedSystem system;
   private CancelCriterion cancelCriterion;
@@ -62,12 +60,12 @@ public class ClusterElderManagerTest {
     cancelCriterion = mock(CancelCriterion.class);
     system = mock(InternalDistributedSystem.class);
     systemCancelCriterion = mock(CancelCriterion.class);
-    memberManager = mock(MembershipManager.class);
+    distribution = mock(Distribution.class);
 
     when(clusterDistributionManager.getCancelCriterion()).thenReturn(cancelCriterion);
     when(clusterDistributionManager.getSystem()).thenReturn(system);
     when(system.getCancelCriterion()).thenReturn(systemCancelCriterion);
-    when(clusterDistributionManager.getMembershipManager()).thenReturn(memberManager);
+    when(clusterDistributionManager.getDistribution()).thenReturn(distribution);
   }
 
   @Test
@@ -100,7 +98,7 @@ public class ClusterElderManagerTest {
   @Test
   public void getElderIdIgnoresSurpriseMembers() {
     ClusterElderManager clusterElderManager = new ClusterElderManager(clusterDistributionManager);
-    when(memberManager.isSurpriseMember(eq(member1))).thenReturn(true);
+    when(distribution.isSurpriseMember(eq(member1))).thenReturn(true);
 
     when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1, member2));
 
@@ -124,7 +122,7 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void waitForElderReturnsTrueIfAnotherMemberIsElder() {
+  public void waitForElderReturnsTrueIfAnotherMemberIsElder() throws InterruptedException {
     ClusterElderManager clusterElderManager = new ClusterElderManager(clusterDistributionManager);
     when(clusterDistributionManager.getId()).thenReturn(member0);
     when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1, member0));
@@ -132,7 +130,7 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void waitForElderReturnsFalseIfWeAreElder() {
+  public void waitForElderReturnsFalseIfWeAreElder() throws InterruptedException {
     ClusterElderManager clusterElderManager = new ClusterElderManager(clusterDistributionManager);
     when(clusterDistributionManager.getId()).thenReturn(member0);
     when(clusterDistributionManager.isCurrentMember(eq(member1))).thenReturn(true);
@@ -141,7 +139,8 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void waitForElderReturnsFalseIfDesiredElderIsNotACurrentMember() {
+  public void waitForElderReturnsFalseIfDesiredElderIsNotACurrentMember()
+      throws InterruptedException {
     ClusterElderManager clusterElderManager = new ClusterElderManager(clusterDistributionManager);
     when(clusterDistributionManager.getId()).thenReturn(member0);
     when(clusterDistributionManager.getViewMembers())
@@ -155,8 +154,24 @@ public class ClusterElderManagerTest {
     when(clusterDistributionManager.getId()).thenReturn(member0);
     when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1, member0));
     when(clusterDistributionManager.isCurrentMember(eq(member0))).thenReturn(true);
+    when(clusterDistributionManager.isCloseInProgress()).thenReturn(false);
 
-    assertThatRunnableWaits(() -> clusterElderManager.waitForElder(member0));
+    assertThatInterruptableRunnableWaits(() -> {
+      try {
+        clusterElderManager.waitForElder(member0);
+      } catch (InterruptedException e) {
+      }
+    });
+  }
+
+  @Test
+  public void waitForElderDoesNotWaitIfShuttingDown() throws InterruptedException {
+    ClusterElderManager clusterElderManager = new ClusterElderManager(clusterDistributionManager);
+    when(clusterDistributionManager.getId()).thenReturn(member0);
+    when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1, member0));
+    when(clusterDistributionManager.isCurrentMember(eq(member0))).thenReturn(true);
+    when(clusterDistributionManager.isCloseInProgress()).thenReturn(true);
+    assertThat(clusterElderManager.waitForElder(member0)).isFalse();
   }
 
   @Test
@@ -179,7 +194,7 @@ public class ClusterElderManagerTest {
 
     Callable<Void> updateMembershipView = () -> {
       // Wait for membership listener to be added
-      Awaitility.await().until(() -> membershipListener.get() != null);
+      await().until(() -> membershipListener.get() != null);
 
       currentMembers.set(Arrays.asList(member0));
       membershipListener.get().memberDeparted(clusterDistributionManager, member1, true);
@@ -194,7 +209,7 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void getElderStateAsElder() {
+  public void getElderStateAsElder() throws InterruptedException {
     Supplier<ElderState> elderStateSupplier = mock(Supplier.class);
     ElderState elderState = mock(ElderState.class);
     when(elderStateSupplier.get()).thenReturn(elderState);
@@ -208,7 +223,7 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void getElderStateGetsBuiltOnceAsElder() {
+  public void getElderStateGetsBuiltOnceAsElder() throws InterruptedException {
     Supplier<ElderState> elderStateSupplier = mock(Supplier.class);
     ElderState elderState = mock(ElderState.class);
     when(elderStateSupplier.get()).thenReturn(elderState);
@@ -245,7 +260,7 @@ public class ClusterElderManagerTest {
   }
 
   @Test
-  public void getElderStateNotAsElder() {
+  public void getElderStateNotAsElder() throws InterruptedException {
     Supplier<ElderState> elderStateSupplier = mock(Supplier.class);
     ClusterElderManager clusterElderManager =
         new ClusterElderManager(clusterDistributionManager, elderStateSupplier);
@@ -265,12 +280,17 @@ public class ClusterElderManagerTest {
     when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1, member0));
     when(clusterDistributionManager.isCurrentMember(eq(member0))).thenReturn(true);
 
-    assertThatRunnableWaits(() -> clusterElderManager.getElderState(true));
+    assertThatInterruptableRunnableWaits(() -> {
+      try {
+        clusterElderManager.getElderState(true);
+      } catch (InterruptedException e) {
+      }
+    });
 
     verify(elderStateSupplier, times(0)).get();
   }
 
-  private void assertThatRunnableWaits(Runnable runnable) {
+  private void assertThatInterruptableRunnableWaits(Runnable runnable) {
     Thread waitThread = new Thread(runnable);
 
     waitThread.start();
@@ -278,10 +298,25 @@ public class ClusterElderManagerTest {
     EnumSet<Thread.State> waitingStates =
         EnumSet.of(Thread.State.WAITING, Thread.State.TIMED_WAITING);
     try {
-      Awaitility.await().atMost(1, TimeUnit.MINUTES)
+      await()
           .until(() -> waitingStates.contains(waitThread.getState()));
     } finally {
       waitThread.interrupt();
+      await().until(() -> !waitThread.isAlive());
     }
+  }
+
+  @Test
+  public void getElderStateReturnsElderStateIfWaitsToBecomeElder() throws Exception {
+    Supplier<ElderState> elderStateSupplier = mock(Supplier.class);
+    ElderState elderState = mock(ElderState.class);
+    when(elderStateSupplier.get()).thenReturn(elderState);
+    ClusterElderManager clusterElderManager =
+        new ClusterElderManager(clusterDistributionManager, elderStateSupplier);
+    when(clusterDistributionManager.getId()).thenReturn(member0);
+    when(clusterDistributionManager.isCloseInProgress()).thenReturn(true);
+    when(clusterDistributionManager.getViewMembers()).thenReturn(Arrays.asList(member1));
+
+    assertThat(clusterElderManager.getElderState(true)).isEqualTo(elderState);
   }
 }

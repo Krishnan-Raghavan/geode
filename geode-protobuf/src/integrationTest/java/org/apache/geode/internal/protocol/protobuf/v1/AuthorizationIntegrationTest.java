@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.protocol.protobuf.v1;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
@@ -27,9 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -64,7 +64,8 @@ public class AuthorizationIntegrationTest {
   private static final String TEST_KEY2 = "testKey2";
 
   private final String OQLTwoRegionTestQuery =
-      "select * from /" + TEST_REGION1 + " one, /" + TEST_REGION2 + " two where one.id = two.id";
+      "select * from " + SEPARATOR + TEST_REGION1 + " one, " + SEPARATOR + TEST_REGION2
+          + " two where one.id = two.id";
 
   @Rule
   public final RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
@@ -101,7 +102,7 @@ public class AuthorizationIntegrationTest {
     @Override
     public boolean authorize(Object principal, ResourcePermission permission) {
       // Only allow data operations and only from the expected principal
-      if (principal != securityPrincipal
+      if (!principal.equals(securityPrincipal)
           || permission.getResource() != ResourcePermission.Resource.DATA) {
         return false;
       }
@@ -148,7 +149,7 @@ public class AuthorizationIntegrationTest {
     System.setProperty("geode.protocol-authentication-mode", "SIMPLE");
     socket = new Socket("localhost", cacheServerPort);
 
-    Awaitility.await().atMost(5, TimeUnit.SECONDS).until(socket::isConnected);
+    await().until(socket::isConnected);
     outputStream = socket.getOutputStream();
     inputStream = socket.getInputStream();
 

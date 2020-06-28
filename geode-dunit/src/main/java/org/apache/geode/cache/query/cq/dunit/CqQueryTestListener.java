@@ -14,20 +14,19 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 
 import org.apache.geode.LogWriter;
 import org.apache.geode.cache.Operation;
 import org.apache.geode.cache.query.CqEvent;
 import org.apache.geode.cache.query.CqStatusListener;
-import org.apache.geode.test.dunit.Wait;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.WaitCriterion;
 
 public class CqQueryTestListener implements CqStatusListener {
@@ -78,6 +77,7 @@ public class CqQueryTestListener implements CqStatusListener {
     this.logger = logger;
   }
 
+  @Override
   public void onEvent(CqEvent cqEvent) {
     this.totalEventCount++;
 
@@ -126,15 +126,18 @@ public class CqQueryTestListener implements CqStatusListener {
     }
   }
 
+  @Override
   public void onError(CqEvent cqEvent) {
     this.eventErrorCount++;
     this.errors.add(cqEvent.getThrowable().getMessage());
   }
 
+  @Override
   public void onCqDisconnected() {
     this.cqsDisconnectedCount++;
   }
 
+  @Override
   public void onCqConnected() {
     this.cqsConnectedCount++;
   }
@@ -183,6 +186,7 @@ public class CqQueryTestListener implements CqStatusListener {
     return this.cqEvents.toArray();
   }
 
+  @Override
   public void close() {
     this.eventClose = true;
   }
@@ -211,121 +215,138 @@ public class CqQueryTestListener implements CqStatusListener {
 
   public boolean waitForCreated(final Object key) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.creates.contains(key);
       }
 
+      @Override
       public String description() {
         return "never got create event for CQ " + CqQueryTestListener.this.cqName + " key " + key;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
 
   public boolean waitForTotalEvents(final int total) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return (CqQueryTestListener.this.totalEventCount == total);
       }
 
+      @Override
       public String description() {
         return "Did not receive expected number of events " + CqQueryTestListener.this.cqName
             + " expected: " + total + " receieved: " + CqQueryTestListener.this.totalEventCount;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForDestroyed(final Object key) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.destroys.contains(key);
       }
 
+      @Override
       public String description() {
         return "never got destroy event for key " + key + " in CQ "
             + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForInvalidated(final Object key) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.invalidates.contains(key);
       }
 
+      @Override
       public String description() {
         return "never got invalidate event for CQ " + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForUpdated(final Object key) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.updates.contains(key);
       }
 
+      @Override
       public String description() {
         return "never got update event for CQ " + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForClose() {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.eventClose;
       }
 
+      @Override
       public String description() {
         return "never got close event for CQ " + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForRegionClear() {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.eventRegionClear;
       }
 
+      @Override
       public String description() {
         return "never got region clear event for CQ " + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForRegionInvalidate() {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return CqQueryTestListener.this.eventRegionInvalidate;
       }
 
+      @Override
       public String description() {
         return "never got region invalidate event for CQ " + CqQueryTestListener.this.cqName;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForError(final String expectedMessage) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         Iterator iterator = CqQueryTestListener.this.errors.iterator();
         while (iterator.hasNext()) {
@@ -339,44 +360,49 @@ public class CqQueryTestListener implements CqStatusListener {
         return false;
       }
 
+      @Override
       public String description() {
         return "never got create error for CQ " + CqQueryTestListener.this.cqName + " messaged "
             + expectedMessage;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForCqsDisconnectedEvents(final int total) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return (CqQueryTestListener.this.cqsDisconnectedCount == total);
       }
 
+      @Override
       public String description() {
         return "Did not receive expected number of calls to cqsDisconnected() "
             + CqQueryTestListener.this.cqName + " expected: " + total + " received: "
             + CqQueryTestListener.this.cqsDisconnectedCount;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
   public boolean waitForCqsConnectedEvents(final int total) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return (CqQueryTestListener.this.cqsConnectedCount == total);
       }
 
+      @Override
       public String description() {
         return "Did not receive expected number of calls to cqsConnected() "
             + CqQueryTestListener.this.cqName + " expected: " + total + " receieved: "
             + CqQueryTestListener.this.cqsConnectedCount;
       }
     };
-    Wait.waitForCriterion(ev, MAX_TIME, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     return true;
   }
 
@@ -385,7 +411,7 @@ public class CqQueryTestListener implements CqStatusListener {
       final int totalEvents) {
     // Wait for expected events to arrive
     try {
-      Awaitility.await().atMost(10, TimeUnit.SECONDS).until(() -> {
+      await().until(() -> {
         if ((creates > 0 && creates != this.getCreateEventCount())
             || (updates > 0 && updates != this.getUpdateEventCount())
             || (deletes > 0 && deletes != this.getDeleteEventCount())

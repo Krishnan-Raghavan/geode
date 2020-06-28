@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache30;
 
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -38,13 +39,14 @@ import org.apache.geode.cache.util.RegionMembershipListenerAdapter;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DistributionAdvisor.Profile;
-import org.apache.geode.distributed.internal.membership.gms.MembershipManagerHelper;
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
+import org.apache.geode.distributed.internal.membership.api.MembershipManagerHelper;
 import org.apache.geode.internal.cache.CacheDistributionAdvisor.CacheProfile;
 import org.apache.geode.internal.cache.DistributedRegion;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.MembershipTest;
@@ -61,7 +63,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   private transient MyRML mySRListener;
   private transient Region r; // root region
   private transient Region sr; // subregion
-  protected transient DistributedMember otherId;
+  protected transient InternalDistributedMember otherId;
 
   public RegionMembershipListenerDUnitTest() {
     super();
@@ -92,6 +94,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   private void initOtherId() {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("Connect") {
+      @Override
       public void run2() throws CacheException {
         getCache();
       }
@@ -102,6 +105,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   protected void createRootOtherVm(final String rName) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("create root") {
+      @Override
       public void run2() throws CacheException {
         Region r = createRootRegion(rName, createRootRegionAttributes(null));
         r.createSubregion("mysub", createSubRegionAttributes(null));
@@ -124,6 +128,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   protected void destroyRootOtherVm(final String rName) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("local destroy root") {
+      @Override
       public void run2() throws CacheException {
         getRootRegion(rName).localDestroyRegion();
       }
@@ -133,6 +138,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   protected void closeRootOtherVm(final String rName) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("close root") {
+      @Override
       public void run2() throws CacheException {
         getRootRegion(rName).close();
       }
@@ -142,6 +148,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   private void closeCacheOtherVm() {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("close cache") {
+      @Override
       public void run2() throws CacheException {
         getCache().close();
       }
@@ -151,6 +158,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
   private void crashCacheOtherVm() {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("crash cache") {
+      @Override
       public void run2() throws CacheException {
         // shut down the gms before the distributed system to simulate
         // a crash. In post-5.1.x, this could use SystemFailure.initFailure()
@@ -402,18 +410,20 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
 
     private boolean waitForOp(final Op op) {
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return MyRML.this.lastOp == op;
         }
 
+        @Override
         public String description() {
           return MyRML.this.toString() + " waiting for Op " + op + " when lastOp was "
               + getOpName(MyRML.this.lastOp);
         }
       };
-      LogWriterUtils.getLogWriter().info(this.toString() + " waiting for Op " + getOpName(op)
+      getLogWriter().info(this.toString() + " waiting for Op " + getOpName(op)
           + " when lastOp was " + getOpName(this.lastOp));
-      Wait.waitForCriterion(ev, this.timeOut, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
       assertEquals(op, this.lastOp);
       return true;
     }
@@ -430,6 +440,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
       return Arrays.asList(this.initialMembers);
     }
 
+    @Override
     public void initialMembers(Region r, DistributedMember[] initialMembers) {
       this.lastOp = Op.Initial;
       this.lastEvent = null;
@@ -439,6 +450,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
               + " with members " + Arrays.deepToString(initialMembers));
     }
 
+    @Override
     public void afterRemoteRegionCreate(RegionEvent event) {
       this.lastOp = Op.Create;
       this.lastEvent = event;
@@ -459,6 +471,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
       }
     }
 
+    @Override
     public void afterRemoteRegionDeparture(RegionEvent event) {
       this.lastOp = Op.Departure;
       this.lastEvent = event;
@@ -466,6 +479,7 @@ public class RegionMembershipListenerDUnitTest extends JUnit4CacheTestCase {
           this.toString() + " received afterRemoteRegionDeparture notification for event " + event);
     }
 
+    @Override
     public void afterRemoteRegionCrash(RegionEvent event) {
       this.lastOp = Op.Crash;
       this.lastEvent = event;

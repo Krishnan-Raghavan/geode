@@ -23,7 +23,6 @@ import io.swagger.annotations.ApiResponses;
 import org.apache.logging.log4j.Logger;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -45,7 +44,7 @@ import org.apache.geode.cache.query.QueryInvalidException;
 import org.apache.geode.cache.query.QueryInvocationTargetException;
 import org.apache.geode.cache.query.TypeMismatchException;
 import org.apache.geode.cache.query.internal.DefaultQuery;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.rest.internal.web.exception.GemfireRestException;
 import org.apache.geode.rest.internal.web.exception.ResourceNotFoundException;
 import org.apache.geode.rest.internal.web.util.JSONUtils;
@@ -58,15 +57,15 @@ import org.apache.geode.rest.internal.web.util.ValidationUtils;
  * @since GemFire 8.0
  */
 @Controller("queryController")
-@Api(value = "queries", description = "Rest api for geode query execution",
-    produces = MediaType.APPLICATION_JSON_VALUE, tags = "queries")
+@Api(value = "queries", produces = AbstractBaseController.APPLICATION_JSON_UTF8_VALUE,
+    tags = "queries")
 @RequestMapping(QueryAccessController.REST_API_VERSION + "/queries")
 @SuppressWarnings("unused")
 public class QueryAccessController extends AbstractBaseController {
 
   private static final Logger logger = LogService.getLogger();
 
-  private static final String PARAMETERIZED_QUERIES_REGION = "__ParameterizedQueries__";
+  static final String PARAMETERIZED_QUERIES_REGION = "__ParameterizedQueries__";
 
   private final ConcurrentHashMap<String, DefaultQuery> compiledQueries = new ConcurrentHashMap<>();
 
@@ -88,7 +87,7 @@ public class QueryAccessController extends AbstractBaseController {
    *
    * @return result as a JSON document.
    */
-  @RequestMapping(method = RequestMethod.GET, produces = {MediaType.APPLICATION_JSON_UTF8_VALUE})
+  @RequestMapping(method = RequestMethod.GET, produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "list all parametrized queries",
       notes = "List all parametrized queries by id/name")
   @ApiResponses({@ApiResponse(code = 200, message = "OK."),
@@ -144,7 +143,7 @@ public class QueryAccessController extends AbstractBaseController {
     headers.setLocation(toUri("queries", queryId));
 
     if (existingOql != null) {
-      headers.setContentType(MediaType.APPLICATION_JSON);
+      headers.setContentType(APPLICATION_JSON_UTF8);
       return new ResponseEntity<>(JSONUtils.formulateJsonForExistingQuery(queryId, existingOql),
           headers, HttpStatus.CONFLICT);
     } else {
@@ -159,7 +158,7 @@ public class QueryAccessController extends AbstractBaseController {
    * @return query result as a JSON document
    */
   @RequestMapping(method = RequestMethod.GET, value = "/adhoc",
-      produces = {MediaType.APPLICATION_JSON_UTF8_VALUE})
+      produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "run an adhoc query",
       notes = "Run an unnamed (unidentified), ad-hoc query passed as a URL parameter")
   @ApiResponses({@ApiResponse(code = 200, message = "OK."),
@@ -204,8 +203,8 @@ public class QueryAccessController extends AbstractBaseController {
       throw new GemfireRestException(
           "Query execution gets canceled due to low memory conditions and the resource manager critical heap percentage has been set!",
           qelme);
-    } catch (Exception e) {
-      throw new GemfireRestException("Server has encountered while executing Adhoc query!", e);
+    } catch (Exception ex) {
+      throw new GemfireRestException(ex.getMessage(), ex);
     }
   }
 
@@ -217,7 +216,7 @@ public class QueryAccessController extends AbstractBaseController {
    * @return query result as a JSON document
    */
   @RequestMapping(method = RequestMethod.POST, value = "/{query}",
-      produces = {MediaType.APPLICATION_JSON_VALUE})
+      produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "run parametrized query",
       notes = "run the specified named query passing in scalar values for query parameters in the GemFire cluster")
   @ApiResponses({@ApiResponse(code = 200, message = "Query successfully executed."),
@@ -239,12 +238,12 @@ public class QueryAccessController extends AbstractBaseController {
       // Its a compiled query.
 
       // Convert arguments into Object[]
-      Object args[] = jsonToObjectArray(arguments);
+      Object[] args = jsonToObjectArray(arguments);
 
       Query compiledQuery = compiledQueries.get(queryId);
       if (compiledQuery == null) {
         // This is first time the query is seen by this server.
-        final String oql = getValue(PARAMETERIZED_QUERIES_REGION, queryId, false);
+        final String oql = getQueryStore(PARAMETERIZED_QUERIES_REGION).get(queryId);
 
         ValidationUtils.returnValueThrowOnNull(oql, new ResourceNotFoundException(
             String.format("No Query with ID (%1$s) was found!", queryId)));

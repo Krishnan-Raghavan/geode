@@ -46,6 +46,7 @@ public class PartitionRebalanceDetailsImpl
   private int primaryTransfersCompleted;
   private final transient PartitionedRegion region;
   private long time;
+  private int numOfMembers;
 
   public PartitionRebalanceDetailsImpl(PartitionedRegion region) {
     this.region = region;
@@ -87,58 +88,77 @@ public class PartitionRebalanceDetailsImpl
     this.time = time;
   }
 
+  @Override
   public long getBucketCreateBytes() {
     return this.bucketCreateBytes;
   }
 
+  @Override
   public long getBucketCreateTime() {
     return TimeUnit.NANOSECONDS.toMillis(this.bucketCreateTime);
   }
 
+  @Override
   public int getBucketCreatesCompleted() {
     return this.bucketCreatesCompleted;
   }
 
+  @Override
   public long getBucketRemoveBytes() {
     return this.bucketRemoveBytes;
   }
 
+  @Override
   public long getBucketRemoveTime() {
     return TimeUnit.NANOSECONDS.toMillis(this.bucketRemoveTime);
   }
 
+  @Override
   public int getBucketRemovesCompleted() {
     return this.bucketRemovesCompleted;
   }
 
+  @Override
   public long getBucketTransferBytes() {
     return this.bucketTransferBytes;
   }
 
+  @Override
   public long getBucketTransferTime() {
     return TimeUnit.NANOSECONDS.toMillis(this.bucketTransferTime);
   }
 
+  @Override
   public int getBucketTransfersCompleted() {
     return this.bucketTransfersCompleted;
   }
 
+  @Override
   public Set<PartitionMemberInfo> getPartitionMemberDetailsAfter() {
     return this.partitionMemberDetailsAfter;
   }
 
+  @Override
   public Set<PartitionMemberInfo> getPartitionMemberDetailsBefore() {
     return this.partitionMemberDetailsBefore;
   }
 
+  @Override
   public long getPrimaryTransferTime() {
     return TimeUnit.NANOSECONDS.toMillis(this.primaryTransferTime);
   }
 
+  @Override
+  public int getNumberOfMembersExecutedOn() {
+    return getPartitionMemberDetailsAfter().size();
+  }
+
+  @Override
   public int getPrimaryTransfersCompleted() {
     return this.primaryTransfersCompleted;
   }
 
+  @Override
   public String getRegionPath() {
     return this.region.getFullPath();
   }
@@ -147,10 +167,12 @@ public class PartitionRebalanceDetailsImpl
     return this.region;
   }
 
+  @Override
   public long getTime() {
     return TimeUnit.NANOSECONDS.toMillis(this.time);
   }
 
+  @Override
   public int compareTo(PartitionRebalanceDetailsImpl other) {
     return this.region.getFullPath().compareTo(other.region.getFullPath());
   }

@@ -15,6 +15,7 @@
 package org.apache.geode.internal.cache.versions;
 
 
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 
 public class VMVersionTagTest extends AbstractVersionTagTestBase {
 
@@ -24,4 +25,9 @@ public class VMVersionTagTest extends AbstractVersionTagTestBase {
     return new VMVersionTag();
   }
 
+  @Override
+  protected VersionSource createMemberID() {
+    int port = getRandomUnusedInt();
+    return new InternalDistributedMember("localhost", port);
+  }
 }

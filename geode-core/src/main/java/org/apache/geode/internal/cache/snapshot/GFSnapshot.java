@@ -29,13 +29,13 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 
 import org.apache.geode.DataSerializer;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.snapshot.SnapshotIterator;
 import org.apache.geode.internal.ExitCode;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.snapshot.SnapshotPacket.SnapshotRecord;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.pdx.internal.EnumInfo;
 import org.apache.geode.pdx.internal.PdxType;
 import org.apache.geode.pdx.internal.TypeRegistry;
@@ -68,6 +68,7 @@ public class GFSnapshot {
   public static final int SNAP_VER_2 = 2;
 
   /** the snapshot file format */
+  @Immutable
   private static final byte[] SNAP_FMT = {0x47, 0x46, 0x53};
 
   private GFSnapshot() {}
@@ -305,7 +306,7 @@ public class GFSnapshot {
         version = tmp.readByte();
         if (version == SNAP_VER_1) {
           throw new IOException(
-              LocalizedStrings.Snapshot_UNSUPPORTED_SNAPSHOT_VERSION_0.toLocalizedString(SNAP_VER_1)
+              String.format("Unsupported snapshot version: %s", SNAP_VER_1)
                   + ": " + in);
 
         } else if (version == SNAP_VER_2) {
@@ -313,8 +314,8 @@ public class GFSnapshot {
           byte[] format = new byte[3];
           tmp.readFully(format);
           if (!Arrays.equals(format, SNAP_FMT)) {
-            throw new IOException(LocalizedStrings.Snapshot_UNRECOGNIZED_FILE_TYPE_0
-                .toLocalizedString(Arrays.toString(format)) + ": " + in);
+            throw new IOException(String.format("Unrecognized snapshot file type: %s",
+                Arrays.toString(format)) + ": " + in);
           }
 
           // read pdx location
@@ -331,7 +332,7 @@ public class GFSnapshot {
           }
         } else {
           throw new IOException(
-              LocalizedStrings.Snapshot_UNRECOGNIZED_FILE_VERSION_0.toLocalizedString(version)
+              String.format("Unrecognized snapshot file version: %s", version)
                   + ": " + in);
         }
       } finally {

@@ -28,6 +28,7 @@ import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
@@ -39,8 +40,10 @@ import org.apache.geode.internal.cache.Node;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore.CreateBucketResult;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A request to manage a particular bucket
@@ -85,12 +88,12 @@ public class ManageBackupBucketMessage extends PartitionMessage {
   }
 
   public ManageBackupBucketMessage(DataInput in) throws IOException, ClassNotFoundException {
-    fromData(in);
+    fromData(in, InternalDataSerializer.createDeserializationContext(in));
   }
 
   @Override
   public int getProcessorType() {
-    return ClusterDistributionManager.WAITING_POOL_EXECUTOR;
+    return OperationExecutors.WAITING_POOL_EXECUTOR;
   }
 
   /**
@@ -179,13 +182,15 @@ public class ManageBackupBucketMessage extends PartitionMessage {
     }
   }
 
+  @Override
   public int getDSFID() {
     return PR_MANAGE_BACKUP_BUCKET_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = in.readInt();
     this.isRebalance = in.readBoolean();
     this.replaceOfflineData = in.readBoolean();
@@ -198,8 +203,9 @@ public class ManageBackupBucketMessage extends PartitionMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.bucketId);
     out.writeBoolean(this.isRebalance);
     out.writeBoolean(this.replaceOfflineData);
@@ -252,7 +258,7 @@ public class ManageBackupBucketMessage extends PartitionMessage {
     public ManageBackupBucketReplyMessage() {}
 
     public ManageBackupBucketReplyMessage(DataInput in) throws IOException, ClassNotFoundException {
-      fromData(in);
+      fromData(in, InternalDataSerializer.createDeserializationContext(in));
     }
 
     private ManageBackupBucketReplyMessage(int processorId, boolean accept, boolean initializing) {
@@ -345,8 +351,9 @@ public class ManageBackupBucketMessage extends PartitionMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.acceptedBucket);
       out.writeBoolean(this.notYetInitialized);
     }
@@ -357,8 +364,9 @@ public class ManageBackupBucketMessage extends PartitionMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.acceptedBucket = in.readBoolean();
       this.notYetInitialized = in.readBoolean();
     }

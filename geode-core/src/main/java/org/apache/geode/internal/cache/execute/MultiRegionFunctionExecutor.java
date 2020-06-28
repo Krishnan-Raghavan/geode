@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
@@ -39,7 +40,6 @@ import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 public class MultiRegionFunctionExecutor extends AbstractExecution {
 
@@ -119,11 +119,12 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
     this.isReExecute = isReExecute;
   }
 
+  @Override
   public InternalExecution withMemberMappedArgument(MemberMappedArgument argument) {
     if (argument == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.ExecuteRegionFunction_THE_INPUT_0_FOR_THE_EXECUTE_FUNCTION_REQUEST_IS_NULL
-              .toLocalizedString("MemberMapped Arg"));
+          String.format("The input %s for the execute function request is null",
+              "MemberMapped Arg"));
     }
     return new MultiRegionFunctionExecutor(this, argument);
   }
@@ -140,50 +141,57 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
   public Execution setArguments(Object args) {
     if (args == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.ExecuteRegionFunction_THE_INPUT_0_FOR_THE_EXECUTE_FUNCTION_REQUEST_IS_NULL
-              .toLocalizedString("args"));
+          String.format("The input %s for the execute function request is null",
+              "args"));
     }
     return new MultiRegionFunctionExecutor(this, args);
   }
 
+  @Override
   public Execution withArgs(Object args) {
     return setArguments(args);
   }
 
+  @Override
   public Execution withCollector(ResultCollector rc) {
     if (rc == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.ExecuteRegionFunction_THE_INPUT_0_FOR_THE_EXECUTE_FUNCTION_REQUEST_IS_NULL
-              .toLocalizedString("Result Collector"));
+          String.format("The input %s for the execute function request is null",
+              "Result Collector"));
     }
     return new MultiRegionFunctionExecutor(this, rc);
   }
 
+  @Override
   public Execution withFilter(Set filter) {
     throw new FunctionException(
-        LocalizedStrings.ExecuteFunction_CANNOT_SPECIFY_0_FOR_ONREGIONS_FUNCTION
-            .toLocalizedString("filter"));
+        String.format("Cannot specify %s for multi region function",
+            "filter"));
   }
 
   @Override
   public InternalExecution withBucketFilter(Set<Integer> bucketIDs) {
     throw new FunctionException(
-        LocalizedStrings.ExecuteFunction_CANNOT_SPECIFY_0_FOR_ONREGIONS_FUNCTION
-            .toLocalizedString("bucket as filter"));
+        String.format("Cannot specify %s for multi region function",
+            "bucket as filter"));
   }
 
   @Override
-  protected ResultCollector executeFunction(Function function) {
-    if (function.hasResult()) {
-      ResultCollector rc = this.rc;
-      if (rc == null) {
-        rc = new DefaultResultCollector();
-      }
-      return executeFunction(function, rc);
-    } else {
+  protected ResultCollector executeFunction(Function function, long timeout, TimeUnit unit) {
+    if (!function.hasResult()) {
       executeFunction(function, null);
       return new NoResult();
     }
+    ResultCollector inRc = (rc == null) ? new DefaultResultCollector() : rc;
+    ResultCollector rcToReturn = executeFunction(function, inRc);
+    if (timeout > 0) {
+      try {
+        rcToReturn.getResult(timeout, unit);
+      } catch (Exception e) {
+        throw new FunctionException(e);
+      }
+    }
+    return rcToReturn;
   }
 
   private ResultCollector executeFunction(final Function function,
@@ -191,7 +199,7 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
     InternalDistributedSystem ds = InternalDistributedSystem.getConnectedInstance();
     if (ds == null) {
       throw new IllegalStateException(
-          LocalizedStrings.ExecuteFunction_DS_NOT_CREATED_OR_NOT_READY.toLocalizedString());
+          "DistributedSystem is either not created or not ready");
     }
     final DistributionManager dm = ds.getDistributionManager();
     final Map<InternalDistributedMember, Set<String>> memberToRegionMap =
@@ -201,8 +209,8 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
 
     if (dest.isEmpty()) {
       throw new FunctionException(
-          LocalizedStrings.MemberFunctionExecutor_NO_MEMBER_FOUND_FOR_EXECUTING_FUNCTION_0
-              .toLocalizedString(function.getId()));
+          String.format("No member found for executing function : %s.",
+              function.getId()));
     }
     final InternalCache cache = GemFireCacheImpl.getInstance();
     if (cache != null) {
@@ -365,8 +373,7 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
     if (cache.getTxManager().getTXState() != null) {
       if (targetMembers.size() > 1) {
         throw new TransactionException(
-            LocalizedStrings.PartitionedRegion_TX_FUNCTION_ON_MORE_THAN_ONE_NODE
-                .toLocalizedString());
+            "Function inside a transaction cannot execute on more than one node");
       } else {
         assert targetMembers.size() == 1;
         DistributedMember funcTarget = (DistributedMember) targetMembers.iterator().next();
@@ -375,8 +382,9 @@ public class MultiRegionFunctionExecutor extends AbstractExecution {
           cache.getTxManager().getTXState().setTarget(funcTarget);
         } else if (!target.equals(funcTarget)) {
           throw new TransactionDataNotColocatedException(
-              LocalizedStrings.PartitionedRegion_TX_FUNCTION_EXECUTION_NOT_COLOCATED_0_1
-                  .toLocalizedString(target, funcTarget));
+              String.format(
+                  "Function execution is not colocated with transaction. The transactional data is hosted on node %s, but you are trying to target node %s",
+                  target, funcTarget));
         }
       }
     }

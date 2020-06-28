@@ -29,6 +29,7 @@ import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.distributed.internal.HighPriorityDistributionMessage;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
@@ -36,9 +37,10 @@ import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A message used to determine the number of bytes a Bucket consumes.
@@ -67,7 +69,7 @@ public class BucketSizeMessage extends PartitionMessage {
 
   @Override
   public int getProcessorType() {
-    return ClusterDistributionManager.STANDARD_EXECUTOR;
+    return OperationExecutors.STANDARD_EXECUTOR;
   }
 
   /**
@@ -88,7 +90,7 @@ public class BucketSizeMessage extends PartitionMessage {
     Set failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new ForceReattemptException(
-          LocalizedStrings.BucketSizeMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
 
     return p;
@@ -104,8 +106,8 @@ public class BucketSizeMessage extends PartitionMessage {
       size = ds.getBucketSize(bucketId);
     } else {
       // sender thought this member had a data store, but it doesn't
-      throw new ForceReattemptException(LocalizedStrings.BucketSizeMessage_NO_DATASTORE_IN_0
-          .toLocalizedString(dm.getDistributionManagerId()));
+      throw new ForceReattemptException(String.format("no datastore in %s",
+          dm.getDistributionManagerId()));
     }
 
     r.getPrStats().endPartitionMessagesProcessing(startTime);
@@ -120,19 +122,22 @@ public class BucketSizeMessage extends PartitionMessage {
     buff.append("; bucketId=").append(this.bucketId);
   }
 
+  @Override
   public int getDSFID() {
     return PR_BUCKET_SIZE_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = in.readInt();
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.bucketId); // fix for bug 38228
   }
 
@@ -192,20 +197,23 @@ public class BucketSizeMessage extends PartitionMessage {
       dm.getStats().incReplyMessageTime(DistributionStats.getStatTime() - startTime);
     }
 
+    @Override
     public int getDSFID() {
       return PR_BUCKET_SIZE_REPLY_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.size = in.readLong();
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(processorId);
       out.writeLong(this.size);
     }
@@ -265,16 +273,14 @@ public class BucketSizeMessage extends PartitionMessage {
           logger.debug("BucketSizeResponse got remote cancellation; forcing reattempt. {}",
               t.getMessage(), t);
           throw new ForceReattemptException(
-              LocalizedStrings.BucketSizeMessage_BUCKETSIZERESPONSE_GOT_REMOTE_CACHECLOSEDEXCEPTION_FORCING_REATTEMPT
-                  .toLocalizedString(),
+              "BucketSizeResponse got remote CacheClosedException; forcing reattempt.",
               t);
         }
         if (t instanceof ForceReattemptException) {
           logger.debug("BucketSizeResponse got remote Region destroyed; forcing reattempt. {}",
               t.getMessage(), t);
           throw new ForceReattemptException(
-              LocalizedStrings.BucketSizeMessage_BUCKETSIZERESPONSE_GOT_REMOTE_REGION_DESTROYED_FORCING_REATTEMPT
-                  .toLocalizedString(),
+              "BucketSizeResponse got remote Region destroyed; forcing reattempt.",
               t);
         }
         e.handleCause();

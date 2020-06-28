@@ -14,11 +14,12 @@
  */
 package org.apache.geode.connectors.jdbc.internal.xml;
 
-import static org.apache.geode.connectors.jdbc.internal.xml.ElementType.CONNECTION_SERVICE;
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.connectors.jdbc.internal.xml.ElementType.JDBC_MAPPING;
 import static org.apache.geode.connectors.jdbc.internal.xml.JdbcConnectorServiceXmlParser.NAMESPACE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Stack;
@@ -27,25 +28,25 @@ import org.junit.Before;
 import org.junit.Test;
 import org.xml.sax.Attributes;
 
-import org.apache.geode.cache.Cache;
+import org.apache.geode.cache.Region;
+import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.internal.cache.extension.ExtensionPoint;
-import org.apache.geode.internal.cache.xmlcache.CacheCreation;
+import org.apache.geode.internal.cache.xmlcache.RegionCreation;
 
 public class JdbcConnectorServiceXmlParserTest {
 
   private Attributes attributes;
-  private CacheCreation cacheCreation;
-  private ExtensionPoint<Cache> extensionPoint;
+  private RegionCreation regionCreation;
   private Stack<Object> stack;
 
+  @SuppressWarnings("unchecked")
   @Before
   public void setup() {
     attributes = mock(Attributes.class);
-    cacheCreation = mock(CacheCreation.class);
-    extensionPoint = mock(ExtensionPoint.class);
-
-    when(cacheCreation.getExtensionPoint()).thenReturn(extensionPoint);
-
+    regionCreation = mock(RegionCreation.class);
+    when(regionCreation.getFullPath()).thenReturn(SEPARATOR + "region");
+    ExtensionPoint<Region<?, ?>> extensionPoint = mock(ExtensionPoint.class);
+    when(regionCreation.getExtensionPoint()).thenReturn(extensionPoint);
     stack = new Stack<>();
   }
 
@@ -57,50 +58,50 @@ public class JdbcConnectorServiceXmlParserTest {
   @Test
   public void startElementCreatesJdbcServiceConfiguration() throws Exception {
     JdbcConnectorServiceXmlParser parser = new JdbcConnectorServiceXmlParser();
-    stack.push(cacheCreation);
+    stack.push(regionCreation);
     parser.setStack(stack);
 
-    parser.startElement(NAMESPACE, CONNECTION_SERVICE.getTypeName(), null, attributes);
+    parser.startElement(NAMESPACE, JDBC_MAPPING.getTypeName(), null, attributes);
 
-    assertThat(stack.pop()).isInstanceOf(JdbcServiceConfiguration.class);
+    assertThat(stack.pop()).isInstanceOf(RegionMapping.class);
   }
 
   @Test
   public void startElementWithWrongUriDoesNothing() throws Exception {
     JdbcConnectorServiceXmlParser parser = new JdbcConnectorServiceXmlParser();
-    stack.push(cacheCreation);
+    stack.push(regionCreation);
     parser.setStack(stack);
 
-    parser.startElement("wrongNamespace", CONNECTION_SERVICE.getTypeName(), null, attributes);
+    parser.startElement("wrongNamespace", JDBC_MAPPING.getTypeName(), null, attributes);
 
-    assertThat(stack.pop()).isEqualTo(cacheCreation);
+    assertThat(stack.pop()).isEqualTo(regionCreation);
   }
 
   @Test
   public void endElementRemovesJdbcServiceConfiguration() throws Exception {
     JdbcConnectorServiceXmlParser parser = new JdbcConnectorServiceXmlParser();
-    stack.push(cacheCreation);
-    JdbcServiceConfiguration serviceConfiguration = mock(JdbcServiceConfiguration.class);
-    stack.push(serviceConfiguration);
+    stack.push(regionCreation);
+    RegionMapping regionMapping = mock(RegionMapping.class);
+    stack.push(regionMapping);
     parser.setStack(stack);
 
-    parser.endElement(NAMESPACE, CONNECTION_SERVICE.getTypeName(), null);
+    parser.endElement(NAMESPACE, JDBC_MAPPING.getTypeName(), null);
 
-    assertThat(stack.pop()).isEqualTo(cacheCreation);
-    verifyZeroInteractions(serviceConfiguration);
+    assertThat(stack.pop()).isEqualTo(regionCreation);
+    verifyNoMoreInteractions(regionMapping);
   }
 
   @Test
   public void endElementRemovesWithWrongUriDoesNothing() throws Exception {
     JdbcConnectorServiceXmlParser parser = new JdbcConnectorServiceXmlParser();
-    stack.push(cacheCreation);
-    JdbcServiceConfiguration serviceConfiguration = mock(JdbcServiceConfiguration.class);
-    stack.push(serviceConfiguration);
+    stack.push(regionCreation);
+    RegionMapping regionMapping = mock(RegionMapping.class);
+    stack.push(regionMapping);
     parser.setStack(stack);
 
-    parser.endElement("wrongNamespace", CONNECTION_SERVICE.getTypeName(), null);
+    parser.endElement("wrongNamespace", JDBC_MAPPING.getTypeName(), null);
 
-    assertThat(stack.pop()).isEqualTo(serviceConfiguration);
-    verifyZeroInteractions(serviceConfiguration);
+    assertThat(stack.pop()).isEqualTo(regionMapping);
+    verifyNoMoreInteractions(regionMapping);
   }
 }

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.apache.geode.test.dunit.Host.getHost;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,6 +31,7 @@ import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.Scope;
 import org.apache.geode.internal.cache.entries.VersionedThinDiskRegionEntryHeapObjectKey;
 import org.apache.geode.test.dunit.VM;
@@ -38,15 +40,14 @@ import org.apache.geode.test.junit.rules.serializable.SerializableTemporaryFolde
 import org.apache.geode.test.junit.rules.serializable.SerializableTestName;
 
 /**
- * Bug37377 DUNIT Test: The Clear operation during a GII in progress can leave a Entry in the Oplog
+ * Regression test: The Clear operation during a GII in progress can leave a Entry in the Oplog
  * due to a race condition wherein the clearFlag getting set after the entry gets written to the
  * disk, The Test verifies the existence of the scenario.
  *
  * <p>
- * TRAC #37377: Clear operation with GII in progress may result in a deleted entry to be logged in
+ * Bug: Clear operation with GII in progress may result in a deleted entry to be logged in
  * the oplog without accompanying create
  */
-
 public class ClearDuringGiiOplogWithMissingCreateRegressionTest extends CacheTestCase {
 
   private static final int PUT_COUNT = 10000;
@@ -140,21 +141,22 @@ public class ClearDuringGiiOplogWithMissingCreateRegressionTest extends CacheTes
 
     DiskStore diskStore = dsf.create(uniqueName);
 
-    AttributesFactory factory = new AttributesFactory();
-    factory.setScope(Scope.DISTRIBUTED_ACK);
-    factory.setDataPolicy(DataPolicy.PERSISTENT_REPLICATE);
+    InternalRegionFactory factory =
+        getCache().createInternalRegionFactory(RegionShortcut.REPLICATE_PERSISTENT);
     factory.setDiskSynchronous(false);
     factory.setDiskStoreName(diskStore.getName());
 
-    DistributedRegion distRegion = new DistributedRegion(regionName, factory.create(), null,
-        getCache(), new InternalRegionArguments().setDestroyLockFlag(true).setRecreateFlag(false)
-            .setSnapshotInputStream(null).setImageTarget(null));
+    DistributedRegion distRegion =
+        new DistributedRegion(regionName, factory.getCreateAttributes(), null,
+            getCache(),
+            new InternalRegionArguments().setDestroyLockFlag(true).setRecreateFlag(false)
+                .setSnapshotInputStream(null).setImageTarget(null),
+            disabledClock());
 
     distRegion.entries.setEntryFactory(new TestableDiskRegionEntryFactory());
-
-    getCache().createVMRegion(regionName, factory.create(),
-        new InternalRegionArguments().setInternalMetaRegion(distRegion).setDestroyLockFlag(true)
-            .setSnapshotInputStream(null).setImageTarget(null));
+    factory.setInternalMetaRegion(distRegion).setDestroyLockFlag(true)
+        .setSnapshotInputStream(null).setImageTarget(null);
+    factory.create(regionName);
   }
 
   /**

@@ -15,8 +15,10 @@
 
 package org.apache.geode.cache.lucene.internal.xml;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -52,7 +54,6 @@ import org.apache.geode.internal.cache.xmlcache.CacheCreation;
 import org.apache.geode.internal.cache.xmlcache.CacheXmlParser;
 import org.apache.geode.internal.cache.xmlcache.RegionCreation;
 import org.apache.geode.test.junit.categories.LuceneTest;
-import org.apache.geode.util.test.TestUtil;
 
 @Category({LuceneTest.class})
 public class LuceneIndexXmlParserIntegrationJUnitTest {
@@ -182,7 +183,7 @@ public class LuceneIndexXmlParserIntegrationJUnitTest {
       Map<String, String[]> expectedIndexes) {
     for (Extension extension : region.getExtensionPoint().getExtensions()) {
       LuceneIndexCreation index = (LuceneIndexCreation) extension;
-      assertEquals("/region", index.getRegionPath());
+      assertEquals(SEPARATOR + "region", index.getRegionPath());
       assertArrayEquals(expectedIndexes.remove(index.getName()), index.getFieldNames());
     }
     assertEquals(Collections.emptyMap(), expectedIndexes);
@@ -220,9 +221,9 @@ public class LuceneIndexXmlParserIntegrationJUnitTest {
     try {
       LuceneService service = LuceneServiceProvider.get(cache);
       assertEquals(3, service.getAllIndexes().size());
-      LuceneIndex index1 = service.getIndex("index1", "/region");
-      LuceneIndex index2 = service.getIndex("index2", "/region");
-      LuceneIndex index3 = service.getIndex("index3", "/region");
+      LuceneIndex index1 = service.getIndex("index1", SEPARATOR + "region");
+      LuceneIndex index2 = service.getIndex("index2", SEPARATOR + "region");
+      LuceneIndex index3 = service.getIndex("index3", SEPARATOR + "region");
       assertArrayEquals(index1.getFieldNames(), new String[] {"a", "b", "c", "d"});
       assertArrayEquals(index2.getFieldNames(), new String[] {"f", "g"});
       assertArrayEquals(index3.getFieldNames(), new String[] {"h", "i", "j"});
@@ -232,8 +233,8 @@ public class LuceneIndexXmlParserIntegrationJUnitTest {
   }
 
   private String getXmlFileForTest() {
-    return TestUtil.getResourcePath(getClass(),
-        getClass().getSimpleName() + "." + name.getMethodName() + ".cache.xml");
+    return createTempFileFromResource(getClass(),
+        getClass().getSimpleName() + "." + name.getMethodName() + ".cache.xml").getAbsolutePath();
   }
 
 }

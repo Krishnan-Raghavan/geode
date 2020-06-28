@@ -30,16 +30,21 @@ import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.MEMBERSHIP_PORT_RANGE;
 import static org.apache.geode.distributed.ConfigurationProperties.MEMBER_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.NAME;
+import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS;
 import static org.apache.geode.distributed.ConfigurationProperties.SERVER_SSL_ENABLED;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_ENABLED_COMPONENTS;
 import static org.apache.geode.distributed.ConfigurationProperties.START_LOCATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.STATISTIC_ARCHIVE_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.STATISTIC_SAMPLE_RATE;
 import static org.apache.geode.distributed.ConfigurationProperties.STATISTIC_SAMPLING_ENABLED;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -54,6 +59,7 @@ import java.util.Enumeration;
 import java.util.Properties;
 import java.util.logging.Level;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -67,9 +73,10 @@ import org.apache.geode.distributed.Locator;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.Config;
 import org.apache.geode.internal.ConfigSource;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.logging.InternalLogWriter;
+import org.apache.geode.metrics.internal.MetricsService;
 import org.apache.geode.test.junit.categories.MembershipTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Tests the functionality of the {@link InternalDistributedSystem} class. Mostly checks
@@ -79,19 +86,25 @@ import org.apache.geode.test.junit.categories.MembershipTest;
  */
 @Category({MembershipTest.class})
 public class InternalDistributedSystemJUnitTest {
-
   /**
    * A connection to a distributed system created by this test
    */
   private InternalDistributedSystem system;
 
+  private InternalDistributedSystem createSystem(Properties props,
+      MetricsService.Builder metricsSessionBuilder) {
+    this.system = new InternalDistributedSystem.Builder(props, metricsSessionBuilder)
+        .build();
+    return this.system;
+  }
+
   /**
    * Creates a <code>DistributedSystem</code> with the given configuration properties.
    */
-  protected InternalDistributedSystem createSystem(Properties props) {
-    assertFalse(ClusterDistributionManager.isDedicatedAdminVM());
-    this.system = (InternalDistributedSystem) DistributedSystem.connect(props);
-    return this.system;
+  private InternalDistributedSystem createSystem(Properties props) {
+    MetricsService.Builder metricsSessionBuilder = mock(MetricsService.Builder.class);
+    when(metricsSessionBuilder.build(any())).thenReturn(mock(MetricsService.class));
+    return createSystem(props, metricsSessionBuilder);
   }
 
   /**
@@ -142,10 +155,10 @@ public class InternalDistributedSystemJUnitTest {
     assertEquals(DistributionConfig.DEFAULT_MEMBERSHIP_PORT_RANGE[1],
         config.getMembershipPortRange()[1]);
 
-    if (System.getProperty(DistributionConfig.GEMFIRE_PREFIX + "mcast-address") == null) {
+    if (System.getProperty(GeodeGlossary.GEMFIRE_PREFIX + "mcast-address") == null) {
       assertEquals(DistributionConfig.DEFAULT_MCAST_ADDRESS, config.getMcastAddress());
     }
-    if (System.getProperty(DistributionConfig.GEMFIRE_PREFIX + "bind-address") == null) {
+    if (System.getProperty(GeodeGlossary.GEMFIRE_PREFIX + "bind-address") == null) {
       assertEquals(DistributionConfig.DEFAULT_BIND_ADDRESS, config.getBindAddress());
     }
 
@@ -537,21 +550,21 @@ public class InternalDistributedSystemJUnitTest {
         return;
       }
     }
-    File propFile = new File(DistributionConfig.GEMFIRE_PREFIX + "properties");
+    File propFile = new File(GeodeGlossary.GEMFIRE_PREFIX + "properties");
     boolean propFileExisted = propFile.exists();
     File spropFile = new File("gfsecurity.properties");
     boolean spropFileExisted = spropFile.exists();
     try {
-      System.setProperty(DistributionConfig.GEMFIRE_PREFIX + LOG_LEVEL, "finest");
+      System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + LOG_LEVEL, "finest");
       Properties apiProps = new Properties();
       apiProps.setProperty(GROUPS, "foo, bar");
       {
         if (propFileExisted) {
-          propFile.renameTo(new File(DistributionConfig.GEMFIRE_PREFIX + "properties.sav"));
+          propFile.renameTo(new File(GeodeGlossary.GEMFIRE_PREFIX + "properties.sav"));
         }
         Properties fileProps = new Properties();
         fileProps.setProperty("name", "myName");
-        FileWriter fw = new FileWriter(DistributionConfig.GEMFIRE_PREFIX + "properties");
+        FileWriter fw = new FileWriter(GeodeGlossary.GEMFIRE_PREFIX + "properties");
         fileProps.store(fw, null);
         fw.close();
       }
@@ -573,10 +586,10 @@ public class InternalDistributedSystemJUnitTest {
       assertEquals(ConfigSource.Type.SECURE_FILE,
           dci.getAttributeSource(STATISTIC_SAMPLE_RATE).getType());
     } finally {
-      System.clearProperty(DistributionConfig.GEMFIRE_PREFIX + "log-level");
+      System.clearProperty(GeodeGlossary.GEMFIRE_PREFIX + "log-level");
       propFile.delete();
       if (propFileExisted) {
-        new File(DistributionConfig.GEMFIRE_PREFIX + "properties.sav").renameTo(propFile);
+        new File(GeodeGlossary.GEMFIRE_PREFIX + "properties.sav").renameTo(propFile);
       }
       spropFile.delete();
       if (spropFileExisted) {
@@ -643,7 +656,11 @@ public class InternalDistributedSystemJUnitTest {
     props.setProperty(MCAST_PORT, "0");
     props.setProperty(LOCATORS, "");
     Config config1 = new DistributionConfigImpl(props, false);
-    InternalDistributedSystem sys = InternalDistributedSystem.newInstance(config1.toProperties());
+    MetricsService.Builder metricsSessionBuilder = mock(MetricsService.Builder.class);
+    when(metricsSessionBuilder.build(any())).thenReturn(mock(MetricsService.class));
+    InternalDistributedSystem sys =
+        new InternalDistributedSystem.Builder(config1.toProperties(), metricsSessionBuilder)
+            .build();
     try {
 
       props.put(MCAST_PORT, "1");
@@ -678,6 +695,29 @@ public class InternalDistributedSystemJUnitTest {
   }
 
   @Test
+  public void testEmptySecurityAuthTokenProp() throws Exception {
+    Properties props = getCommonProperties();
+    props.setProperty(SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS, "");
+    DistributionConfig config1 = new DistributionConfigImpl(props, false);
+    assertThat(config1.getSecurityAuthTokenEnabledComponents()).hasSize(0);
+    Properties securityProps = config1.getSecurityProps();
+    assertThat(securityProps.getProperty(SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS)).isEqualTo("");
+    assertThat(config1.getSecurityAuthTokenEnabledComponents()).hasSize(0);
+  }
+
+  @Test
+  public void testSecurityAuthTokenProp() throws Exception {
+    Properties props = getCommonProperties();
+    props.setProperty(SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS, "management");
+    DistributionConfig config1 = new DistributionConfigImpl(props, false);
+    assertThat(config1.getSecurityAuthTokenEnabledComponents()).containsExactly("MANAGEMENT");
+    Properties securityProps = config1.getSecurityProps();
+    assertThat(securityProps.getProperty(SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS))
+        .isEqualTo("management");
+    assertThat(config1.getSecurityAuthTokenEnabledComponents()).containsExactly("MANAGEMENT");
+  }
+
+  @Test
   public void testSSLEnabledComponents() {
     Properties props = getCommonProperties();
     props.setProperty(SSL_ENABLED_COMPONENTS, "cluster,server");
@@ -707,8 +747,8 @@ public class InternalDistributedSystemJUnitTest {
     new DistributionConfigImpl(props, false);
     illegalArgumentException.expect(IllegalArgumentException.class);
     illegalArgumentException.expectMessage(
-        LocalizedStrings.AbstractDistributionConfig_SSL_ENABLED_COMPONENTS_SET_INVALID_DEPRECATED_SSL_SET
-            .getRawText());
+        "When using ssl-enabled-components one cannot use any other SSL properties other than "
+            + "cluster-ssl-* or the corresponding aliases");
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -720,8 +760,8 @@ public class InternalDistributedSystemJUnitTest {
 
     illegalArgumentException.expect(IllegalArgumentException.class);
     illegalArgumentException.expectMessage(
-        LocalizedStrings.AbstractDistributionConfig_SSL_ENABLED_COMPONENTS_SET_INVALID_DEPRECATED_SSL_SET
-            .getRawText());
+        "When using ssl-enabled-components one cannot use any other SSL properties other than "
+            + "cluster-ssl-* or the corresponding aliases");
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -733,8 +773,8 @@ public class InternalDistributedSystemJUnitTest {
 
     illegalArgumentException.expect(IllegalArgumentException.class);
     illegalArgumentException.expectMessage(
-        LocalizedStrings.AbstractDistributionConfig_SSL_ENABLED_COMPONENTS_SET_INVALID_DEPRECATED_SSL_SET
-            .getRawText());
+        "When using ssl-enabled-components one cannot use any other SSL properties other than "
+            + "cluster-ssl-* or the corresponding aliases");
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -746,8 +786,47 @@ public class InternalDistributedSystemJUnitTest {
 
     illegalArgumentException.expect(IllegalArgumentException.class);
     illegalArgumentException.expectMessage(
-        LocalizedStrings.AbstractDistributionConfig_SSL_ENABLED_COMPONENTS_SET_INVALID_DEPRECATED_SSL_SET
-            .getRawText());
+        "When using ssl-enabled-components one cannot use any other SSL properties other than "
+            + "cluster-ssl-* or the corresponding aliases");
+  }
+
+  @Test
+  public void usesSessionBuilderToCreateMetricsSession() {
+    MetricsService metricsSession = mock(MetricsService.class);
+    MetricsService.Builder metricsSessionBuilder = mock(MetricsService.Builder.class);
+    when(metricsSessionBuilder.build(any())).thenReturn(metricsSession);
+
+    createSystem(getCommonProperties(), metricsSessionBuilder);
+
+    verify(metricsSessionBuilder).build(system);
+  }
+
+  @Test
+  public void startsMetricsSession() {
+    MetricsService metricsSession = mock(MetricsService.class);
+    MetricsService.Builder metricsSessionBuilder = mock(MetricsService.Builder.class);
+    when(metricsSessionBuilder.build(any())).thenReturn(metricsSession);
+    when(metricsSession.getMeterRegistry()).thenReturn(mock(MeterRegistry.class));
+
+    createSystem(getCommonProperties(), metricsSessionBuilder);
+
+    verify(metricsSession).start();
+  }
+
+  @Test
+  public void getMeterRegistry_returnsMetricsSessionMeterRegistry() {
+    MeterRegistry sessionMeterRegistry = mock(MeterRegistry.class);
+
+    MetricsService metricsSession = mock(MetricsService.class);
+    when(metricsSession.getMeterRegistry()).thenReturn(sessionMeterRegistry);
+
+    MetricsService.Builder metricsSessionBuilder = mock(MetricsService.Builder.class);
+    when(metricsSessionBuilder.build(any())).thenReturn(metricsSession);
+    when(metricsSession.getMeterRegistry()).thenReturn(sessionMeterRegistry);
+
+    createSystem(getCommonProperties(), metricsSessionBuilder);
+
+    assertThat(system.getMeterRegistry()).isSameAs(sessionMeterRegistry);
   }
 
   private Properties getCommonProperties() {

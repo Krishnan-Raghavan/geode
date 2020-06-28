@@ -14,10 +14,14 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static java.lang.Thread.yield;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CONFLATE_EVENTS;
 import static org.apache.geode.distributed.ConfigurationProperties.DELTA_PROPAGATION;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.distributed.internal.DistributionConfig.CLIENT_CONFLATION_PROP_VALUE_OFF;
+import static org.apache.geode.distributed.internal.DistributionConfig.CLIENT_CONFLATION_PROP_VALUE_ON;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -48,12 +52,12 @@ import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.ClientServerObserverAdapter;
 import org.apache.geode.internal.cache.ClientServerObserverHolder;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -166,8 +170,8 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
 
   private static void createPool2(String host, AttributesFactory factory, Integer port) {
     PoolFactory pf = PoolManager.createFactory();
-    pf.addServer(host, port.intValue()).setSubscriptionEnabled(true).setThreadLocalConnections(true)
-        .setReadTimeout(10000).setSocketBufferSize(32768).setPingInterval(1000).setMinConnections(3)
+    pf.addServer(host, port.intValue()).setSubscriptionEnabled(true).setReadTimeout(10000)
+        .setSocketBufferSize(32768).setPingInterval(1000).setMinConnections(3)
         .setSubscriptionRedundancy(-1);
     Pool pool = pf.create("superpoolish" + (poolNameCounter++));
     factory.setPoolName(pool.getName());
@@ -185,12 +189,14 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
     factory.setScope(Scope.LOCAL);
     createPool2(host, factory, port);
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterCreate(EntryEvent event) {
         synchronized (ClientConflationDUnitTest.class) {
           counterCreate1++;
         }
       }
 
+      @Override
       public void afterUpdate(EntryEvent event) {
         // getLogWriter().info("afterUpdate event = " + event, new Exception());
         synchronized (this) {
@@ -202,12 +208,14 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
     cacheClient.createRegion(REGION_NAME1, attrs);
     createPool2(host, factory, port);
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterCreate(EntryEvent event) {
         synchronized (ClientConflationDUnitTest.class) {
           counterCreate2++;
         }
       }
 
+      @Override
       public void afterUpdate(EntryEvent event) {
         synchronized (this) {
           counterUpdate2++;
@@ -272,6 +280,7 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
   public static void setClientServerObserverForBeforeInterestRecovery() {
     PoolImpl.BEFORE_RECOVER_INTEREST_CALLBACK_FLAG = true;
     ClientServerObserverHolder.setInstance(new ClientServerObserverAdapter() {
+      @Override
       public void beforeInterestRecovery() {
         setAllCountersZero();
       }
@@ -307,63 +316,71 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
     final int create2 = 1;
     int update2 = 4;
 
-    if (conflation.equals(DistributionConfig.CLIENT_CONFLATION_PROP_VALUE_ON)) {
+    if (conflation.equals(CLIENT_CONFLATION_PROP_VALUE_ON)) {
       // override
       update2 = 1;
-    } else if (conflation.equals(DistributionConfig.CLIENT_CONFLATION_PROP_VALUE_OFF)) {
+    } else if (conflation.equals(CLIENT_CONFLATION_PROP_VALUE_OFF)) {
       // override
       update1 = 4;
     }
 
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        Thread.yield(); // TODO is this necessary?
+        yield(); // TODO is this necessary?
         return counterCreate1 == create1;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     final int u1 = update1;
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        Thread.yield(); // TODO is this necessary?
+        yield(); // TODO is this necessary?
         return counterUpdate1 == u1;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        Thread.yield(); // TODO is this necessary?
+        yield(); // TODO is this necessary?
         return counterCreate2 == create2;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     final int u2 = update2;
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        Thread.yield(); // TODO is this necessary?
+        yield(); // TODO is this necessary?
         return counterUpdate2 == u2;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
   }
 
   /**
@@ -372,8 +389,8 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void assertValue() {
     try {
-      Region r1 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME1);
-      Region r2 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME2);
+      Region r1 = cacheClient.getRegion(SEPARATOR + REGION_NAME1);
+      Region r2 = cacheClient.getRegion(SEPARATOR + REGION_NAME2);
       assertTrue(r1.containsKey("key-1"));
       assertTrue(r1.get("key-1").equals("55"));
       assertTrue(r2.containsKey("key-1"));
@@ -448,8 +465,8 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void registerInterest() {
     try {
-      Region region1 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME1);
-      Region region2 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME2);
+      Region region1 = cacheClient.getRegion(SEPARATOR + REGION_NAME1);
+      Region region2 = cacheClient.getRegion(SEPARATOR + REGION_NAME2);
       assertTrue(region1 != null);
       assertTrue(region2 != null);
       region1.registerInterest("ALL_KEYS");
@@ -467,8 +484,8 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
 
   public static void unregisterInterest() {
     try {
-      Region region1 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME1);
-      Region region2 = cacheClient.getRegion(Region.SEPARATOR + REGION_NAME2);
+      Region region1 = cacheClient.getRegion(SEPARATOR + REGION_NAME1);
+      Region region2 = cacheClient.getRegion(SEPARATOR + REGION_NAME2);
       region1.unregisterInterest("ALL_KEYS");
       region2.unregisterInterest("ALL_KEYS");
     } catch (CacheWriterException e) {
@@ -483,8 +500,8 @@ public class ClientConflationDUnitTest extends JUnit4DistributedTestCase {
   public static void putEntries() {
     try {
       LogWriterUtils.getLogWriter().info("Putting entries...");
-      Region r1 = cacheFeeder.getRegion(Region.SEPARATOR + REGION_NAME1);
-      Region r2 = cacheFeeder.getRegion(Region.SEPARATOR + REGION_NAME2);
+      Region r1 = cacheFeeder.getRegion(SEPARATOR + REGION_NAME1);
+      Region r2 = cacheFeeder.getRegion(SEPARATOR + REGION_NAME2);
       r1.put("key-1", "11");
       r2.put("key-1", "11");
       r1.put("key-1", "22");

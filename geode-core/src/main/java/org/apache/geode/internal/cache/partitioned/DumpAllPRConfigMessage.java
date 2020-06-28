@@ -22,8 +22,8 @@ import org.apache.geode.cache.CacheException;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A message used for debugging purposes. For example if a test fails it can call
@@ -65,6 +65,7 @@ public class DumpAllPRConfigMessage extends PartitionMessage {
     return true;
   }
 
+  @Override
   public int getDSFID() {
     return PR_DUMP_ALL_PR_CONFIG_MESSAGE;
   }

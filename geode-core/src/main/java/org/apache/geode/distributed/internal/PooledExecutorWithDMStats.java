@@ -25,7 +25,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.geode.SystemFailure;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.monitoring.ThreadsMonitoring;
 
 /**
@@ -92,6 +91,7 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
       final BlockingQueue<Runnable> takeQueue = q;
       final BlockingQueue<Runnable> putQueue = getQueue();
       Runnable r = new Runnable() {
+        @Override
         public void run() {
           try {
             for (;;) {
@@ -142,14 +142,15 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
    * Sets timeout to IDLE_THREAD_TIMEOUT
    */
   public PooledExecutorWithDMStats(BlockingQueue<Runnable> q, int poolSize, PoolStatHelper stats,
-      ThreadFactory tf, ThreadsMonitoring tMonitoring) {
-    /**
+      ThreadFactory tf, ThreadsMonitoring tMonitoring,
+      String systemPropertyPrefix) {
+    /*
      * How long an idle thread will wait, in milliseconds, before it is removed from its thread
      * pool. Default is (30000 * 60) ms (30 minutes). It is not static so it can be set at runtime
      * and pick up different values.
      */
     this(q, poolSize, stats, tf,
-        Integer.getInteger(DistributionConfig.GEMFIRE_PREFIX + "IDLE_THREAD_TIMEOUT", 30000 * 60)
+        Integer.getInteger(systemPropertyPrefix + "IDLE_THREAD_TIMEOUT", 30000 * 60)
             .intValue(),
         tMonitoring);
   }
@@ -158,8 +159,8 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
    * Default timeout with no stats.
    */
   public PooledExecutorWithDMStats(BlockingQueue<Runnable> q, int poolSize, ThreadFactory tf,
-      ThreadsMonitoring tMonitoring) {
-    this(q, poolSize, null/* no stats */, tf, tMonitoring);
+      ThreadsMonitoring tMonitoring, String systemPropertyPrefix) {
+    this(q, poolSize, null/* no stats */, tf, tMonitoring, systemPropertyPrefix);
   }
 
   @Override
@@ -202,20 +203,19 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
    * This handler does a put which will just wait until the queue has room.
    */
   public static class BlockHandler implements RejectedExecutionHandler {
+    @Override
     public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
       if (executor.isShutdown()) {
         throw new RejectedExecutionException(
-            LocalizedStrings.PooledExecutorWithDMStats_EXECUTOR_HAS_BEEN_SHUTDOWN
-                .toLocalizedString());
+            "executor has been shutdown");
       } else {
         try {
           executor.getQueue().put(r);
         } catch (InterruptedException ie) {
           Thread.currentThread().interrupt();
           RejectedExecutionException e = new RejectedExecutionException(
-              LocalizedStrings.PooledExecutorWithDMStats_INTERRUPTED.toLocalizedString());
+              "interrupted");
           e.initCause(ie);
-          throw e;
         }
       }
     }
@@ -227,11 +227,11 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
    * used to consume off the buffer queue and put into the synchronous queue.
    */
   public static class BufferHandler implements RejectedExecutionHandler {
+    @Override
     public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
       if (executor.isShutdown()) {
         throw new RejectedExecutionException(
-            LocalizedStrings.PooledExecutorWithDMStats_EXECUTOR_HAS_BEEN_SHUTDOWN
-                .toLocalizedString());
+            "executor has been shutdown");
       } else {
         try {
           PooledExecutorWithDMStats pool = (PooledExecutorWithDMStats) executor;
@@ -239,7 +239,7 @@ public class PooledExecutorWithDMStats extends ThreadPoolExecutor {
         } catch (InterruptedException ie) {
           Thread.currentThread().interrupt();
           RejectedExecutionException e = new RejectedExecutionException(
-              LocalizedStrings.PooledExecutorWithDMStats_INTERRUPTED.toLocalizedString());
+              "interrupted");
           e.initCause(ie);
           throw e;
         }

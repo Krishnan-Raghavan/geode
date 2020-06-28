@@ -14,11 +14,11 @@
  */
 package org.apache.geode.security;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_ACCESSOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_ACCESSOR_PP;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTHENTICATOR;
+import static org.apache.geode.security.ClientAuthorizationTestCase.OpFlags.CHECK_FAIL;
 import static org.apache.geode.security.SecurityTestUtils.KEYS;
 import static org.apache.geode.security.SecurityTestUtils.NOTAUTHZ_EXCEPTION;
 import static org.apache.geode.security.SecurityTestUtils.NO_EXCEPTION;
@@ -31,6 +31,7 @@ import static org.apache.geode.security.SecurityTestUtils.concatProperties;
 import static org.apache.geode.security.SecurityTestUtils.getCache;
 import static org.apache.geode.security.SecurityTestUtils.getLocalValue;
 import static org.apache.geode.security.SecurityTestUtils.registerExpectedExceptions;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.apache.geode.test.dunit.Assert.assertFalse;
 import static org.apache.geode.test.dunit.Assert.assertNotNull;
@@ -38,8 +39,6 @@ import static org.apache.geode.test.dunit.Assert.assertNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
 import static org.apache.geode.test.dunit.Host.getHost;
-import static org.apache.geode.test.dunit.Wait.waitForCriterion;
-import static org.awaitility.Awaitility.waitAtMost;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -75,7 +74,6 @@ import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.AvailablePort.Keeper;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.entries.AbstractRegionEntry;
 import org.apache.geode.internal.cache.tier.sockets.ServerConnection;
@@ -85,17 +83,23 @@ import org.apache.geode.security.generator.CredentialGenerator;
 import org.apache.geode.security.generator.DummyCredentialGenerator;
 import org.apache.geode.security.generator.XmlAuthzCredentialGenerator;
 import org.apache.geode.security.templates.UsernamePrincipal;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.dunit.rules.ClusterStartupRule;
+import org.apache.geode.test.dunit.rules.DistributedRule;
+import org.apache.geode.test.version.VersionManager;
 
 /**
  * Base class for tests for authorization from client to server. It contains utility functions for
  * the authorization tests from client to server.
  *
  * @since GemFire 5.5
+ *
+ * @deprecated Please use {@link DistributedRule} and Geode User APIs or {@link ClusterStartupRule}
+ *             instead.
  */
 public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestCase {
 
@@ -218,7 +222,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
         authProps.setProperty(SECURITY_CLIENT_ACCESSOR, accessor);
       }
     }
-    if (Version.CURRENT_ORDINAL >= 75) {
+    if (VersionManager.getInstance().getCurrentVersionOrdinal() >= 75) {
       authProps.put(ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER,
           UsernamePrincipal.class.getName());
     }
@@ -248,7 +252,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
   }
 
   protected static Region getSubregion() {
-    return getCache().getRegion(regionName + '/' + SUBREGION_NAME);
+    return getCache().getRegion(regionName + SEPARATOR + SUBREGION_NAME);
   }
 
   private static Region createSubregion(final Region region) {
@@ -284,7 +288,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
       if ((flags & OpFlags.NO_CREATE_SUBREGION) > 0) {
         if ((flags & OpFlags.CHECK_NOREGION) > 0) {
           // Wait for some time for DRF update to come
-          waitAtMost(5, MINUTES).pollInterval(200, MILLISECONDS)
+          await()
               .until(() -> getSubregion() == null);
           subregion = getSubregion();
           assertNull(subregion);
@@ -292,7 +296,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
 
         } else {
           // Wait for some time for DRF update to come
-          waitAtMost(5, MINUTES).pollInterval(200, MILLISECONDS)
+          await()
               .until(() -> getSubregion() != null);
           subregion = getSubregion();
           assertNotNull(subregion);
@@ -307,7 +311,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
 
     } else if ((flags & OpFlags.CHECK_NOREGION) > 0) {
       // Wait for some time for region destroy update to come
-      waitAtMost(5, MINUTES).pollInterval(200, MILLISECONDS)
+      await()
           .until(() -> getRegion() == null);
       region = getRegion();
       assertNull(region);
@@ -408,7 +412,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
                 return this;
               }
             }.init(region);
-            waitAtMost(5, MINUTES).pollInterval(200, MILLISECONDS)
+            await()
                 .until(condition);
 
             value = getLocalValue(region, key);
@@ -611,7 +615,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
             WaitCriterion ev = new WaitCriterion() {
               @Override
               public boolean done() {
-                if ((flags & OpFlags.CHECK_FAIL) > 0) {
+                if ((flags & CHECK_FAIL) > 0) {
                   return 0 == listener.getNumUpdates();
                 } else {
                   return numOps == listener.getNumUpdates();
@@ -623,9 +627,9 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
                 return null;
               }
             };
-            waitForCriterion(ev, 3 * 1000, 200, true);
+            GeodeAwaitility.await().untilAsserted(ev);
 
-            if ((flags & OpFlags.CHECK_FAIL) > 0) {
+            if ((flags & CHECK_FAIL) > 0) {
               assertEquals(0, listener.getNumUpdates());
             } else {
               assertEquals(numOps, listener.getNumUpdates());
@@ -689,7 +693,8 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
           // Assume it has been already initialized
           DynamicRegionFactory drf = DynamicRegionFactory.get();
           Region subregion = drf.createDynamicRegion(regionName, SUBREGION_NAME);
-          assertEquals('/' + regionName + '/' + SUBREGION_NAME, subregion.getFullPath());
+          assertEquals(SEPARATOR + regionName + SEPARATOR + SUBREGION_NAME,
+              subregion.getFullPath());
 
         } else if (op.isRegionDestroy()) {
           breakLoop = true;
@@ -779,9 +784,9 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
       if ((opFlags & OpFlags.USE_OLDCONN) == 0) {
         Properties opCredentials;
         int newRnd = random.nextInt(100) + 1;
-        String currentRegionName = '/' + regionName;
+        String currentRegionName = SEPARATOR + regionName;
         if ((opFlags & OpFlags.USE_SUBREGION) > 0) {
-          currentRegionName += ('/' + SUBREGION_NAME);
+          currentRegionName += (SEPARATOR + SUBREGION_NAME);
         }
 
         String credentialsTypeStr;
@@ -823,6 +828,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
             } catch (NoSuchMethodException e) {
               // running an old version of Geode
             }
+
             SecurityTestUtils.createCacheClientWithDynamicRegion(authInit, clientProps, javaProps,
                 0, setupDynamicRegionFactory, NO_EXCEPTION);
           });
@@ -977,6 +983,7 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
       this.numErrors = 0;
     }
 
+    @Override
     public void onEvent(final CqEvent aCqEvent) {
       Operation op = aCqEvent.getBaseOperation();
       if (op.isCreate()) {
@@ -991,10 +998,12 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
       eventList.add(aCqEvent);
     }
 
+    @Override
     public void onError(final CqEvent aCqEvent) {
       ++this.numErrors;
     }
 
+    @Override
     public void close() {
       this.eventList.clear();
     }
@@ -1386,16 +1395,19 @@ public abstract class ClientAuthorizationTestCase extends JUnit4DistributedTestC
       this.authzGen = authzGen;
     }
 
+    @Override
     public Properties getAllowedCredentials(final OperationCode[] opCodes,
         final String[] regionNames, final int[] keyIndices, final int num) {
       return this.authzGen.getAllowedCredentials(opCodes, regionNames, num);
     }
 
+    @Override
     public Properties getDisallowedCredentials(final OperationCode[] opCodes,
         final String[] regionNames, final int[] keyIndices, final int num) {
       return this.authzGen.getDisallowedCredentials(opCodes, regionNames, num);
     }
 
+    @Override
     public CredentialGenerator getCredentialGenerator() {
       return authzGen.getCredentialGenerator();
     }

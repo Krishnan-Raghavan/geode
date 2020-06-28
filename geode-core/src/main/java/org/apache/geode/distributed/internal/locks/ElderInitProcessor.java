@@ -37,10 +37,10 @@ import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A processor for initializing the ElderState. This may involve sending a message to every existing
@@ -171,46 +171,53 @@ public class ElderInitProcessor extends ReplyProcessor21 {
       ArrayList grantorVersions = new ArrayList(); // grantor versions
       ArrayList grantorSerialNumbers = new ArrayList(); // serial numbers of grantor svcs
       ArrayList nonGrantors = new ArrayList(); // svc names non-grantor for
-      if (dm.waitForElder(this.getSender())) {
-        GrantorRequestProcessor.readyForElderRecovery(dm.getSystem(), this.getSender(), null);
-        DLockService.recoverRmtElder(grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
-        reply(dm, grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
-      } else if (dm.getOtherNormalDistributionManagerIds().isEmpty()) {
-        // Either we're alone (and received a message from an unknown member) or else we haven't
-        // yet processed a view. In either case, we clearly don't have any grantors,
-        // so we return empty lists.
+      try {
+        if (dm.waitForElder(this.getSender())) {
+          GrantorRequestProcessor.readyForElderRecovery(dm.getSystem(), this.getSender(), null);
+          DLockService
+              .recoverRmtElder(grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
+          reply(dm, grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
+        } else if (dm.getOtherNormalDistributionManagerIds().isEmpty()) {
+          // Either we're alone (and received a message from an unknown member) or else we haven't
+          // yet processed a view. In either case, we clearly don't have any grantors,
+          // so we return empty lists.
 
-        logger.info(LogMarker.DLS_MARKER,
-            LocalizedMessage.create(
-                LocalizedStrings.ElderInitProcessor__0_RETURNING_EMPTY_LISTS_BECAUSE_I_KNOW_OF_NO_OTHER_MEMBERS,
-                this));
-        reply(dm, grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
-      } else {
-        logger.info(LogMarker.DLS_MARKER, LocalizedMessage.create(
-            LocalizedStrings.ElderInitProcessor_0_DISREGARDING_REQUEST_FROM_DEPARTED_MEMBER, this));
+          logger.info(LogMarker.DLS_MARKER,
+              "{}: returning empty lists because I know of no other members.",
+              this);
+          reply(dm, grantors, grantorVersions, grantorSerialNumbers, nonGrantors);
+        } else {
+          logger.info(LogMarker.DLS_MARKER, "{}: disregarding request from departed member.", this);
+        }
+      } catch (InterruptedException e) {
+        // shutting down
+        logger.info("Elder initialization interrupted - will not send a reply");
       }
     }
 
+    @Override
     public int getDSFID() {
       return ELDER_INIT_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
     }
 
     @Override
     public String toString() {
       StringBuffer buff = new StringBuffer();
-      buff.append("ElderInitMessage (processorId='").append(this.processorId).append(")");
+      buff.append("ElderInitMessage (processorId=").append(this.processorId).append(")");
       return buff.toString();
     }
   }
@@ -255,8 +262,9 @@ public class ElderInitProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.grantors = DataSerializer.readArrayList(in);
       this.grantorVersions = DataSerializer.readArrayList(in);
       this.grantorSerialNumbers = DataSerializer.readArrayList(in);
@@ -264,8 +272,9 @@ public class ElderInitProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeArrayList(this.grantors, out);
       DataSerializer.writeArrayList(this.grantorVersions, out);
       DataSerializer.writeArrayList(this.grantorSerialNumbers, out);

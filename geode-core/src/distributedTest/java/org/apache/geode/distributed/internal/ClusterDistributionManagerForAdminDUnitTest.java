@@ -14,12 +14,10 @@
  */
 package org.apache.geode.distributed.internal;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.STATISTIC_SAMPLING_ENABLED;
-import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.net.InetAddress;
 import java.util.Set;
@@ -48,7 +46,8 @@ import org.apache.geode.internal.admin.GfManagerAgentConfig;
 import org.apache.geode.internal.admin.GfManagerAgentFactory;
 import org.apache.geode.internal.admin.StatResource;
 import org.apache.geode.internal.admin.remote.RemoteTransportConfig;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.logging.InternalLogWriter;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
@@ -86,9 +85,10 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
     this.agent = GfManagerAgentFactory.getManagerAgent(
         new GfManagerAgentConfig(null, transport, getLogWriter(), Alert.SEVERE, this, null));
 
-    await().atMost(1, MINUTES).untilAsserted(() -> assertThat(agent.isConnected()).isTrue());
+    await().untilAsserted(() -> assertThat(agent.isConnected()).isTrue());
   }
 
+  @Override
   @After
   public void preTearDownCacheTestCase() throws Exception {
     try {
@@ -117,7 +117,7 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
 
   @Test
   public void testApplications() throws Exception {
-    await().atMost(1, MINUTES)
+    await()
         .untilAsserted(() -> assertThat(agent.listApplications().length).isGreaterThanOrEqualTo(4));
 
     ApplicationVM[] applications = agent.listApplications();
@@ -170,7 +170,7 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
       Region root = roots[0];
       assertThat(root).isNotNull();
       assertThat(root.getName()).isEqualTo("root");
-      assertThat(root.getFullPath()).isEqualTo("/root");
+      assertThat(root.getFullPath()).isEqualTo(SEPARATOR + "root");
 
       RegionAttributes attributes = root.getAttributes();
       assertThat(attributes).isNotNull();
@@ -224,8 +224,9 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
         Region rootRegion = root;
         subRegion.destroyRegion();
 
-        await().atMost(30, SECONDS)
-            .untilAsserted(() -> assertThat(rootRegion.subregions(false)).hasSize(expectedSize));
+        await()
+            .untilAsserted(
+                () -> assertThat(rootRegion.subregions(false).size()).isEqualTo(expectedSize));
       }
     }
   }
@@ -236,17 +237,16 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
   }
 
   private void populateCache() {
-    AttributesFactory attributesFactory = new AttributesFactory();
-    attributesFactory.setScope(Scope.DISTRIBUTED_NO_ACK);
-
-    RegionAttributes regionAttributes = attributesFactory.create();
-
     for (int i = 0; i < Host.getHostCount(); i++) {
       Host host = Host.getHost(i);
 
       for (int j = 0; j < host.getVMCount(); j++) {
         VM vm = host.getVM(j);
         vm.invoke(() -> {
+          AttributesFactory attributesFactory = new AttributesFactory();
+          attributesFactory.setScope(Scope.DISTRIBUTED_NO_ACK);
+
+          RegionAttributes regionAttributes = attributesFactory.create();
           createRegion("cdm-testSubRegion1", regionAttributes);
           createRegion("cdm-testSubRegion2", regionAttributes);
           createRegion("cdm-testSubRegion3", regionAttributes);
@@ -309,5 +309,9 @@ public class ClusterDistributionManagerForAdminDUnitTest extends CacheTestCase
   private InternalDistributedMember remoteGetJavaGroupsIdForVM() {
     InternalDistributedSystem system = InternalDistributedSystem.getAnyInstance();
     return system.getDistributionManager().getDistributionManagerId();
+  }
+
+  private InternalLogWriter getLogWriter() {
+    return (InternalLogWriter) getSystem().getLogWriter();
   }
 }

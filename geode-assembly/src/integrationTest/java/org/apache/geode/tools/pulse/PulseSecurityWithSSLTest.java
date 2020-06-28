@@ -12,7 +12,6 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-
 package org.apache.geode.tools.pulse;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CLUSTER_SSL_ENABLED;
@@ -37,10 +36,11 @@ import static org.apache.geode.distributed.ConfigurationProperties.SSL_KEYSTORE_
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_PROTOCOLS;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE_PASSWORD;
-import static org.apache.geode.util.test.TestUtil.getResourcePath;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 import com.jayway.jsonpath.JsonPath;
@@ -50,19 +50,19 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.security.SecurableCommunicationChannels;
-import org.apache.geode.security.SimpleTestSecurityManager;
 import org.apache.geode.test.junit.categories.PulseTest;
 import org.apache.geode.test.junit.categories.SecurityTest;
 import org.apache.geode.test.junit.rules.GeodeHttpClientRule;
 import org.apache.geode.test.junit.rules.LocatorStarterRule;
 
-
 @Category({SecurityTest.class, PulseTest.class})
 public class PulseSecurityWithSSLTest {
 
-  private static File jks =
-      new File(getResourcePath(PulseSecurityWithSSLTest.class, "/ssl/trusted.keystore"));
+  private static final File jks =
+      new File(createTempFileFromResource(PulseSecurityWithSSLTest.class, "/ssl/trusted.keystore")
+          .getAbsolutePath());
 
   @Rule
   public LocatorStarterRule locator = new LocatorStarterRule().withHttpService();
@@ -81,7 +81,7 @@ public class PulseSecurityWithSSLTest {
     securityProps.setProperty(SSL_PROTOCOLS, "TLSv1.2");
     securityProps.setProperty(SSL_CIPHERS, "any");
 
-    locator.withSecurityManager(SimpleTestSecurityManager.class).withProperties(securityProps)
+    locator.withSecurityManager(SimpleSecurityManager.class).withProperties(securityProps)
         .startLocator();
 
     HttpResponse response = client.loginToPulse("data", "wrongPassword");
@@ -99,6 +99,7 @@ public class PulseSecurityWithSSLTest {
     assertThat(JsonPath.parse(body).read("$.SystemAlerts.connectedFlag", Boolean.class)).isTrue();
   }
 
+  @SuppressWarnings("deprecation")
   @Test
   public void loginWithDeprecatedSSLOptions() throws Exception {
     Properties securityProps = new Properties();
@@ -120,7 +121,7 @@ public class PulseSecurityWithSSLTest {
     securityProps.setProperty(HTTP_SERVICE_SSL_TRUSTSTORE, jks.getCanonicalPath());
     securityProps.setProperty(HTTP_SERVICE_SSL_TRUSTSTORE_PASSWORD, "password");
 
-    locator.withSecurityManager(SimpleTestSecurityManager.class).withProperties(securityProps)
+    locator.withSecurityManager(SimpleSecurityManager.class).withProperties(securityProps)
         .startLocator();
 
     client.loginToPulseAndVerify("cluster", "cluster");
@@ -128,9 +129,8 @@ public class PulseSecurityWithSSLTest {
     // Ensure that the backend JMX connection is working too
     HttpResponse response = client.post("/pulse/pulseUpdate", "pulseData",
         "{\"SystemAlerts\": {\"pageNumber\":\"1\"},\"ClusterDetails\":{}}");
-    String body = IOUtils.toString(response.getEntity().getContent(), "UTF-8");
+    String body = IOUtils.toString(response.getEntity().getContent(), StandardCharsets.UTF_8);
 
     assertThat(JsonPath.parse(body).read("$.SystemAlerts.connectedFlag", Boolean.class)).isTrue();
   }
-
 }

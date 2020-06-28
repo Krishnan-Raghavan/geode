@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -39,8 +40,8 @@ import org.apache.geode.cache.query.internal.IndexTrackingQueryObserver;
 import org.apache.geode.cache.query.internal.IndexTrackingQueryObserver.IndexInfo;
 import org.apache.geode.cache.query.internal.QueryObserver;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 @Category({OQLIndexTest.class})
 public class IndexTrackingQueryObserverJUnitTest {
@@ -49,13 +50,13 @@ public class IndexTrackingQueryObserverJUnitTest {
   static Index keyIndex1;
   static IndexInfo regionMap;
 
-  private static final String queryStr = "select * from /portfolio where ID > 0";
+  private static final String queryStr = "select * from " + SEPARATOR + "portfolio where ID > 0";
   public static final int NUM_BKTS = 20;
   public static final String INDEX_NAME = "keyIndex1";
 
   @Before
   public void setUp() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
     CacheUtils.startCache();
     QueryObserver observer = QueryObserverHolder.setInstance(new IndexTrackingQueryObserver());
   }
@@ -69,7 +70,7 @@ public class IndexTrackingQueryObserverJUnitTest {
   @Test
   public void testIndexInfoOnPartitionedRegion() throws Exception {
     // Query VERBOSE has to be true for the test
-    assertEquals("true", System.getProperty(DistributionConfig.GEMFIRE_PREFIX + "Query.VERBOSE"));
+    assertEquals("true", System.getProperty(GeodeGlossary.GEMFIRE_PREFIX + "Query.VERBOSE"));
 
     // Create Partition Region
     PartitionAttributesFactory paf = new PartitionAttributesFactory();
@@ -87,7 +88,8 @@ public class IndexTrackingQueryObserverJUnitTest {
     qs = CacheUtils.getQueryService();
 
     keyIndex1 =
-        (IndexProtocol) qs.createIndex(INDEX_NAME, IndexType.FUNCTIONAL, "ID", "/portfolio ");
+        (IndexProtocol) qs.createIndex(INDEX_NAME, IndexType.FUNCTIONAL, "ID",
+            SEPARATOR + "portfolio ");
 
     assertTrue(keyIndex1 instanceof PartitionedIndex);
 
@@ -119,7 +121,7 @@ public class IndexTrackingQueryObserverJUnitTest {
   @Test
   public void testIndexInfoOnLocalRegion() throws Exception {
     // Query VERBOSE has to be true for the test
-    assertEquals("true", System.getProperty(DistributionConfig.GEMFIRE_PREFIX + "Query.VERBOSE"));
+    assertEquals("true", System.getProperty(GeodeGlossary.GEMFIRE_PREFIX + "Query.VERBOSE"));
 
     // Create Partition Region
     AttributesFactory af = new AttributesFactory();
@@ -135,7 +137,8 @@ public class IndexTrackingQueryObserverJUnitTest {
     qs = CacheUtils.getQueryService();
 
     keyIndex1 =
-        (IndexProtocol) qs.createIndex(INDEX_NAME, IndexType.FUNCTIONAL, "ID", "/portfolio ");
+        (IndexProtocol) qs.createIndex(INDEX_NAME, IndexType.FUNCTIONAL, "ID",
+            SEPARATOR + "portfolio ");
 
     assertTrue(keyIndex1 instanceof CompactRangeIndex);
 

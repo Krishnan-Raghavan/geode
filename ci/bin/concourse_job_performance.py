@@ -20,6 +20,7 @@ import itertools
 import json
 import logging
 import multiprocessing
+import os
 import re
 import threading
 from multiprocessing.dummy import Pool
@@ -28,9 +29,12 @@ from typing import List
 from urllib.parse import urlparse
 
 import requests
+# from sseclient-py
 import sseclient
+# from ansicolors
 from colors import color
 from tqdm import tqdm
+import yaml
 
 TEST_FAILURE_REGEX = re.compile('(\S+)\s*>\s*(\S+).*FAILED')
 
@@ -49,19 +53,33 @@ class SingleFailure:
         return f"Failure({self.class_name}, {self.method}, ({self.build_json['name']} ...))"
 
 
-def main(url, team, pipeline, job, max_fetch_count, build_count, authorization_cookie, threaded):
-    builds = get_builds_summary_sheet(url, team, pipeline, job, max_fetch_count, authorization_cookie)
+def main(url, team, pipeline, job, number_of_builds, authorization_cookie, threaded):
 
-    build_to_examine = get_builds_to_examine(builds, build_count)
-    expected_failed_builds = [int(b['name']) for b in build_to_examine if b['status'] == 'failed']
-    expected_failed_builds_count = len(expected_failed_builds)
-    logging.info(f"Expecting {expected_failed_builds_count} runs to have failure strings: {expected_failed_builds}")
+    cookie = get_cookie(url)
+    authorization_cookie = {u'skymarshal_auth0': cookie}
+    builds = get_builds_summary_sheet(url, team, pipeline, job, number_of_builds+10, authorization_cookie)
+
+    build_to_examine = get_builds_to_examine(builds, number_of_builds)
+    completed_builds = [int(b['name']) for b in build_to_examine if b['status'] in ['failed', 'succeeded']]
+    completed_builds_count = len(completed_builds)
+    logging.info(f"Expecting {completed_builds_count} runs to have failure strings: {completed_builds}")
 
     long_list_of_failures = aggregate_failure_information(authorization_cookie, build_to_examine, threaded, url)
 
     failure_url_base = f"{url}/teams/{team}/pipelines/{pipeline}/jobs/{job}/builds/"
 
-    print_results(len(build_to_examine), expected_failed_builds, long_list_of_failures, url, failure_url_base)
+    print_results(len(build_to_examine), completed_builds, long_list_of_failures, url, failure_url_base)
+
+
+def get_cookie(url):
+    home = os.environ['HOME']
+    data = yaml.load(open(f"{home}/.flyrc"))
+    for target in data["targets"]:
+        api = data["targets"][target]["api"]
+        if api == url:
+            cookie = "\"Bearer " + data["targets"][target]["token"]["value"] + "\""
+            return cookie
+    return ""
 
 
 def aggregate_failure_information(authorization_cookie, build_to_examine, threaded, url) -> List[SingleFailure]:
@@ -74,14 +92,16 @@ def aggregate_failure_information(authorization_cookie, build_to_examine, thread
     if threaded:
         # Number of CPUs is not necessarily number of CPUs available.
         # Since it's a minor thing, we'll just ask for half.
-        n_cpus = multiprocessing.cpu_count() // 2 + 1
+        n_cpus = multiprocessing.cpu_count() - 2
         logging.info(f"Using {n_cpus} threads to make queries.")
 
         pool = Pool(n_cpus)
         list_of_list_of_failures = pool.map(build_examiner, build_to_examine)
     else:
         list_of_list_of_failures = [build_examiner(build) for build in build_to_examine]
-    return list(itertools.chain(*list_of_list_of_failures))
+
+    data = list(itertools.chain(*list_of_list_of_failures))
+    return data
 
 
 def examine_build_and_update_progress(authorization_cookie, build, url, progress_bar) -> List[SingleFailure]:
@@ -165,7 +185,6 @@ def print_failures(completed, expected_failed_builds, long_list_of_failures, url
                                                failure_url_base)
     print_failures_in_classes_that_share_method_names(completed, long_list_of_failures)
     print_class_and_test_failures_with_links(completed, long_list_of_failures, url)
-
     # Then highlight any build runs that failed hard / timed out.
 
 
@@ -207,23 +226,27 @@ def print_class_and_test_failures_with_links(completed, long_list_of_failures, u
         failed_tests = set(failure.method for failure in this_class_failures)
         class_build_failures_count = sum(1 for _ in {failure.build_json['name'] for failure in this_class_failures})
 
-        print(success_rate_string(this_class_name, class_build_failures_count, completed))
+        print(os.linesep + success_rate_string(this_class_name, class_build_failures_count, completed) + os.linesep)
 
         for this_test_method_name in failed_tests:
             this_test_method_failures = [failure for failure in this_class_failures
                                          if failure.method == this_test_method_name]
-            test_build_failures_count = sum(
-                1 for _ in {failure.build_json['name'] for failure in this_test_method_failures})
-            print(" | ", success_rate_string("." + this_test_method_name, test_build_failures_count, completed))
 
             for this_failure in this_test_method_failures:
                 build = this_failure.build_json
                 failed_build_url = (f"{url}/teams/{build['team_name']}/pipelines/"
                                     f"{build['pipeline_name']}/jobs/{build['job_name']}/builds/{build['name']}")
 
-                print(" | ", " | ",
-                      color(f"Failed build {build['name']:3s} ", fg='red'),
-                      color(f"at {failed_build_url}", fg='magenta', style='bold'))
+                print("         " + this_test_method_name + "       " + failed_build_url)
+
+
+def print_list_of_failures(long_list_of_failures, url):
+    print(os.linesep * 3)
+    for this_failure in long_list_of_failures:
+        build = this_failure.build_json
+        failed_build_url = (f"{url}/teams/{build['team_name']}/pipelines/"
+                                 f"{build['pipeline_name']}/jobs/{build['job_name']}/builds/{build['name']}")
+        print(this_failure.class_name+"."+this_failure.method+", "+failed_build_url)
 
 
 def success_rate_string(identifier, failure_count, total_count):
@@ -240,7 +263,7 @@ def print_success_rate_and_expectation_warning(completed, expected_failed_builds
     # "Build failures" will refer to jobs that went red
     # "Test failures" will refer to jobs whose output matched our parsing regex
 
-    build_failure_count = len(expected_failed_builds)
+    build_review_count = len(expected_failed_builds)
     test_failure_set = {int(failure.build_json['name']) for failure in long_list_of_test_failures}
     test_failure_count = sum(1 for _ in test_failure_set)
 
@@ -256,18 +279,15 @@ def print_success_rate_and_expectation_warning(completed, expected_failed_builds
           color(f"{rate:.5f}% ({completed - test_failure_count} of {completed})", fg='blue'))
 
     if build_failure_not_test_failure:
-        print(color(f'>>>>> {build_failure_count} jobs "went red," '
-                    f'but only {test_failure_count} were detected test failures. <<<<<',
+        print(color(f'>>>>> Analyzing {build_review_count} jobs, '
+                    f'of which {test_failure_count} were detected test failures. <<<<<',
                     fg='red', style='bold'))
-        print(f"Please manually inspect the following builds:")
-        for build_failure in build_failure_not_test_failure:
-            print(f"  {failure_url_base}/{build_failure}")
     if test_failure_not_build_failure:
         print(color(f'>>>>> OH NO!  A test failure was detected, but the job "went green" anyway!! <<<<',
                     fg='red', style='bold'))
         print(f"Please manually inspect the following builds:")
         for test_failure in test_failure_not_build_failure:
-            print(f"  {failure_url_base}/{test_failure}")
+            print(f"  {failure_url_base}{test_failure}")
     print(YELLOW_STARS_SEPARATOR)
     print()
 
@@ -282,22 +302,31 @@ def get_builds_to_examine(builds, build_count):
     succeeded, failed, aborted, errored, pending, started = sieve(builds, lambda b: b['status'], *statuses)
     completed_builds = succeeded + failed
     completed_builds.sort(key=itemgetter('id'), reverse=True)
-    builds_to_analyze = completed_builds[:build_count] if build_count else completed_builds
+    if build_count == 0:
+        count_of_builds_to_return = len(completed_builds)
+    else:
+        count_of_builds_to_return = build_count
+
+    builds_to_analyze = completed_builds[:count_of_builds_to_return] if count_of_builds_to_return else completed_builds
+
+    if len(builds_to_analyze) == 0:
+        logging.info("No completed builds to examine")
+    elif len(builds_to_analyze) == 1:
+        logging.info(f"1 completed build to analyze - {builds_to_analyze[0]['name']}")
+    else:
+        first_build = builds_to_analyze[-1]['name']
+        last_build = builds_to_analyze[0]['name']
+        logging.info(f"{len(started)} completed builds to examine, ranging "
+                     f"{first_build} - {last_build}: {list_and_sort_by_name(builds_to_analyze)}")
+
     logging.debug(f"{len(aborted)} aborted builds in examination range: {list_and_sort_by_name(aborted)}")
     logging.debug(f"{len(errored)} errored builds in examination range: {list_and_sort_by_name(errored)}")
     logging.debug(f"{len(pending)} pending builds in examination range: {list_and_sort_by_name(pending)}")
     logging.debug(f"{len(started)} started builds in examination range: {list_and_sort_by_name(started)}")
+    returnable = (len(failed) + len(errored) + len(succeeded) + len(pending) + len(aborted))
+    if returnable == 0:
+        raise IOError(f"There are 0 completed jobs ")
 
-    if build_count and len(completed_builds) < build_count:
-        raise RuntimeError(
-            "The build report returned the {} most recent builds, with only {} of these completed.  "
-            "This cannot satisfy the desired target of {} jobs to analyze.".format(
-                len(builds), len(completed_builds), build_count))
-
-    first_build = builds_to_analyze[-1]['name']
-    last_build = builds_to_analyze[0]['name']
-    logging.info(f"{len(started)} completed builds to examine, ranging "
-                 f"{first_build} - {last_build}: {list_and_sort_by_name(builds_to_analyze)}")
     failures_in_analysis_range = list_and_sort_by_name([build for build in builds_to_analyze
                                                         if build['status'] == 'failed'])
     logging.info(f"{len(failures_in_analysis_range)} expected failures in analysis range: {failures_in_analysis_range}")
@@ -308,19 +337,20 @@ def list_and_sort_by_name(builds):
     return sorted([int(b['name']) for b in builds], reverse=True)
 
 
-def get_builds_summary_sheet(url, team, pipeline, job, max_fetch_count, authorization_cookie):
+def get_builds_summary_sheet(url, team, pipeline, job,  number_of_builds, authorization_cookie):
     session = requests.Session()
-    if max_fetch_count == 0:
+    if number_of_builds == 0:
         # Snoop the top result's name to discover the number of jobs that have been queued.
-        snoop = get_builds_summary_sheet(url, team, pipeline, job, 1, authorization_cookie)
-        max_fetch_count = int(snoop[0]['name'])
-        logging.info(f"Snooped: fetching a full history of {max_fetch_count} builds.")
+        snoop = get_builds_summary_sheet(url, team, pipeline, job,  1, authorization_cookie)
+        number_of_builds = int(snoop[0]['name'])
+        logging.info(f"Snooped: fetching a full history of {number_of_builds} builds.")
 
     builds_url = '{}/api/v1/teams/{}/pipelines/{}/jobs/{}/builds'.format(url, team, pipeline, job)
-    build_params = {'limit': max_fetch_count}
+    build_params = {'limit': number_of_builds}
+    logging.info(f"fetching the last {number_of_builds} builds.")
     build_response = session.get(builds_url, cookies=authorization_cookie, params=build_params)
     if build_response.status_code != 200:
-        raise IOError(f"Initial build summary query returned status code {build_response.status_code}.")
+        raise IOError(f"Initial build summary query to {builds_url} returned status code {build_response.status_code}.")
     return build_response.json()
 
 
@@ -349,28 +379,23 @@ if __name__ == '__main__':
     parser.add_argument('job',
                         help="Name of job.",
                         type=str)
-    parser.add_argument('n',
-                        help="Number of completed jobs to examine.  Enter 0 to examine all jobs fetched.",
+    parser.add_argument('--number-of-builds',
+                        help="The number of builds to fetch.  [Default=0] aka All.",
                         type=int,
                         nargs='?',
-                        default=50)
+                        default=0)
     # Optional args
     parser.add_argument('--team',
                         help='Team to which the provided pipeline belongs.  [Default="main"]',
                         type=str,
                         nargs='?',
                         default="main")
-    parser.add_argument('--initial-fetch',
-                        help="Limit size of initial build-status page.  [Default=100]",
-                        type=int,
-                        nargs='?',
-                        default=100)
     parser.add_argument('--cookie-token',
                         help='If authentication is required (e.g., team="staging"), '
-                             "provide your ATC-Authorization cookie's token here.  "
+                             "provide your skymarshal_auth0 cookie's token here.  "
                              "Unfortunately, this is currently done by logging in via a web browser, "
                              "inspecting your cookies, and pasting it here.",
-                        type=lambda t: {u'ATC-Authorization':
+                        type=lambda t: {u'skymarshal_auth0':
                                         '"Bearer {}"'.format(t if not t.startswith("Bearer ") else t[7:])})
     parser.add_argument('--threaded',
                         help="Use multiple cores to hasten api requests.",
@@ -390,13 +415,14 @@ if __name__ == '__main__':
         print(color("Url {} seems to be invalid. Please check your arguments.".format(args.url), fg='red'))
         exit(1)
 
-    # Examination limit should be less than fetch limit, or either/both should be set to 0 for full analysis
-    if args.initial_fetch and args.n and args.initial_fetch < args.n:
-        raise AssertionError("Fetching fewer jobs than you will analyze is pathological.")
+    # # Examination limit should be less than fetch limit, or either/both should be set to 0 for full analysis
+    # if args.starting_build and args.n and args.starting_build < args.number_of_builds:
+    #     raise AssertionError("Fetching fewer jobs than you will analyze is pathological.")
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
     elif args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
-    main(args.url, args.team, args.pipeline, args.job, args.initial_fetch, args.n, args.cookie_token, args.threaded)
+    main(args.url, args.team, args.pipeline, args.job, args.number_of_builds, args.cookie_token,
+         args.threaded)

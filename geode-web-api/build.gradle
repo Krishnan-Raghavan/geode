@@ -15,64 +15,116 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
 apply plugin: 'war'
 
+apply from: "${project.projectDir}/../gradle/publish-war.gradle"
+apply from: "${project.projectDir}/../gradle/warnings.gradle"
+
+jar.enabled = false
+
+configurations {
+  war {}
+}
+
 dependencies {
+  compile(platform(project(':boms:geode-all-bom'))){
+    exclude module: "jackson-annotations"
+  }
 
-  compileOnly project(':geode-core')
+  compileOnly(project(':geode-core'))
+  compileOnly(project(':geode-logging'))
+  compileOnly(project(':geode-membership'))
+  compileOnly(project(':geode-serialization'))
 
-  compileOnly 'javax.servlet:javax.servlet-api:' + project.'javax.servlet-api.version'
+  compileOnly('javax.servlet:javax.servlet-api')
 
-  compile 'commons-lang:commons-lang:' + project.'commons-lang.version'
-  compile('commons-fileupload:commons-fileupload:' + project.'commons-fileupload.version') {
+  implementation('org.apache.commons:commons-lang3')
+  implementation('commons-fileupload:commons-fileupload') {
     exclude module: 'commons-io'
   }
-  compile 'com.fasterxml.jackson.core:jackson-annotations:' + project.'jackson.version'
-  compile 'com.fasterxml.jackson.core:jackson-core:' + project.'jackson.version'
-  compile 'com.fasterxml.jackson.core:jackson-databind:' + project.'jackson.version'
-  compile 'com.fasterxml.jackson.module:jackson-module-scala_2.10:' + project.'jackson-module-scala_2.10.version'
-  compile('io.springfox:springfox-swagger2:' + project.'springfox.version') {
+  // jackson-annotations must be accessed from the geode classloader and not the webapp
+  compileOnly('com.fasterxml.jackson.core:jackson-annotations')
+  implementation('com.fasterxml.jackson.core:jackson-core')
+  implementation('com.fasterxml.jackson.core:jackson-databind'){
+    exclude module: 'jackson-annotations'
+  }
+
+  compileOnly('com.fasterxml.jackson.module:jackson-module-scala_2.10')
+  compileOnly('io.swagger:swagger-annotations')
+
+  implementation('io.springfox:springfox-swagger2') {
+    exclude module: 'slf4j-api'
+    exclude module: 'jackson-annotations'
+    exclude module: 'swagger-annotations'
+  }
+
+  implementation('io.springfox:springfox-swagger-ui') {
     exclude module: 'slf4j-api'
   }
-  compile('io.springfox:springfox-swagger-ui:' + project.'springfox.version') {
-    exclude module: 'slf4j-api'
-  }
-  compile 'org.springframework:spring-beans:' + project.'springframework.version'
-  compile 'org.springframework.security:spring-security-core:' + project.'spring-security.version'
-  compile 'org.springframework.security:spring-security-web:' + project.'spring-security.version'
-  compile 'org.springframework.security:spring-security-config:' + project.'spring-security.version'
-  compile 'org.springframework:spring-web:' + project.'springframework.version'
-  compile 'org.springframework:spring-webmvc:' + project.'springframework.version'
-  compile('org.springframework.hateoas:spring-hateoas:' + project.'spring-hateoas.version') {
+
+  implementation('org.springframework:spring-beans')
+  implementation('org.springframework.security:spring-security-core')
+  implementation('org.springframework.security:spring-security-web')
+  implementation('org.springframework.security:spring-security-config')
+  implementation('org.springframework:spring-web')
+  implementation('org.springframework:spring-webmvc')
+  implementation('org.springframework.hateoas:spring-hateoas') {
     exclude module: 'aopalliance'
     exclude module: 'commons-logging'
     exclude module: 'objenesis'
     exclude module: 'slf4j-api'
     exclude module: 'spring-core'
+    exclude module: 'spring-plugin-core'
   }
-  compile('org.springframework:spring-aspects:' + project.'springframework.version') {
+  implementation('org.springframework:spring-aspects') {
     exclude module: 'aopalliance'
     exclude module: 'aspectjweaver'
   }
-  compile('org.springframework:spring-oxm:' + project.'springframework.version') {
+  implementation('org.springframework:spring-oxm') {
     exclude module: 'commons-logging'
     exclude module: 'spring-core'
     exclude module: 'spring-beans'
   }
+  compileOnly('org.apache.logging.log4j:log4j-api')
 
 
-  testCompile project(':geode-junit')
-  testCompile project(':geode-core')
-  testCompile 'javax.servlet:javax.servlet-api:' + project.'javax.servlet-api.version'
+  testImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  testImplementation(project(':geode-core'))
+  testImplementation('javax.servlet:javax.servlet-api')
 
+  integrationTestImplementation('org.springframework:spring-test')
+  integrationTestImplementation('org.springframework.security:spring-security-test')
 
-  integrationTestCompile project(":geode-junit")
+  integrationTestImplementation(project(':geode-core'))
+  integrationTestImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-dunit')) {
+    exclude module: 'geode-core'
+  }
+}
+
+sourceSets {
+  integrationTest {
+    resources {
+      srcDir "${projectDir}/src/main/webapp"
+    }
+  }
 }
 
 war {
+  enabled = true
   rootSpec.exclude("**/*commons-logging-*.jar")
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
   // this shouldn't be necessary but if it's not specified we're missing some of the jars
   // from the runtime classpath
   classpath configurations.runtimeClasspath
+}
+
+artifacts {
+  war tasks.war
 }

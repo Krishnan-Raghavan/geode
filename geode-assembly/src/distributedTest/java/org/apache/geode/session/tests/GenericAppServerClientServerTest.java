@@ -14,24 +14,22 @@
  */
 package org.apache.geode.session.tests;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.util.concurrent.TimeUnit;
 
 import javax.servlet.http.HttpSession;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.Region;
-import org.apache.geode.cache.server.CacheServer;
+import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.modules.session.functions.GetSessionCount;
-import org.apache.geode.test.dunit.Host;
-import org.apache.geode.test.dunit.VM;
+import org.apache.geode.test.dunit.rules.ClusterStartupRule;
+import org.apache.geode.test.dunit.rules.MemberVM;
 
 /**
  * Extends the {@link CargoTestBase} class to support client server tests of generic app servers
@@ -39,25 +37,11 @@ import org.apache.geode.test.dunit.VM;
  * Currently being used to test Jetty 9 containers in client server mode.
  */
 public abstract class GenericAppServerClientServerTest extends CargoTestBase {
+  protected MemberVM serverVM;
 
-  protected VM serverVM;
-
-  /**
-   * Starts the server for the client containers to connect to while testing.
-   */
   @Before
-  public void startServers() throws InterruptedException {
-    // Setup host
-    Host host = Host.getHost(0);
-    serverVM = host.getVM(0);
-    serverVM.invoke(() -> {
-      Cache cache = getCache();
-      // Add cache server
-      CacheServer server = cache.addCacheServer();
-      server.setPort(0);
-      // Start the server in this VM
-      server.start();
-    });
+  public void startServer() {
+    serverVM = clusterStartupRule.startServerVM(1, locatorVM.getPort());
   }
 
   /**
@@ -65,7 +49,7 @@ public abstract class GenericAppServerClientServerTest extends CargoTestBase {
    */
   @Test
   public void shouldNotLeaveNativeSessionInContainer()
-      throws IOException, URISyntaxException, InterruptedException {
+      throws Exception {
     manager.startAllInactiveContainers();
 
     String key = "value_testSessionExpiration";
@@ -92,11 +76,10 @@ public abstract class GenericAppServerClientServerTest extends CargoTestBase {
 
   @Override
   protected void verifySessionIsRemoved(String key) throws IOException, URISyntaxException {
-    serverVM.invoke(() -> {
-      Cache cache = getCache();
+    serverVM.invoke("verify session is removed", () -> {
+      final InternalCache cache = ClusterStartupRule.getCache();
       Region region = cache.getRegion("gemfire_modules_sessions");
-      Awaitility.await().atMost(1, TimeUnit.MINUTES)
-          .untilAsserted(() -> assertEquals(0, region.size()));
+      await("for region to be empty").untilAsserted(() -> assertEquals(0, region.size()));
     });
     super.verifySessionIsRemoved(key);
   }
@@ -104,10 +87,9 @@ public abstract class GenericAppServerClientServerTest extends CargoTestBase {
   @Override
   protected void verifyMaxInactiveInterval(int expected) throws IOException, URISyntaxException {
     super.verifyMaxInactiveInterval(expected);
-    serverVM.invoke(() -> {
-      Cache cache = getCache();
-      Region<Object, HttpSession> region =
-          cache.<Object, HttpSession>getRegion("gemfire_modules_sessions");
+    serverVM.invoke("verify max inactive interval", () -> {
+      final InternalCache cache = ClusterStartupRule.getCache();
+      Region<Object, HttpSession> region = cache.getRegion("gemfire_modules_sessions");
       region.values().forEach(session -> assertEquals(expected, session.getMaxInactiveInterval()));
     });
   }

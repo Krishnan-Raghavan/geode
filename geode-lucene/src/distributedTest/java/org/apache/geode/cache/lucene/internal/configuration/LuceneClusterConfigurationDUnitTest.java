@@ -43,9 +43,9 @@ import org.apache.geode.cache.lucene.internal.xml.LuceneXmlConstants;
 import org.apache.geode.distributed.ConfigurationPersistenceService;
 import org.apache.geode.distributed.internal.InternalConfigurationPersistenceService;
 import org.apache.geode.distributed.internal.InternalLocator;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
 import org.apache.geode.management.internal.cli.util.CommandStringBuilder;
 import org.apache.geode.management.internal.configuration.domain.Configuration;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.dunit.SerializableRunnableIF;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -206,7 +206,7 @@ public class LuceneClusterConfigurationDUnitTest {
   }
 
   @Test
-  public void verifyMemberWithGroupStartsAfterAlterRegion() throws Exception {
+  public void verifyMemberWithGroupStarts() throws Exception {
     // Start a member with no group
     createServer(1);
 
@@ -214,7 +214,7 @@ public class LuceneClusterConfigurationDUnitTest {
     String group = "group1";
     Properties properties = new Properties();
     properties.setProperty(GROUPS, group);
-    MemberVM vm2 = createServer(properties, 2);
+    createServer(properties, 2);
 
     // Connect Gfsh to locator
     gfshConnector.connectAndVerify(locator);
@@ -222,25 +222,15 @@ public class LuceneClusterConfigurationDUnitTest {
     // Create index and region in no group
     createLuceneIndexAndDataRegion();
 
-    // Alter region in group
-    CommandStringBuilder csb = new CommandStringBuilder(CliStrings.ALTER_REGION);
-    csb.addOption(CliStrings.ALTER_REGION__REGION, REGION_NAME);
-    csb.addOption(CliStrings.GROUP, group);
-    csb.addOption(CliStrings.ALTER_REGION__EVICTIONMAX, "5764");
-
-    String expectedStatusOutput =
-        "Region \"/" + REGION_NAME + "\" altered on \"" + vm2.getName() + "\"";
-    gfshConnector.executeAndAssertThat(csb.toString()).statusIsSuccess()
-        .tableHasColumnWithExactValuesInExactOrder("Status", expectedStatusOutput);
-
     // Start another member with group
     createServer(properties, 3);
 
     // Verify all members have indexes
-    csb = new CommandStringBuilder(LuceneCliStrings.LUCENE_LIST_INDEX);
+    CommandStringBuilder csb = new CommandStringBuilder(LuceneCliStrings.LUCENE_LIST_INDEX);
     gfshConnector.executeAndAssertThat(csb.toString()).statusIsSuccess()
-        .tableHasColumnWithExactValuesInExactOrder("Status", "INITIALIZED", "INITIALIZED",
-            "INITIALIZED");
+        .hasTableSection()
+        .hasColumn("Status")
+        .containsExactly("INITIALIZED", "INITIALIZED", "INITIALIZED");
   }
 
   MemberVM createServer(Properties properties, int index) throws Exception {
@@ -267,10 +257,10 @@ public class LuceneClusterConfigurationDUnitTest {
       Configuration config = sc.getConfiguration(ConfigurationPersistenceService.CLUSTER_CONFIG);
       String xmlContent = config.getCacheXmlContent();
       String luceneIndex0Config = "<" + LuceneXmlConstants.PREFIX + ":" + LuceneXmlConstants.INDEX
-          + " xmlns:lucene=\"" + LuceneXmlConstants.NAMESPACE + "\" " + LuceneXmlConstants.NAME
+          + " " + LuceneXmlConstants.NAME
           + "=\"" + INDEX_NAME + "0" + "\">";
       String luceneIndex1Config = "<" + LuceneXmlConstants.PREFIX + ":" + LuceneXmlConstants.INDEX
-          + " xmlns:lucene=\"" + LuceneXmlConstants.NAMESPACE + "\" " + LuceneXmlConstants.NAME
+          + " " + LuceneXmlConstants.NAME
           + "=\"" + INDEX_NAME + "1" + "\">";
       if (verifyIndexesExist) {
         assertThat(xmlContent).contains(luceneIndex0Config);

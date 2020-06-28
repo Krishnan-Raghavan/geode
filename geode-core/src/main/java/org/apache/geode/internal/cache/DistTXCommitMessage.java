@@ -43,10 +43,12 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.TXEntryState.DistTxThinEntryState;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class DistTXCommitMessage extends TXMessage {
 
@@ -100,7 +102,7 @@ public class DistTXCommitMessage extends TXMessage {
            */
           if (!txStateProxy.isDistTx() || txStateProxy.isCreatedOnDistTxCoordinator()) {
             throw new UnsupportedOperationInTransactionException(
-                LocalizedStrings.DISTTX_TX_EXPECTED.toLocalizedString(
+                String.format("Expected %s during a distributed transaction but got %s",
                     "DistTXStateProxyImplOnDatanode", txStateProxy.getClass().getSimpleName()));
           }
           if (logger.isDebugEnabled()) {
@@ -141,14 +143,16 @@ public class DistTXCommitMessage extends TXMessage {
 
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.entryStateList = DataSerializer.readArrayList(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeArrayList(entryStateList, out);
   }
 
@@ -180,7 +184,7 @@ public class DistTXCommitMessage extends TXMessage {
     public DistTXCommitReplyMessage() {}
 
     public DistTXCommitReplyMessage(DataInput in) throws IOException, ClassNotFoundException {
-      fromData(in);
+      fromData(in, InternalDataSerializer.createDeserializationContext(in));
     }
 
     private DistTXCommitReplyMessage(int processorId, TXCommitMessage val) {
@@ -242,14 +246,16 @@ public class DistTXCommitMessage extends TXMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeObject(commitMessage, out);
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.commitMessage = (TXCommitMessage) DataSerializer.readObject(in);
     }
 
@@ -271,9 +277,7 @@ public class DistTXCommitMessage extends TXMessage {
    * Reply processor which collects all CommitReplyExceptions for Dist Tx and emits a detailed
    * failure exception if problems occur
    *
-   * @see TXCommitMessage.CommitReplyProcessor
-   *
-   *      [DISTTX] TODO see if need ReliableReplyProcessor21? departed members?
+   * [DISTTX] TODO see if need ReliableReplyProcessor21? departed members?
    */
   public static class DistTxCommitReplyProcessor extends ReplyProcessor21 {
     private HashMap<DistributedMember, DistTXCoordinatorInterface> msgMap;
@@ -308,7 +312,7 @@ public class DistTXCommitMessage extends TXMessage {
     }
 
     @Override
-    protected void processException(DistributionMessage msg, ReplyException ex) {
+    protected synchronized void processException(DistributionMessage msg, ReplyException ex) {
       if (msg instanceof ReplyMessage) {
         synchronized (this) {
           if (this.exception == null) {

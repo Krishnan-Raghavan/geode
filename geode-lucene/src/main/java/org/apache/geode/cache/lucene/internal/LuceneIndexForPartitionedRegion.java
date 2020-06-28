@@ -15,11 +15,12 @@
 
 package org.apache.geode.cache.lucene.internal;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.geode.CancelException;
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.FixedPartitionResolver;
 import org.apache.geode.cache.PartitionAttributes;
 import org.apache.geode.cache.PartitionAttributesFactory;
@@ -45,7 +46,7 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.cache.xmlcache.RegionAttributesCreation;
 
 public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
   protected Region fileAndChunkRegion;
@@ -57,12 +58,14 @@ public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
 
   public LuceneIndexForPartitionedRegion(String indexName, String regionPath, InternalCache cache) {
     super(indexName, regionPath, cache);
-    this.waitingThreadPoolFromDM = cache.getDistributionManager().getWaitingThreadPool();
+    this.waitingThreadPoolFromDM =
+        cache.getDistributionManager().getExecutors().getWaitingThreadPool();
 
     final String statsName = indexName + "-" + regionPath;
     this.fileSystemStats = new FileSystemStats(cache.getDistributedSystem(), statsName);
   }
 
+  @Override
   protected RepositoryManager createRepositoryManager(LuceneSerializer luceneSerializer) {
     LuceneSerializer mapper = luceneSerializer;
     if (mapper == null) {
@@ -73,6 +76,7 @@ public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
     return partitionedRepositoryManager;
   }
 
+  @Override
   public boolean isIndexingInProgress() {
     PartitionedRegion userRegion = (PartitionedRegion) cache.getRegion(this.getRegionPath());
     Set<Integer> fileRegionPrimaryBucketIds =
@@ -86,6 +90,7 @@ public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
     return false;
   }
 
+  @Override
   protected void createLuceneListenersAndFileChunkRegions(
       PartitionedRepositoryManager partitionedRepositoryManager) {
     partitionedRepositoryManager.setUserRegionForRepositoryManager((PartitionedRegion) dataRegion);
@@ -170,14 +175,13 @@ public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
     partitionAttributesFactory.setColocatedWith(colocatedWithRegionName);
     configureLuceneRegionAttributesFactory(partitionAttributesFactory, partitionAttributes);
 
-    // Create AttributesFactory based on input RegionShortcut
+    // Create RegionAttributes based on input RegionShortcut
     RegionAttributes baseAttributes = this.cache.getRegionAttributes(regionShortCut.toString());
-    AttributesFactory factory = new AttributesFactory(baseAttributes);
-    factory.setPartitionAttributes(partitionAttributesFactory.create());
+    RegionAttributesCreation attributes = new RegionAttributesCreation(baseAttributes, false);
+    attributes.setPartitionAttributes(partitionAttributesFactory.create());
     if (regionAttributes.getDataPolicy().withPersistence()) {
-      factory.setDiskStoreName(regionAttributes.getDiskStoreName());
+      attributes.setDiskStoreName(regionAttributes.getDiskStoreName());
     }
-    RegionAttributes<K, V> attributes = factory.create();
 
     return createRegion(regionName, attributes);
   }
@@ -257,9 +261,9 @@ public class LuceneIndexForPartitionedRegion extends LuceneIndexImpl {
         if (cause instanceof IllegalArgumentException) {
           // If the IllegalArgumentException is index not found, then its ok; otherwise rethrow it.
           String fullRegionPath =
-              regionPath.startsWith(Region.SEPARATOR) ? regionPath : Region.SEPARATOR + regionPath;
-          String indexNotFoundMessage = LocalizedStrings.LuceneService_INDEX_0_NOT_FOUND_IN_REGION_1
-              .toLocalizedString(indexName, fullRegionPath);
+              regionPath.startsWith(SEPARATOR) ? regionPath : SEPARATOR + regionPath;
+          String indexNotFoundMessage = String.format("Lucene index %s was not found in region %s",
+              indexName, fullRegionPath);
           if (!cause.getLocalizedMessage().equals(indexNotFoundMessage)) {
             throw e;
           }

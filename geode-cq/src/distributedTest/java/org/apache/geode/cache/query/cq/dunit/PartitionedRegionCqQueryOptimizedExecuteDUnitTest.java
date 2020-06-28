@@ -22,11 +22,10 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
 import org.apache.geode.cache.query.data.Portfolio;
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
 import org.apache.geode.cache.query.internal.cq.CqServiceProvider;
 import org.apache.geode.cache30.CacheSerializableRunnable;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
@@ -35,6 +34,7 @@ import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 @Category({ClientSubscriptionTest.class})
 public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
@@ -47,6 +47,7 @@ public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
   @Override
   public final void postSetUp() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = false;
       }
@@ -56,6 +57,7 @@ public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
   @Override
   public final void preTearDownCacheTestCase() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = true;
         CqServiceProvider.MAINTAIN_KEYS = true;
@@ -90,18 +92,20 @@ public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
     cqHelper.executeCQ(client, cqName, false, null);
 
     server.invoke(new CacheSerializableRunnable("execute cq") {
+      @Override
       public void run2() throws CacheException {
         assertFalse("CqServiceImpl.EXECUTE_QUERY_DURING_INIT flag should be false ",
             CqServiceImpl.EXECUTE_QUERY_DURING_INIT);
-        int numOfQueryExecutions = (Integer) ((GemFireCacheImpl) getCache()).getCachePerfStats()
+        Number numOfQueryExecutions = ((GemFireCacheImpl) getCache()).getCachePerfStats()
             .getStats().get("queryExecutions");
-        assertEquals("Number of query executions for cq.execute should be 0 ", 0,
+        assertEquals("Number of query executions for cq.execute should be 0 ", 0L,
             numOfQueryExecutions);
       }
     });
 
     // Create more values.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = numOfEntries + 1; i <= numOfEntries * 2; i++) {
@@ -154,6 +158,7 @@ public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
     final String cqName = "testCqExecuteWithoutQueryExecution_1";
 
     server.invoke(new CacheSerializableRunnable("execute cq") {
+      @Override
       public void run2() throws CacheException {
         CqServiceProvider.MAINTAIN_KEYS = false;
       }
@@ -177,20 +182,22 @@ public class PartitionedRegionCqQueryOptimizedExecuteDUnitTest
     cqHelper.executeCQ(client, cqName, false, null);
 
     server.invoke(new CacheSerializableRunnable("execute cq") {
+      @Override
       public void run2() throws CacheException {
         assertFalse("CqServiceImpl.EXECUTE_QUERY_DURING_INIT flag should be false ",
             CqServiceImpl.EXECUTE_QUERY_DURING_INIT);
-        assertFalse(DistributionConfig.GEMFIRE_PREFIX + "cq.MAINTAIN_KEYS flag should be false ",
+        assertFalse(GeodeGlossary.GEMFIRE_PREFIX + "cq.MAINTAIN_KEYS flag should be false ",
             CqServiceProvider.MAINTAIN_KEYS);
-        int numOfQueryExecutions = (Integer) ((GemFireCacheImpl) getCache()).getCachePerfStats()
+        Number numOfQueryExecutions = ((GemFireCacheImpl) getCache()).getCachePerfStats()
             .getStats().get("queryExecutions");
-        assertEquals("Number of query executions for cq.execute should be 0 ", 0,
+        assertEquals("Number of query executions for cq.execute should be 0 ", 0L,
             numOfQueryExecutions);
       }
     });
 
     // Create more values.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = numOfEntries + 1; i <= numOfEntries * 2; i++) {

@@ -23,7 +23,6 @@ import java.util.List;
 import org.springframework.shell.core.CommandMarker;
 import org.springframework.shell.core.annotation.CliCommand;
 
-import org.apache.geode.internal.cache.extension.mock.MockExtensionCommands;
 import org.apache.geode.management.cli.CliMetaData;
 import org.apache.geode.management.cli.GfshCommand;
 import org.apache.geode.management.internal.cli.CommandManager;
@@ -39,10 +38,6 @@ public class CommandAvailabilityIndicatorTestHelper {
         continue;
       }
 
-      if (commandMarker instanceof MockExtensionCommands) {
-        continue;
-      }
-
       for (Method method : commandMarker.getClass().getMethods()) {
         CliCommand cliCommand = method.getAnnotation(CliCommand.class);
         if (cliCommand == null) {
@@ -52,7 +47,7 @@ public class CommandAvailabilityIndicatorTestHelper {
 
         CliMetaData cliMetaData = method.getAnnotation(CliMetaData.class);
         // all the online commands have availability indicator defined in the commandManager
-        if (cliMetaData == null || cliMetaData != null && !cliMetaData.shellOnly()) {
+        if (cliMetaData == null || !cliMetaData.shellOnly()) {
           assertThat(manager.getHelper().hasAvailabilityIndicator(cliCommand.value()[0]))
               .describedAs(cliCommand.value()[0] + " in " + commandMarker.getClass()
                   + " has no availability indicator defined. "

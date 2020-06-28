@@ -36,9 +36,11 @@ import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.partitioned.PartitionMessage;
 import org.apache.geode.internal.cache.partitioned.RegionAdvisor;
 import org.apache.geode.internal.cache.partitioned.RegionAdvisor.PartitionProfile;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is sent for two purposes <br>
@@ -73,6 +75,15 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
   /** Serial numbers of the buckets for this region */
   private int bucketSerials[];
 
+  /** Event ID of the destroy operation created at the origin */
+  private EventID eventID;
+
+  @Override
+  public EventID getEventID() {
+    return eventID;
+  }
+
+
   /**
    * Empty constructor to satisfy {@link DataSerializer} requirements
    */
@@ -93,6 +104,7 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
     this.prSerial = region.getSerialNumber();
     Assert.assertTrue(this.prSerial != DistributionAdvisor.ILLEGAL_SERIAL);
     this.bucketSerials = serials;
+    this.eventID = event.getEventId();
   }
 
   /**
@@ -118,9 +130,9 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
       DistributionManager distributionManager) {
     if (pr != null && !pr.getDistributionAdvisor().isInitialized()) {
       Throwable thr = new ForceReattemptException(
-          LocalizedStrings.PartitionMessage_0_COULD_NOT_FIND_PARTITIONED_REGION_WITH_ID_1
-              .toLocalizedString(distributionManager.getDistributionManagerId(),
-                  pr.getRegionIdentifier()));
+          String.format("%s : could not find partitioned region with Id %s",
+              distributionManager.getDistributionManagerId(),
+              pr.getRegionIdentifier()));
       return thr;
     }
     return null;
@@ -153,7 +165,7 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
       if (DistributionAdvisor.isNewerSerialNumber(oldSerial, this.prSerial)) {
         ok = false;
         if (logger.isDebugEnabled()) {
-          logger.debug("Not removing region {}l serial requested = {}; actual is {}", r.getName(),
+          logger.debug("Not removing region {} serial requested = {}; actual is {}", r.getName(),
               this.prSerial, r.getSerialNumber());
         }
       }
@@ -178,7 +190,8 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
       logger.trace(LogMarker.DM_VERBOSE, "{} operateOnRegion: {}", getClass().getName(),
           r.getFullPath());
     }
-    RegionEventImpl event = new RegionEventImpl(r, this.op, this.cbArg, true, r.getMyId());
+    RegionEventImpl event =
+        new RegionEventImpl(r, this.op, this.cbArg, true, r.getMyId(), getEventID());
     r.basicDestroyRegion(event, false, false, true);
 
     return true;
@@ -198,13 +211,28 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
     }
   }
 
+  @Override
   public int getDSFID() {
     return DESTROY_PARTITIONED_REGION_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public Version[] getSerializationVersions() {
+    return new Version[] {Version.GEODE_1_9_0};
+  }
+
+
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    fromDataPre_GEODE_1_9_0_0(in, context);
+    this.eventID = DataSerializer.readObject(in);
+
+  }
+
+  public void fromDataPre_GEODE_1_9_0_0(DataInput in, DeserializationContext context)
+      throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.cbArg = DataSerializer.readObject(in);
     this.op = Operation.fromOrdinal(in.readByte());
     this.prSerial = in.readInt();
@@ -216,8 +244,15 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    toDataPre_GEODE_1_9_0_0(out, context);
+    DataSerializer.writeObject(this.eventID, out);
+  }
+
+  public void toDataPre_GEODE_1_9_0_0(DataOutput out, SerializationContext context)
+      throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.cbArg, out);
     out.writeByte(this.op.ordinal);
     out.writeInt(this.prSerial);
@@ -226,6 +261,8 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
       out.writeInt(this.bucketSerials[i]);
     }
   }
+
+
 
   /**
    * The response on which to wait for all the replies. This response ignores any exceptions
@@ -239,7 +276,7 @@ public class DestroyPartitionedRegionMessage extends PartitionMessage {
     }
 
     @Override
-    protected void processException(ReplyException ex) {
+    protected synchronized void processException(ReplyException ex) {
       // retry on ForceReattempt in case the region is still being initialized
       if (ex.getRootCause() instanceof ForceReattemptException) {
         super.processException(ex);

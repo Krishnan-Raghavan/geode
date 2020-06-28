@@ -25,9 +25,7 @@ import static org.mockito.Mockito.when;
 import java.nio.ByteBuffer;
 
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
@@ -37,7 +35,6 @@ import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
 import org.apache.geode.compression.Compressor;
-import org.apache.geode.internal.DSCODE;
 import org.apache.geode.internal.cache.CachePerfStats;
 import org.apache.geode.internal.cache.DiskId;
 import org.apache.geode.internal.cache.EntryEventImpl;
@@ -47,6 +44,7 @@ import org.apache.geode.internal.cache.VMCachedDeserializable;
 import org.apache.geode.internal.cache.entries.DiskEntry;
 import org.apache.geode.internal.cache.entries.OffHeapRegionEntry;
 import org.apache.geode.internal.cache.entries.VersionedStatsDiskRegionEntryOffHeap;
+import org.apache.geode.internal.serialization.DSCODE;
 
 @RunWith(PowerMockRunner.class)
 @PowerMockIgnore("*.UnitTest")
@@ -54,25 +52,6 @@ import org.apache.geode.internal.cache.entries.VersionedStatsDiskRegionEntryOffH
 public class OffHeapRegionEntryHelperJUnitTest {
 
   private static final Long VALUE_IS_NOT_ENCODABLE = 0L;
-
-  private static Boolean assertionsEnabled;
-
-  @BeforeClass
-  public static void setUpOnce() {
-    try {
-      assert false;
-      assertionsEnabled = false;
-    } catch (AssertionError e) {
-      assertionsEnabled = true;
-    }
-    ClassLoader.getSystemClassLoader().setDefaultAssertionStatus(true);
-    System.out.println("assertionsEnabled = " + assertionsEnabled);
-  }
-
-  @AfterClass
-  public static void tearDownOnce() {
-    ClassLoader.getSystemClassLoader().setDefaultAssertionStatus(assertionsEnabled);
-  }
 
   private MemoryAllocator ma;
 

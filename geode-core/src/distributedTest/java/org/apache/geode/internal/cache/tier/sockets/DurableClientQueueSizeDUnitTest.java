@@ -17,14 +17,13 @@ package org.apache.geode.internal.cache.tier.sockets;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 
 import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -44,7 +43,6 @@ import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.test.dunit.DistributedTestUtils;
@@ -53,6 +51,7 @@ import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 @Category({ClientSubscriptionTest.class})
 @SuppressWarnings("serial")
@@ -161,7 +160,7 @@ public class DurableClientQueueSizeDUnitTest extends JUnit4DistributedTestCase {
 
     vm0.invoke(() -> DurableClientQueueSizeDUnitTest.doPutsIntoRegion(REGION_NAME, num));
 
-    vm0.invoke(() -> Awaitility.waitAtMost(45, TimeUnit.SECONDS).untilAsserted(() -> {
+    vm0.invoke(() -> await().untilAsserted(() -> {
       CacheClientProxy ccp = DurableClientQueueSizeDUnitTest.getCacheClientProxy(MY_DURABLE_CLIENT);
       assertEquals(0, ccp.getQueueSize());
       assertEquals(0, ccp.getQueueSizeStat());
@@ -335,14 +334,14 @@ public class DurableClientQueueSizeDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public static void setSpecialDurable(Boolean bool) {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "SPECIAL_DURABLE", bool.toString());
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "SPECIAL_DURABLE", bool.toString());
   }
 
   @SuppressWarnings("deprecation")
   public static void createClientCache(Host host, Integer[] ports, String timeoutSeconds,
       Boolean durable, Boolean multiPool, CacheListener cacheListener) throws Exception {
     if (multiPool) {
-      System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "SPECIAL_DURABLE", "true");
+      setSpecialDurable(true);
     }
     Properties props = new Properties();
     if (durable) {

@@ -15,7 +15,10 @@
 
 package org.apache.geode.cache;
 
-import org.apache.geode.DataSerializable;
+import java.util.Optional;
+
+import org.apache.geode.cache.configuration.EnumActionDestroyOverflow;
+import org.apache.geode.cache.configuration.RegionAttributesType;
 import org.apache.geode.cache.control.ResourceManager;
 import org.apache.geode.cache.util.ObjectSizer;
 import org.apache.geode.internal.cache.EvictionAttributesImpl;
@@ -34,7 +37,7 @@ import org.apache.geode.internal.cache.EvictionAttributesImpl;
  * @since GemFire 5.0
  */
 @SuppressWarnings("serial")
-public abstract class EvictionAttributes implements DataSerializable {
+public abstract class EvictionAttributes {
   /**
    * The default maximum for {@linkplain EvictionAlgorithm#LRU_ENTRY entry LRU}. Currently
    * <code>900</code> entries.
@@ -503,6 +506,44 @@ public abstract class EvictionAttributes implements DataSerializable {
       EvictionAction evictionAction) {
     return new EvictionAttributesImpl().setAlgorithm(EvictionAlgorithm.LIFO_MEMORY)
         .setAction(evictionAction).setMaximum(maximumMegabytes).setObjectSizer(null);
+  }
+
+  public RegionAttributesType.EvictionAttributes convertToConfigEvictionAttributes() {
+    RegionAttributesType.EvictionAttributes configAttributes =
+        new RegionAttributesType.EvictionAttributes();
+    EnumActionDestroyOverflow action = EnumActionDestroyOverflow.fromValue(this.getAction()
+        .toString());
+    EvictionAlgorithm algorithm = getAlgorithm();
+    Optional<String> objectSizerClass = Optional.ofNullable(getObjectSizer())
+        .map(c -> c.getClass().toString());
+    String maximum = Integer.toString(getMaximum());
+
+    if (algorithm.isLRUHeap()) {
+      RegionAttributesType.EvictionAttributes.LruHeapPercentage heapPercentage =
+          new RegionAttributesType.EvictionAttributes.LruHeapPercentage();
+      heapPercentage.setAction(action);
+      objectSizerClass.ifPresent(o -> heapPercentage.setClassName(o));
+      configAttributes.setLruHeapPercentage(heapPercentage);
+    } else if (algorithm.isLRUMemory()) {
+      RegionAttributesType.EvictionAttributes.LruMemorySize memorySize =
+          new RegionAttributesType.EvictionAttributes.LruMemorySize();
+      memorySize.setAction(action);
+      objectSizerClass.ifPresent(o -> memorySize.setClassName(o));
+      memorySize.setMaximum(maximum);
+      configAttributes.setLruMemorySize(memorySize);
+    } else {
+      RegionAttributesType.EvictionAttributes.LruEntryCount entryCount =
+          new RegionAttributesType.EvictionAttributes.LruEntryCount();
+      entryCount.setAction(action);
+      entryCount.setMaximum(maximum);
+      configAttributes.setLruEntryCount(entryCount);
+    }
+
+    return configAttributes;
+  }
+
+  public boolean isNoEviction() {
+    return getAction() == EvictionAction.NONE;
   }
 
 }

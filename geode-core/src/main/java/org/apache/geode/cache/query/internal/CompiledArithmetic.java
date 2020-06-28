@@ -37,13 +37,11 @@ public abstract class CompiledArithmetic extends AbstractCompiledValue
   // persistent inst vars
   public final CompiledValue _left;
   public final CompiledValue _right;
-  private int _operator;
 
-  CompiledArithmetic(CompiledValue left, CompiledValue right, int op) {
+  CompiledArithmetic(CompiledValue left, CompiledValue right) {
     // invariant:
     _left = left;
     _right = right;
-    _operator = op;
   }
 
   /* ******** CompiledValue Methods **************** */
@@ -55,8 +53,10 @@ public abstract class CompiledArithmetic extends AbstractCompiledValue
     return list;
   }
 
+  @Override
   public abstract int getType();
 
+  @Override
   public Object evaluate(ExecutionContext context) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     Object left = _left.evaluate(context);

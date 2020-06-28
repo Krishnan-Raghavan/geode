@@ -14,13 +14,15 @@
  */
 package org.apache.geode.management.internal.cli.commands;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER;
+import static org.apache.geode.management.internal.i18n.CliStrings.MEMBER;
+import static org.apache.geode.management.internal.i18n.CliStrings.QUERY;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.apache.geode.test.junit.rules.GfshCommandRule.PortType.jmxManager;
 import static org.assertj.core.api.Java6Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import java.util.List;
 import java.util.Map;
@@ -44,15 +46,13 @@ import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.EvictionAttributesImpl;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.management.ManagementService;
 import org.apache.geode.management.MemberMXBean;
-import org.apache.geode.management.cli.Result;
 import org.apache.geode.management.internal.cli.domain.DataCommandResult;
 import org.apache.geode.management.internal.cli.dto.Value1;
 import org.apache.geode.management.internal.cli.result.CommandResult;
-import org.apache.geode.management.internal.cli.result.ResultData;
 import org.apache.geode.management.internal.cli.result.model.ResultModel;
+import org.apache.geode.management.internal.cli.util.CommandStringBuilder;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -61,13 +61,17 @@ import org.apache.geode.test.junit.rules.GfshCommandRule;
 @SuppressWarnings("serial")
 public class QueryCommandDUnitTestBase {
   private static final String DATA_REGION_NAME = "GemfireDataCommandsTestRegion";
-  private static final String DATA_REGION_NAME_PATH = "/" + DATA_REGION_NAME;
+  private static final String DATA_REGION_NAME_PATH = SEPARATOR + DATA_REGION_NAME;
   private static final String DATA_REGION_WITH_EVICTION_NAME =
       "GemfireDataCommandsTestRegionWithEviction";
   private static final String DATA_REGION_WITH_EVICTION_NAME_PATH =
-      "/" + DATA_REGION_WITH_EVICTION_NAME;
+      SEPARATOR + DATA_REGION_WITH_EVICTION_NAME;
   private static final String DATA_PAR_REGION_NAME = "GemfireDataCommandsTestParRegion";
-  private static final String DATA_PAR_REGION_NAME_PATH = "/" + DATA_PAR_REGION_NAME;
+  private static final String DATA_PAR_REGION_NAME_PATH = SEPARATOR + DATA_PAR_REGION_NAME;
+  private static final String DATA_REGION_WITH_PROXY_NAME =
+      "GemfireDataCommandsTestRegionWithProxy";
+  private static final String DATA_REGION_WITH_PROXY_NAME_PATH =
+      SEPARATOR + DATA_REGION_WITH_PROXY_NAME;
 
   private static final String SERIALIZATION_FILTER =
       "org.apache.geode.management.internal.cli.dto.**";
@@ -108,11 +112,11 @@ public class QueryCommandDUnitTestBase {
     String query =
         "query --query=\"select ID , status , createTime , pk, floatMinValue from ${DATA_REGION} where ID <= ${PORTFOLIO_ID}"
             + " and status=${STATUS}" + "\" --interactive=false";
-    gfsh.executeCommand("set variable --name=DATA_REGION --value=" + DATA_REGION_NAME_PATH);
-    gfsh.executeCommand("set variable --name=PORTFOLIO_ID --value=3");
-    gfsh.executeCommand("set variable --name=STATUS --value=inactive");
-    CommandResult cmdResult = gfsh.executeCommand(query);
-    assertThat(cmdResult.getStatus()).isEqualTo(Result.Status.OK);
+    gfsh.executeAndAssertThat("set variable --name=DATA_REGION --value=" + DATA_REGION_NAME_PATH)
+        .statusIsSuccess();
+    gfsh.executeAndAssertThat("set variable --name=PORTFOLIO_ID --value=3").statusIsSuccess();
+    gfsh.executeAndAssertThat("set variable --name=STATUS --value=inactive").statusIsSuccess();
+    gfsh.executeAndAssertThat(query).statusIsSuccess();
   }
 
   @Test
@@ -123,10 +127,8 @@ public class QueryCommandDUnitTestBase {
       String query =
           "query --query=\"select ID , status , createTime , pk, floatMinValue from ${UNSET_REGION} where ID <= ${UNSET_PORTFOLIO_ID}"
               + " and status=${UNSET_STATUS}" + "\" --interactive=false";
-      CommandResult result = gfsh.executeCommand(query);
-      assertThat(result.getStatus()).isEqualTo(Result.Status.ERROR);
-      assertThat(result.getResultData().toString())
-          .contains(LocalizedStrings.QCompiler_SYNTAX_ERROR_IN_QUERY_0.toLocalizedString(""));
+      gfsh.executeAndAssertThat(query).statusIsError()
+          .containsOutput(String.format("Syntax error in query: %s", ""));
     } finally {
       ex.remove();
     }
@@ -192,9 +194,8 @@ public class QueryCommandDUnitTestBase {
         + "\" --interactive=false";
     CommandResult commandResult = gfsh.executeCommand(query);
     validateSelectResult(commandResult, Boolean.FALSE, -1, new String[] {"Value"});
-    assertThat(commandResult.getResultData().toString())
-        .contains(LocalizedStrings.EntryEventImpl_AN_IOEXCEPTION_WAS_THROWN_WHILE_DESERIALIZING
-            .toLocalizedString());
+    assertThat(commandResult.asString())
+        .contains("An IOException was thrown while deserializing");
 
     ex.remove();
   }
@@ -262,27 +263,34 @@ public class QueryCommandDUnitTestBase {
     assertThat(dataRegion.getFullPath()).contains(regionName);
   }
 
+  private static void setupReplicatedProxyRegion(String regionName) {
+    InternalCache cache = ClusterStartupRule.getCache();
+    RegionFactory<Integer, Portfolio> regionFactory =
+        cache.createRegionFactory(RegionShortcut.REPLICATE_PROXY);
+
+    Region<Integer, Portfolio> proxyRegion = regionFactory.create(regionName);
+    assertThat(proxyRegion).isNotNull();
+    assertThat(proxyRegion.getFullPath()).contains(regionName);
+  }
+
   private void validateSelectResult(CommandResult cmdResult, Boolean expectSuccess,
       Integer expectedRows, String[] cols) {
-    if (ResultData.TYPE_MODEL.equals(cmdResult.getType())) {
-      ResultModel rd = (ResultModel) cmdResult.getResultData();
+    ResultModel rd = cmdResult.getResultData();
 
-      Map<String, String> data =
-          rd.getDataSection(DataCommandResult.DATA_INFO_SECTION).getContent();
-      assertThat(data.get("Result")).isEqualTo(expectSuccess.toString());
+    Map<String, String> data =
+        rd.getDataSection(DataCommandResult.DATA_INFO_SECTION).getContent();
+    assertThat(data.get("Result")).isEqualTo(expectSuccess.toString());
 
-      if (expectSuccess && expectedRows != -1) {
-        assertThat(data.get("Rows")).isEqualTo(expectedRows.toString());
+    if (expectSuccess && expectedRows != -1) {
+      assertThat(data.get("Rows")).isEqualTo(expectedRows.toString());
 
-        if (expectedRows > 0 && cols != null) {
-          Map<String, List<String>> table =
-              rd.getTableSection(DataCommandResult.QUERY_SECTION).getContent();
-          assertThat(table.keySet()).contains(cols);
-        }
+      if (expectedRows > 0 && cols != null) {
+        Map<String, List<String>> table =
+            rd.getTableSection(DataCommandResult.QUERY_SECTION).getContent();
+        assertThat(table.keySet()).contains(cols);
       }
-    } else {
-      fail("Expected CompositeResult Returned Result Type " + cmdResult.getType());
     }
+
   }
 
   private Properties locatorProperties() {
@@ -318,5 +326,30 @@ public class QueryCommandDUnitTestBase {
     public void setValue1(Value1 value1) {
       this.value1 = value1;
     }
+  }
+
+  @Test
+  public void testSimpleQueryWithProxyRegion() {
+    server1.invoke(() -> setupReplicatedProxyRegion(DATA_REGION_WITH_PROXY_NAME));
+    server2.invoke(() -> setupReplicatedRegion(DATA_REGION_WITH_PROXY_NAME));
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(DATA_REGION_WITH_PROXY_NAME_PATH, 2);
+
+    server1.invoke(() -> prepareDataForRegion(DATA_REGION_WITH_PROXY_NAME_PATH));
+
+    String member = "server-2";
+    Random random = new Random(System.nanoTime());
+    int randomInteger = random.nextInt(COUNT);
+    String queryString = new StringBuilder()
+        .append("\"select ID , status , createTime , pk, floatMinValue from ")
+        .append(DATA_REGION_WITH_PROXY_NAME_PATH).append(" where ID <= ")
+        .append(randomInteger).append("\"").toString();
+
+    String command = new CommandStringBuilder(QUERY)
+        .addOption(MEMBER, member)
+        .addOption(QUERY, queryString).getCommandString();
+
+    CommandResult commandResult = gfsh.executeAndAssertThat(command).getCommandResult();
+    validateSelectResult(commandResult, true, (randomInteger + 1),
+        new String[] {"ID", "status", "createTime", "pk", "floatMinValue"});
   }
 }

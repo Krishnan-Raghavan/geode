@@ -14,7 +14,6 @@
  */
 package org.apache.geode.internal.cache.wan.wancommand;
 
-import static org.apache.geode.management.MXBeanAwaitility.await;
 import static org.apache.geode.management.MXBeanAwaitility.awaitGatewayReceiverMXBeanProxy;
 import static org.apache.geode.management.MXBeanAwaitility.awaitGatewaySenderMXBeanProxy;
 import static org.apache.geode.management.MXBeanAwaitility.awaitMemberMXBeanProxy;
@@ -56,6 +55,7 @@ import org.apache.geode.internal.cache.wan.parallel.ParallelGatewaySenderQueue;
 import org.apache.geode.management.GatewayReceiverMXBean;
 import org.apache.geode.management.GatewaySenderMXBean;
 import org.apache.geode.management.MemberMXBean;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.SerializableCallableIF;
 import org.apache.geode.test.dunit.VM;
@@ -149,7 +149,8 @@ public class WANCommandUtils implements Serializable {
       boolean enableBatchConflation, int batchSize, int batchTimeInterval,
       boolean enablePersistence, boolean diskSynchronous, int maxQueueMemory, int alertThreshold,
       int dispatcherThreads, GatewaySender.OrderPolicy orderPolicy,
-      List<String> expectedGatewayEventFilters, List<String> expectedGatewayTransportFilters) {
+      List<String> expectedGatewayEventFilters, List<String> expectedGatewayTransportFilters,
+      boolean groupTransactionEvents) {
 
     GatewaySender sender = ClusterStartupRule.getCache().getGatewaySenders().stream()
         .filter(x -> senderId.equals(x.getId())).findFirst().orElse(null);
@@ -168,6 +169,9 @@ public class WANCommandUtils implements Serializable {
     assertEquals("alertThreshold", alertThreshold, sender.getAlertThreshold());
     assertEquals("dispatcherThreads", dispatcherThreads, sender.getDispatcherThreads());
     assertEquals("orderPolicy", orderPolicy, sender.getOrderPolicy());
+    assertEquals("groupTransactionEvents", groupTransactionEvents,
+        sender.mustGroupTransactionEvents());
+
 
     // verify GatewayEventFilters
     if (expectedGatewayEventFilters != null) {
@@ -345,7 +349,8 @@ public class WANCommandUtils implements Serializable {
   public static void validateGatewaySenderMXBeanProxy(final InternalDistributedMember member,
       final String senderId, final boolean isRunning, final boolean isPaused) {
     GatewaySenderMXBean gatewaySenderMXBean = awaitGatewaySenderMXBeanProxy(member, senderId);
-    await("Awaiting GatewaySenderMXBean.isRunning(" + isRunning + ").isPaused(" + isPaused + ")")
+    GeodeAwaitility.await(
+        "Awaiting GatewaySenderMXBean.isRunning(" + isRunning + ").isPaused(" + isPaused + ")")
         .untilAsserted(() -> {
           assertThat(gatewaySenderMXBean.isRunning()).isEqualTo(isRunning);
           assertThat(gatewaySenderMXBean.isPaused()).isEqualTo(isPaused);
@@ -356,9 +361,10 @@ public class WANCommandUtils implements Serializable {
   public static void validateGatewayReceiverMXBeanProxy(final InternalDistributedMember member,
       final boolean isRunning) {
     GatewayReceiverMXBean gatewayReceiverMXBean = awaitGatewayReceiverMXBeanProxy(member);
-    await("Awaiting GatewayReceiverMXBean.isRunning(" + isRunning + ")").untilAsserted(() -> {
-      assertThat(gatewayReceiverMXBean.isRunning()).isEqualTo(isRunning);
-    });
+    GeodeAwaitility.await("Awaiting GatewayReceiverMXBean.isRunning(" + isRunning + ")")
+        .untilAsserted(() -> {
+          assertThat(gatewayReceiverMXBean.isRunning()).isEqualTo(isRunning);
+        });
     assertThat(gatewayReceiverMXBean).isNotNull();
   }
 

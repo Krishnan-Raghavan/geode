@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.fail;
@@ -50,7 +51,7 @@ import org.apache.geode.test.junit.categories.OQLIndexTest;
 @Category({OQLIndexTest.class})
 public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
 
-  /** The port on which the bridge server was started in this VM */
+  /** The port on which the cache server was started in this VM */
   private static int bridgeServerPort;
   static long timeWithoutStructTypeIndex = 0;
   static long timeWithStructTypeIndex = 0;
@@ -75,7 +76,8 @@ public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 10000;
 
     // Start server
-    vm0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    vm0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Properties config = new Properties();
         config.put(LOCATORS, "localhost[" + DistributedTestUtils.getDUnitLocatorPort() + "]");
@@ -90,7 +92,7 @@ public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
         }
         // Create Index on empty region
         try {
-          cache.getQueryService().createIndex("idIndex", "ID", "/" + name);
+          cache.getQueryService().createIndex("idIndex", "ID", SEPARATOR + name);
         } catch (Exception e) {
           Assert.fail("index creation failed", e);
         }
@@ -101,6 +103,7 @@ public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
     final int port = vm0.invoke(() -> PutAllWithIndexPerfDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
     vm1.invoke(new CacheSerializableRunnable("Create region") {
+      @Override
       public void run2() throws CacheException {
         Properties config = new Properties();
         config.setProperty(MCAST_PORT, "0");
@@ -150,7 +153,7 @@ public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
           Cache cache = CacheFactory.getAnyInstance();
           cache.getQueryService().removeIndexes();
           cache.getRegion(name).clear();
-          cache.getQueryService().createIndex("idIndex", "p.ID", "/" + name + " p");
+          cache.getQueryService().createIndex("idIndex", "p.ID", SEPARATOR + name + " p");
         } catch (Exception e) {
           Assert.fail("index creation failed", e);
         }
@@ -194,7 +197,7 @@ public class PutAllWithIndexPerfDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    */
   protected void startBridgeServer(int port, boolean notifyBySubscription) throws IOException {

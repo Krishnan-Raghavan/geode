@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.wan.wancommand;
 
+import static org.apache.geode.cache.wan.GatewayReceiverFactory.A_GATEWAY_RECEIVER_ALREADY_EXISTS_ON_THIS_MEMBER;
 import static org.apache.geode.distributed.ConfigurationProperties.BIND_ADDRESS;
 import static org.apache.geode.distributed.ConfigurationProperties.DISTRIBUTED_SYSTEM_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.GROUPS;
@@ -22,9 +23,8 @@ import static org.apache.geode.internal.cache.wan.wancommand.WANCommandUtils.get
 import static org.apache.geode.internal.cache.wan.wancommand.WANCommandUtils.verifyGatewayReceiverProfile;
 import static org.apache.geode.internal.cache.wan.wancommand.WANCommandUtils.verifyGatewayReceiverServerLocations;
 import static org.apache.geode.internal.cache.wan.wancommand.WANCommandUtils.verifyReceiverCreationWithAttributes;
-import static org.apache.geode.management.internal.cli.functions.GatewayReceiverCreateFunction.A_GATEWAY_RECEIVER_ALREADY_EXISTS_ON_THIS_MEMBER;
-import static org.apache.geode.management.internal.cli.i18n.CliStrings.CREATE_GATEWAYRECEIVER;
-import static org.apache.geode.management.internal.cli.i18n.CliStrings.GROUP;
+import static org.apache.geode.management.internal.i18n.CliStrings.CREATE_GATEWAYRECEIVER;
+import static org.apache.geode.management.internal.i18n.CliStrings.GROUP;
 import static org.apache.geode.test.junit.rules.VMProvider.invokeInEveryMember;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,16 +33,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
+import junitparams.JUnitParamsRunner;
+import junitparams.Parameters;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
 
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.wan.GatewayReceiver;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.internal.net.SocketCreator;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
+import org.apache.geode.internal.inet.LocalHostUtil;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 import org.apache.geode.test.junit.categories.WanTest;
@@ -51,7 +54,8 @@ import org.apache.geode.test.junit.rules.GfshCommandRule;
 /**
  * DUnit tests for 'create gateway-receiver' command.
  */
-@Category({WanTest.class})
+@Category(WanTest.class)
+@RunWith(JUnitParamsRunner.class)
 public class CreateGatewayReceiverCommandDUnitTest {
 
   private static final String SERVER_1 = "server-1";
@@ -104,12 +108,11 @@ public class CreateGatewayReceiverCommandDUnitTest {
     server1 = clusterStartupRule.startServerVM(1, locator1Port);
     server2 = clusterStartupRule.startServerVM(2, locator1Port);
     String createOnS1 = CREATE_GATEWAYRECEIVER + " --member=" + server1.getName();
-    String createOnBoth = CREATE_GATEWAYRECEIVER;
     gfsh.executeAndAssertThat(createOnS1).statusIsSuccess()
         .tableHasColumnWithExactValuesInAnyOrder("Member", SERVER_1)
         .tableHasColumnWithValuesContaining("Message",
             "GatewayReceiver created on member \"" + SERVER_1 + "\"");
-    gfsh.executeAndAssertThat(createOnBoth).statusIsSuccess()
+    gfsh.executeAndAssertThat(CREATE_GATEWAYRECEIVER).statusIsSuccess()
         .tableHasColumnWithExactValuesInAnyOrder("Member", SERVER_1, SERVER_2)
         .tableHasColumnWithExactValuesInAnyOrder("Status", "ERROR", "OK")
         .tableHasColumnWithValuesContaining("Message",
@@ -190,8 +193,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
     server3 = clusterStartupRule.startServerVM(3, locator1Port);
 
     // Default attributes.
-    String command = CliStrings.CREATE_GATEWAYRECEIVER;
-    gfsh.executeAndAssertThat(command).statusIsSuccess()
+    gfsh.executeAndAssertThat(CliStrings.CREATE_GATEWAYRECEIVER).statusIsSuccess()
         .tableHasColumnWithExactValuesInAnyOrder("Member", SERVER_1, SERVER_2, SERVER_3)
         .tableHasColumnWithValuesContaining("Message",
             "GatewayReceiver created on member \"" + SERVER_1 + "\"",
@@ -277,18 +279,22 @@ public class CreateGatewayReceiverCommandDUnitTest {
     }, server1, server2, server3);
   }
 
+
   /**
-   * GatewayReceiver with all default attributes and bind-address in gemfire-properties
+   * GatewayReceiver with all default attributes and bind-address / server-bind-address in
+   * gemfire-properties
    */
   @Test
-  public void testCreateGatewayReceiverWithDefaultAndBindProperty() throws Exception {
+  @Parameters({BIND_ADDRESS, SERVER_BIND_ADDRESS})
+  public void testCreateGatewayReceiverWithDefaultsAndAddressProperties(String addressPropertyKey)
+      throws Exception {
     String receiverGroup = "receiverGroup";
     Integer locator1Port = locatorSite1.getPort();
     String expectedBindAddress = getBindAddress();
 
     Properties props = new Properties();
     props.setProperty(GROUPS, receiverGroup);
-    props.setProperty(BIND_ADDRESS, expectedBindAddress);
+    props.setProperty(addressPropertyKey, expectedBindAddress);
 
     server1 = clusterStartupRule.startServerVM(1, props, locator1Port);
     server2 = clusterStartupRule.startServerVM(2, props, locator1Port);
@@ -318,53 +324,15 @@ public class CreateGatewayReceiverCommandDUnitTest {
    * GatewayReceiver with all default attributes and server-bind-address in the gemfire properties
    */
   @Test
-  public void testCreateGatewayReceiverWithDefaultsAndServerBindAddressProperty() throws Exception {
-    String receiverGroup = "receiverGroup";
-    Integer locator1Port = locatorSite1.getPort();
-    String expectedBindAddress = getBindAddress();
-
-    Properties props = new Properties();
-    props.setProperty(GROUPS, receiverGroup);
-    props.setProperty(SERVER_BIND_ADDRESS, expectedBindAddress);
-
-    server1 = clusterStartupRule.startServerVM(1, props, locator1Port);
-    server2 = clusterStartupRule.startServerVM(2, props, locator1Port);
-    server3 = clusterStartupRule.startServerVM(3, props, locator1Port);
-
-    String command = CliStrings.CREATE_GATEWAYRECEIVER + " --" + GROUP + "=" + receiverGroup;
-    gfsh.executeAndAssertThat(command).statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Member", SERVER_1, SERVER_2, SERVER_3)
-        .tableHasColumnWithValuesContaining("Message",
-            "GatewayReceiver created on member \"" + SERVER_1 + "\"",
-            "GatewayReceiver created on member \"" + SERVER_2 + "\"",
-            "GatewayReceiver created on member \"" + SERVER_3 + "\"");
-
-    invokeInEveryMember(() -> {
-      // verify server-bind-address used if provided as a gemfire property
-      verifyGatewayReceiverProfile(expectedBindAddress);
-      verifyGatewayReceiverServerLocations(locator1Port, expectedBindAddress);
-      verifyReceiverCreationWithAttributes(!GatewayReceiver.DEFAULT_MANUAL_START,
-          GatewayReceiver.DEFAULT_START_PORT, GatewayReceiver.DEFAULT_END_PORT,
-          GatewayReceiver.DEFAULT_BIND_ADDRESS, GatewayReceiver.DEFAULT_MAXIMUM_TIME_BETWEEN_PINGS,
-          GatewayReceiver.DEFAULT_SOCKET_BUFFER_SIZE, null,
-          GatewayReceiver.DEFAULT_HOSTNAME_FOR_SENDERS);
-    }, server1, server2, server3);
-  }
-
-  /**
-   * GatewayReceiver with all default attributes and server-bind-address in the gemfire properties
-   */
-  @Test
   public void testCreateGatewayReceiverWithDefaultsAndMultipleBindAddressProperties()
       throws Exception {
-    String extraBindAddress = "localhost";
     String receiverGroup = "receiverGroup";
     Integer locator1Port = locatorSite1.getPort();
     String expectedBindAddress = getBindAddress();
 
     Properties props = new Properties();
     props.setProperty(GROUPS, receiverGroup);
-    props.setProperty(BIND_ADDRESS, extraBindAddress);
+    props.setProperty(BIND_ADDRESS, expectedBindAddress);
     props.setProperty(SERVER_BIND_ADDRESS, expectedBindAddress);
 
     server1 = clusterStartupRule.startServerVM(1, props, locator1Port);
@@ -574,6 +542,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
 
     invokeInEveryMember(() -> {
       Cache cache = ClusterStartupRule.getCache();
+      assertThat(cache).isNotNull();
       assertThat(cache.getGatewayReceivers()).isEmpty();
     }, server2, server3);
   }
@@ -610,6 +579,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
 
     invokeInEveryMember(() -> {
       Cache cache = ClusterStartupRule.getCache();
+      assertThat(cache).isNotNull();
       assertThat(cache.getGatewayReceivers()).isEmpty();
     }, server3);
   }
@@ -620,7 +590,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
   @Test
   public void testCreateGatewayReceiverOnGroup() {
     String groups = "receiverGroup1";
-    Integer locator1Port = locatorSite1.getPort();
+    int locator1Port = locatorSite1.getPort();
     server1 = startServerWithGroups(1, groups, locator1Port);
     server2 = startServerWithGroups(2, groups, locator1Port);
     server3 = startServerWithGroups(3, groups, locator1Port);
@@ -653,7 +623,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
   public void testCreateGatewayReceiverOnGroupScenario2() {
     String group1 = "receiverGroup1";
     String group2 = "receiverGroup2";
-    Integer locator1Port = locatorSite1.getPort();
+    int locator1Port = locatorSite1.getPort();
     server1 = startServerWithGroups(1, group1, locator1Port);
     server2 = startServerWithGroups(2, group1, locator1Port);
     server3 = startServerWithGroups(3, group2, locator1Port);
@@ -677,6 +647,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
 
     invokeInEveryMember(() -> {
       Cache cache = ClusterStartupRule.getCache();
+      assertThat(cache).isNotNull();
       assertThat(cache.getGatewayReceivers()).isEmpty();
     }, server3);
   }
@@ -686,7 +657,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
    */
   @Test
   public void testCreateGatewayReceiverOnMultipleGroups() {
-    Integer locator1Port = locatorSite1.getPort();
+    int locator1Port = locatorSite1.getPort();
     server1 = startServerWithGroups(1, "receiverGroup1", locator1Port);
     server2 = startServerWithGroups(2, "receiverGroup1", locator1Port);
     server3 = startServerWithGroups(3, "receiverGroup2", locator1Port);
@@ -712,7 +683,7 @@ public class CreateGatewayReceiverCommandDUnitTest {
   }
 
   private String getHostName() throws Exception {
-    return SocketCreator.getLocalHost().getCanonicalHostName();
+    return LocalHostUtil.getLocalHost().getCanonicalHostName();
   }
 
   private String getBindAddress() throws Exception {

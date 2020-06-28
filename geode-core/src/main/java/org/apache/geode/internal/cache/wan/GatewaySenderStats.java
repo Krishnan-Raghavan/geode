@@ -19,17 +19,18 @@ import org.apache.geode.Statistics;
 import org.apache.geode.StatisticsFactory;
 import org.apache.geode.StatisticsType;
 import org.apache.geode.StatisticsTypeFactory;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.DistributionStats;
-import org.apache.geode.internal.cache.CachePerfStats;
+import org.apache.geode.internal.statistics.StatisticsClock;
 import org.apache.geode.internal.statistics.StatisticsTypeFactoryImpl;
 
 public class GatewaySenderStats {
-
 
   public static final String typeName = "GatewaySenderStatistics";
 
 
   /** The <code>StatisticsType</code> of the statistics */
+  @Immutable
   private static final StatisticsType type;
 
   //////////////////// Statistic "Id" Fields ////////////////////
@@ -99,90 +100,130 @@ public class GatewaySenderStats {
   protected static final String SYNCHRONIZATION_EVENTS_PROVIDED = "synchronizationEventsProvided";
 
   /** Id of the events queued statistic */
-  protected static int eventsReceivedId;
+  private static final int eventsReceivedId;
   /** Id of the events queued statistic */
-  protected static int eventsQueuedId;
+  private static final int eventsQueuedId;
   /** Id of the events not queued because conflated statistic */
-  protected static int eventsNotQueuedConflatedId;
+  private static final int eventsNotQueuedConflatedId;
   /** Id of the event queue time statistic */
-  protected static int eventQueueTimeId;
+  private static final int eventQueueTimeId;
   /** Id of the event queue size statistic */
-  protected static int eventQueueSizeId;
+  private static final int eventQueueSizeId;
   /** Id of the event in secondary queue size statistic */
-  protected static int secondaryEventQueueSizeId;
+  private static final int secondaryEventQueueSizeId;
   /** Id of the events processed by Parallel Queue Removal Message(PQRM) statistic */
-  protected static int eventsProcessedByPQRMId;
+  private static final int eventsProcessedByPQRMId;
   /** Id of the temp event queue size statistic */
-  protected static int eventTmpQueueSizeId;
+  private static final int eventTmpQueueSizeId;
   /** Id of the events distributed statistic */
-  protected static int eventsDistributedId;
+  private static final int eventsDistributedId;
   /** Id of the events exceeding alert threshold statistic */
-  protected static int eventsExceedingAlertThresholdId;
+  private static final int eventsExceedingAlertThresholdId;
   /** Id of the batch distribution time statistic */
-  protected static int batchDistributionTimeId;
+  private static final int batchDistributionTimeId;
   /** Id of the batches distributed statistic */
-  protected static int batchesDistributedId;
+  private static final int batchesDistributedId;
   /** Id of the batches redistributed statistic */
-  protected static int batchesRedistributedId;
+  private static final int batchesRedistributedId;
   /** Id of the batches resized statistic */
-  protected static int batchesResizedId;
+  private static final int batchesResizedId;
   /** Id of the unprocessed events added by primary statistic */
-  protected static int unprocessedTokensAddedByPrimaryId;
+  private static final int unprocessedTokensAddedByPrimaryId;
   /** Id of the unprocessed events added by secondary statistic */
-  protected static int unprocessedEventsAddedBySecondaryId;
+  private static final int unprocessedEventsAddedBySecondaryId;
   /** Id of the unprocessed events removed by primary statistic */
-  protected static int unprocessedEventsRemovedByPrimaryId;
+  private static final int unprocessedEventsRemovedByPrimaryId;
   /** Id of the unprocessed events removed by secondary statistic */
-  protected static int unprocessedTokensRemovedBySecondaryId;
-  protected static int unprocessedEventsRemovedByTimeoutId;
-  protected static int unprocessedTokensRemovedByTimeoutId;
+  private static final int unprocessedTokensRemovedBySecondaryId;
+  private static final int unprocessedEventsRemovedByTimeoutId;
+  private static final int unprocessedTokensRemovedByTimeoutId;
   /** Id of the unprocessed events map size statistic */
-  protected static int unprocessedEventMapSizeId;
-  protected static int unprocessedTokenMapSizeId;
+  private static final int unprocessedEventMapSizeId;
+  private static final int unprocessedTokenMapSizeId;
   /** Id of the conflation indexes size statistic */
-  protected static int conflationIndexesMapSizeId;
+  private static final int conflationIndexesMapSizeId;
   /** Id of filtered events */
-  protected static int eventsFilteredId;
+  private static final int eventsFilteredId;
   /** Id of not queued events */
-  protected static int notQueuedEventsId;
+  private static final int notQueuedEventsId;
   /** Id of events dropped due to primary sender not running */
-  protected static int eventsDroppedDueToPrimarySenderNotRunningId;
+  private static final int eventsDroppedDueToPrimarySenderNotRunningId;
   /** Id of events conflated in batch */
-  protected static int eventsConflatedFromBatchesId;
+  private static final int eventsConflatedFromBatchesId;
   /** Id of load balances completed */
-  protected static int loadBalancesCompletedId;
+  private static final int loadBalancesCompletedId;
   /** Id of load balances in progress */
-  protected static int loadBalancesInProgressId;
+  private static final int loadBalancesInProgressId;
   /** Id of load balance time */
-  protected static int loadBalanceTimeId;
+  private static final int loadBalanceTimeId;
   /** Id of synchronization events enqueued */
-  protected static int synchronizationEventsEnqueuedId;
+  private static final int synchronizationEventsEnqueuedId;
   /** Id of synchronization events provided */
-  protected static int synchronizationEventsProvidedId;
+  private static final int synchronizationEventsProvidedId;
 
-  /**
+  /*
    * Static initializer to create and initialize the <code>StatisticsType</code>
    */
   static {
 
     StatisticsTypeFactory f = StatisticsTypeFactoryImpl.singleton();
 
-    type = f.createType(typeName, "Stats for activity in the GatewaySender",
+    type = createType(f, typeName, "Stats for activity in the GatewaySender");
+
+    // Initialize id fields
+    eventsReceivedId = type.nameToId(EVENTS_RECEIVED);
+    eventsQueuedId = type.nameToId(EVENTS_QUEUED);
+    eventsNotQueuedConflatedId = type.nameToId(EVENTS_NOT_QUEUED_CONFLATED);
+    eventQueueTimeId = type.nameToId(EVENT_QUEUE_TIME);
+    eventQueueSizeId = type.nameToId(EVENT_QUEUE_SIZE);
+    secondaryEventQueueSizeId = type.nameToId(SECONDARY_EVENT_QUEUE_SIZE);
+    eventsProcessedByPQRMId = type.nameToId(EVENTS_PROCESSED_BY_PQRM);
+    eventTmpQueueSizeId = type.nameToId(TMP_EVENT_QUEUE_SIZE);
+    eventsDistributedId = type.nameToId(EVENTS_DISTRIBUTED);
+    eventsExceedingAlertThresholdId = type.nameToId(EVENTS_EXCEEDING_ALERT_THRESHOLD);
+    batchDistributionTimeId = type.nameToId(BATCH_DISTRIBUTION_TIME);
+    batchesDistributedId = type.nameToId(BATCHES_DISTRIBUTED);
+    batchesRedistributedId = type.nameToId(BATCHES_REDISTRIBUTED);
+    batchesResizedId = type.nameToId(BATCHES_RESIZED);
+    unprocessedTokensAddedByPrimaryId = type.nameToId(UNPROCESSED_TOKENS_ADDED_BY_PRIMARY);
+    unprocessedEventsAddedBySecondaryId = type.nameToId(UNPROCESSED_EVENTS_ADDED_BY_SECONDARY);
+    unprocessedEventsRemovedByPrimaryId = type.nameToId(UNPROCESSED_EVENTS_REMOVED_BY_PRIMARY);
+    unprocessedTokensRemovedBySecondaryId = type.nameToId(UNPROCESSED_TOKENS_REMOVED_BY_SECONDARY);
+    unprocessedEventsRemovedByTimeoutId = type.nameToId(UNPROCESSED_EVENTS_REMOVED_BY_TIMEOUT);
+    unprocessedTokensRemovedByTimeoutId = type.nameToId(UNPROCESSED_TOKENS_REMOVED_BY_TIMEOUT);
+    unprocessedEventMapSizeId = type.nameToId(UNPROCESSED_EVENT_MAP_SIZE);
+    unprocessedTokenMapSizeId = type.nameToId(UNPROCESSED_TOKEN_MAP_SIZE);
+    conflationIndexesMapSizeId = type.nameToId(CONFLATION_INDEXES_MAP_SIZE);
+    notQueuedEventsId = type.nameToId(NOT_QUEUED_EVENTS);
+    eventsDroppedDueToPrimarySenderNotRunningId =
+        type.nameToId(EVENTS_DROPPED_DUE_TO_PRIMARY_SENDER_NOT_RUNNING);
+    eventsFilteredId = type.nameToId(EVENTS_FILTERED);
+    eventsConflatedFromBatchesId = type.nameToId(EVENTS_CONFLATED_FROM_BATCHES);
+    loadBalancesCompletedId = type.nameToId(LOAD_BALANCES_COMPLETED);
+    loadBalancesInProgressId = type.nameToId(LOAD_BALANCES_IN_PROGRESS);
+    loadBalanceTimeId = type.nameToId(LOAD_BALANCE_TIME);
+    synchronizationEventsEnqueuedId = type.nameToId(SYNCHRONIZATION_EVENTS_ENQUEUED);
+    synchronizationEventsProvidedId = type.nameToId(SYNCHRONIZATION_EVENTS_PROVIDED);
+  }
+
+  protected static StatisticsType createType(final StatisticsTypeFactory f, final String typeName,
+      final String description) {
+    return f.createType(typeName, description,
         new StatisticDescriptor[] {
-            f.createIntCounter(EVENTS_RECEIVED, "Number of events received by this Sender.",
+            f.createIntCounter(EVENTS_RECEIVED, "Number of events received by this queue.",
                 "operations"),
             f.createIntCounter(EVENTS_QUEUED, "Number of events added to the event queue.",
                 "operations"),
             f.createLongCounter(EVENT_QUEUE_TIME, "Total time spent queueing events.",
                 "nanoseconds"),
             f.createIntGauge(EVENT_QUEUE_SIZE, "Size of the event queue.", "operations", false),
-            f.createIntGauge(SECONDARY_EVENT_QUEUE_SIZE, "Size of secondary event queue.",
+            f.createIntGauge(SECONDARY_EVENT_QUEUE_SIZE, "Size of the secondary event queue.",
                 "operations", false),
             f.createIntGauge(EVENTS_PROCESSED_BY_PQRM,
                 "Total number of events processed by Parallel Queue Removal Message(PQRM).",
                 "operations", false),
-            f.createIntGauge(TMP_EVENT_QUEUE_SIZE, "Size of the temporary events.", "operations",
-                false),
+            f.createIntGauge(TMP_EVENT_QUEUE_SIZE, "Size of the temporary events queue.",
+                "operations", false),
             f.createIntCounter(EVENTS_NOT_QUEUED_CONFLATED,
                 "Number of events received but not added to the event queue because the queue already contains an event with the event's key.",
                 "operations"),
@@ -193,8 +234,7 @@ public class GatewaySenderStats {
             f.createIntCounter(EVENTS_EXCEEDING_ALERT_THRESHOLD,
                 "Number of events exceeding the alert threshold.", "operations", false),
             f.createLongCounter(BATCH_DISTRIBUTION_TIME,
-                "Total time spent distributing batches of events to other gateway receivers.",
-                "nanoseconds"),
+                "Total time spent distributing batches of events to receivers.", "nanoseconds"),
             f.createIntCounter(BATCHES_DISTRIBUTED,
                 "Number of batches of events removed from the event queue and sent.", "operations"),
             f.createIntCounter(BATCHES_REDISTRIBUTED,
@@ -245,47 +285,14 @@ public class GatewaySenderStats {
                 "Number of synchronization events added to the event queue.", "operations"),
             f.createIntCounter(SYNCHRONIZATION_EVENTS_PROVIDED,
                 "Number of synchronization events provided to other members.", "operations"),});
-
-    // Initialize id fields
-    eventsReceivedId = type.nameToId(EVENTS_RECEIVED);
-    eventsQueuedId = type.nameToId(EVENTS_QUEUED);
-    eventsNotQueuedConflatedId = type.nameToId(EVENTS_NOT_QUEUED_CONFLATED);
-    eventQueueTimeId = type.nameToId(EVENT_QUEUE_TIME);
-    eventQueueSizeId = type.nameToId(EVENT_QUEUE_SIZE);
-    secondaryEventQueueSizeId = type.nameToId(SECONDARY_EVENT_QUEUE_SIZE);
-    eventsProcessedByPQRMId = type.nameToId(EVENTS_PROCESSED_BY_PQRM);
-    eventTmpQueueSizeId = type.nameToId(TMP_EVENT_QUEUE_SIZE);
-    eventsDistributedId = type.nameToId(EVENTS_DISTRIBUTED);
-    eventsExceedingAlertThresholdId = type.nameToId(EVENTS_EXCEEDING_ALERT_THRESHOLD);
-    batchDistributionTimeId = type.nameToId(BATCH_DISTRIBUTION_TIME);
-    batchesDistributedId = type.nameToId(BATCHES_DISTRIBUTED);
-    batchesRedistributedId = type.nameToId(BATCHES_REDISTRIBUTED);
-    batchesResizedId = type.nameToId(BATCHES_RESIZED);
-    unprocessedTokensAddedByPrimaryId = type.nameToId(UNPROCESSED_TOKENS_ADDED_BY_PRIMARY);
-    unprocessedEventsAddedBySecondaryId = type.nameToId(UNPROCESSED_EVENTS_ADDED_BY_SECONDARY);
-    unprocessedEventsRemovedByPrimaryId = type.nameToId(UNPROCESSED_EVENTS_REMOVED_BY_PRIMARY);
-    unprocessedTokensRemovedBySecondaryId = type.nameToId(UNPROCESSED_TOKENS_REMOVED_BY_SECONDARY);
-    unprocessedEventsRemovedByTimeoutId = type.nameToId(UNPROCESSED_EVENTS_REMOVED_BY_TIMEOUT);
-    unprocessedTokensRemovedByTimeoutId = type.nameToId(UNPROCESSED_TOKENS_REMOVED_BY_TIMEOUT);
-    unprocessedEventMapSizeId = type.nameToId(UNPROCESSED_EVENT_MAP_SIZE);
-    unprocessedTokenMapSizeId = type.nameToId(UNPROCESSED_TOKEN_MAP_SIZE);
-    conflationIndexesMapSizeId = type.nameToId(CONFLATION_INDEXES_MAP_SIZE);
-    notQueuedEventsId = type.nameToId(NOT_QUEUED_EVENTS);
-    eventsDroppedDueToPrimarySenderNotRunningId =
-        type.nameToId(EVENTS_DROPPED_DUE_TO_PRIMARY_SENDER_NOT_RUNNING);
-    eventsFilteredId = type.nameToId(EVENTS_FILTERED);
-    eventsConflatedFromBatchesId = type.nameToId(EVENTS_CONFLATED_FROM_BATCHES);
-    loadBalancesCompletedId = type.nameToId(LOAD_BALANCES_COMPLETED);
-    loadBalancesInProgressId = type.nameToId(LOAD_BALANCES_IN_PROGRESS);
-    loadBalanceTimeId = type.nameToId(LOAD_BALANCE_TIME);
-    synchronizationEventsEnqueuedId = type.nameToId(SYNCHRONIZATION_EVENTS_ENQUEUED);
-    synchronizationEventsProvidedId = type.nameToId(SYNCHRONIZATION_EVENTS_PROVIDED);
   }
 
   ////////////////////// Instance Fields //////////////////////
 
   /** The <code>Statistics</code> instance to which most behavior is delegated */
   private final Statistics stats;
+
+  private final StatisticsClock statisticsClock;
 
   /////////////////////// Constructors ///////////////////////
 
@@ -296,8 +303,9 @@ public class GatewaySenderStats {
    * @param gatewaySenderId The id of the <code>GatewaySender</code> used to generate the name of
    *        the <code>Statistics</code>
    */
-  public GatewaySenderStats(StatisticsFactory f, String gatewaySenderId) {
-    this.stats = f.createAtomicStatistics(type, "gatewaySenderStats-" + gatewaySenderId);
+  public GatewaySenderStats(StatisticsFactory f, String textIdPrefix, String gatewaySenderId,
+      StatisticsClock statisticsClock) {
+    this(f, textIdPrefix + gatewaySenderId, type, statisticsClock);
   }
 
   /**
@@ -308,8 +316,15 @@ public class GatewaySenderStats {
    *        <code>Statistics</code>
    * @param statType The StatisticsTYpe
    */
-  public GatewaySenderStats(StatisticsFactory f, String asyncQueueId, StatisticsType statType) {
-    this.stats = f.createAtomicStatistics(statType, "asyncEventQueueStats-" + asyncQueueId);
+  public GatewaySenderStats(StatisticsFactory f, String textIdPrefix, String asyncQueueId,
+      StatisticsType statType, StatisticsClock statisticsClock) {
+    this(f, textIdPrefix + asyncQueueId, statType, statisticsClock);
+  }
+
+  private GatewaySenderStats(StatisticsFactory f, String textId, StatisticsType statType,
+      StatisticsClock statisticsClock) {
+    stats = f.createAtomicStatistics(statType, textId);
+    this.statisticsClock = statisticsClock;
   }
 
   ///////////////////// Instance Methods /////////////////////
@@ -860,11 +875,11 @@ public class GatewaySenderStats {
 
   public long startLoadBalance() {
     stats.incInt(loadBalancesInProgressId, 1);
-    return CachePerfStats.getStatTime();
+    return statisticsClock.getTime();
   }
 
   public void endLoadBalance(long start) {
-    long delta = CachePerfStats.getStatTime() - start;
+    long delta = statisticsClock.getTime() - start;
     stats.incInt(loadBalancesInProgressId, -1);
     stats.incInt(loadBalancesCompletedId, 1);
     stats.incLong(loadBalanceTimeId, delta);

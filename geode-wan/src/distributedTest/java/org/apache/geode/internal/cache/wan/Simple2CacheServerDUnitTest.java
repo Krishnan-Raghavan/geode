@@ -14,14 +14,14 @@
  */
 package org.apache.geode.internal.cache.wan;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -34,7 +34,7 @@ import org.apache.geode.internal.cache.ClientServerObserverHolder;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.categories.WanTest;
@@ -49,6 +49,7 @@ public class Simple2CacheServerDUnitTest extends WANTestBase {
     super();
   }
 
+  @Ignore // wait to re-fix GEODE-1183
   @Test
   public void testNormalClient2MultipleCacheServer() throws Exception {
     doMultipleCacheServer(false);
@@ -80,7 +81,7 @@ public class Simple2CacheServerDUnitTest extends WANTestBase {
     } else {
       vm3.invoke(() -> checkResultAndUnsetClientServerObserver());
     }
-    Awaitility.waitAtMost(20, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       return checkProxyIsPrimary(vm0) || checkProxyIsPrimary(vm2);
     });
 
@@ -89,7 +90,7 @@ public class Simple2CacheServerDUnitTest extends WANTestBase {
     if (serverPortAtVM1 != 0) {
       vm2.invoke(() -> CacheClientNotifierDUnitTest.closeACacheServer(serverPortAtVM1));
       LogService.getLogger().info("Closed cache server on vm2:" + serverPortAtVM1);
-      Awaitility.waitAtMost(20, TimeUnit.SECONDS).until(() -> {
+      await().until(() -> {
         return checkProxyIsPrimary(vm0) || checkProxyIsPrimary(vm2);
       });
     } else {
@@ -123,6 +124,7 @@ public class Simple2CacheServerDUnitTest extends WANTestBase {
   public static void setClientServerObserver() {
     PoolImpl.AFTER_PRIMARY_IDENTIFICATION_FROM_BACKUP_CALLBACK_FLAG = true;
     ClientServerObserverHolder.setInstance(new ClientServerObserverAdapter() {
+      @Override
       public void afterPrimaryIdentificationFromBackup(ServerLocation primaryEndpoint) {
         LogService.getLogger().info("After primary is set");
         afterPrimaryCount++;
@@ -160,7 +162,7 @@ public class Simple2CacheServerDUnitTest extends WANTestBase {
       @Override
       public Object call() throws Exception {
         final CacheClientNotifier ccn = CacheClientNotifier.getInstance();
-        Awaitility.waitAtMost(20, TimeUnit.SECONDS).until(() -> {
+        await().until(() -> {
           return (ccn.getClientProxies().size() == 1);
         });
 

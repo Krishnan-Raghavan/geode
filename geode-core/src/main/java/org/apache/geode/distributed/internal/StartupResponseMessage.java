@@ -28,14 +28,16 @@ import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.InternalDataSerializer.SerializerAttributesHolder;
 import org.apache.geode.internal.InternalInstantiator;
 import org.apache.geode.internal.InternalInstantiator.InstantiatorAttributesHolder;
-import org.apache.geode.internal.Version;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A message that is sent to all other distribution manager when a distribution manager starts up.
  */
-public class StartupResponseMessage extends HighPriorityDistributionMessage
+public class StartupResponseMessage extends DistributionMessage
     implements AdminMessageType {
   private static final Logger logger = LogService.getLogger();
 
@@ -75,7 +77,7 @@ public class StartupResponseMessage extends HighPriorityDistributionMessage
     this.distributedSystemId = dm.getDistributedSystemId();
     this.redundancyZone = dm.getRedundancyZone(dm.getId());
 
-    /**
+    /*
      * To fix B39705, we have added the instance variables to initialize the information about the
      * instantiators. While preparing the response message, we populate this information.
      **/
@@ -118,6 +120,11 @@ public class StartupResponseMessage extends HighPriorityDistributionMessage
   @Override
   public boolean getInlineProcess() {
     return true;
+  }
+
+  @Override
+  public int getProcessorType() {
+    return OperationExecutors.WAITING_POOL_EXECUTOR;
   }
 
   @Override
@@ -181,14 +188,16 @@ public class StartupResponseMessage extends HighPriorityDistributionMessage
         if (!this.responderIsAdmin) {
           proc.setReceivedAcceptance(true);
         }
-        proc.process(this);
-        if (logger.isTraceEnabled(LogMarker.DM_VERBOSE)) {
-          logger.trace(LogMarker.DM_VERBOSE, "{} Processed {}", proc, this);
-        }
+      }
+
+      proc.process(this);
+      if (logger.isTraceEnabled(LogMarker.DM_VERBOSE)) {
+        logger.trace(LogMarker.DM_VERBOSE, "{} Processed {}", proc, this);
       }
     } // proc != null
   }
 
+  @Override
   public int getDSFID() {
     return STARTUP_RESPONSE_MESSAGE;
   }
@@ -199,9 +208,10 @@ public class StartupResponseMessage extends HighPriorityDistributionMessage
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
 
-    super.toData(out);
+    super.toData(out, context);
 
     out.writeInt(processorId);
     DataSerializer.writeString(this.rejectionMessage, out);
@@ -228,9 +238,10 @@ public class StartupResponseMessage extends HighPriorityDistributionMessage
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
 
-    super.fromData(in);
+    super.fromData(in, context);
 
     this.processorId = in.readInt();
     this.rejectionMessage = DataSerializer.readString(in);

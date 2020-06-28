@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertNotNull;
@@ -41,10 +42,10 @@ import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheObserverAdapter;
 import org.apache.geode.internal.cache.CacheObserverHolder;
 import org.apache.geode.internal.cache.CacheServerImpl;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -120,8 +121,9 @@ public class RegisterInterestBeforeRegionCreationDUnitTest extends JUnit4Distrib
 
   private CacheSerializableRunnable putFromServer() {
     CacheSerializableRunnable putFromServer = new CacheSerializableRunnable("putFromServer") {
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         for (int i = 0; i < 1000; i++) {
           region.put("key" + i, "value" + i);
@@ -135,19 +137,22 @@ public class RegisterInterestBeforeRegionCreationDUnitTest extends JUnit4Distrib
   private CacheSerializableRunnable verifyIfAllPutsGot() {
     CacheSerializableRunnable putFromServer =
         new CacheSerializableRunnable("createRegionOnServer") {
+          @Override
           public void run2() throws CacheException {
-            final Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+            final Region region = cache.getRegion(SEPARATOR + REGION_NAME);
             assertNotNull(region);
             WaitCriterion ev = new WaitCriterion() {
+              @Override
               public boolean done() {
                 return region.size() == 1000;
               }
 
+              @Override
               public String description() {
                 return null;
               }
             };
-            Wait.waitForCriterion(ev, 5 * 1000, 200, true);
+            GeodeAwaitility.await().untilAsserted(ev);
           }
         };
     return putFromServer;
@@ -157,6 +162,7 @@ public class RegisterInterestBeforeRegionCreationDUnitTest extends JUnit4Distrib
   private CacheSerializableRunnable createRegionOnServer() {
     CacheSerializableRunnable putFromServer =
         new CacheSerializableRunnable("createRegionOnServer") {
+          @Override
           public void run2() throws CacheException {
             AttributesFactory factory = new AttributesFactory();
             factory.setScope(Scope.DISTRIBUTED_ACK);
@@ -234,7 +240,7 @@ public class RegisterInterestBeforeRegionCreationDUnitTest extends JUnit4Distrib
     factory.setPoolName(p.getName());
     RegionAttributes attrs = factory.createRegionAttributes();
     cache.createVMRegion(REGION_NAME, attrs);
-    Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region region = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(region);
     region.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
   }

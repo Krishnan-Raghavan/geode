@@ -37,11 +37,11 @@ import org.apache.geode.cache30.ClientServerTestCase;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -255,44 +255,50 @@ public class OperationsPropagationDUnitTest extends JUnit4DistributedTestCase {
       WaitCriterion wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(UPDATE_KEY);
           return UPDATE_VALUE1.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(INVALIDATE_KEY);
           return INVALIDATE_VALUE.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(DESTROY_KEY);
           return DESTROY_VALUE.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
     } catch (Exception e) {
       Assert.fail(" Test failed due to " + e, e);
     }
@@ -307,86 +313,98 @@ public class OperationsPropagationDUnitTest extends JUnit4DistributedTestCase {
       WaitCriterion wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(CREATE_KEY);
           return CREATE_VALUE.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(UPDATE_KEY);
           return UPDATE_VALUE2.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           return !region.containsKey(DESTROY_KEY);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(INVALIDATE_KEY);
           return val == null;
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(PUTALL_KEY);
           return PUTALL_VALUE.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = region.get(PUTALL_KEY2);
           return PUTALL_VALUE2.equals(val);
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
     } catch (Exception e) {
       Assert.fail(" Test failed due to " + e, e);
     }
@@ -400,15 +418,17 @@ public class OperationsPropagationDUnitTest extends JUnit4DistributedTestCase {
     WaitCriterion wc = new WaitCriterion() {
       String excuse;
 
+      @Override
       public boolean done() {
         Object val = region.get(PUTALL_KEY);
         return !region.containsKey(PUTALL_KEY) && !region.containsKey(PUTALL_KEY2);
       }
 
+      @Override
       public String description() {
         return excuse;
       }
     };
-    Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 }

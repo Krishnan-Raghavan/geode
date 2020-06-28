@@ -14,6 +14,7 @@
  */
 package org.apache.geode.test.fake;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.mock;
@@ -22,23 +23,32 @@ import static org.mockito.Mockito.when;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import org.apache.geode.CancelCriterion;
-import org.apache.geode.LogWriter;
 import org.apache.geode.Statistics;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionAttributes;
+import org.apache.geode.cache.query.internal.QueryMonitor;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DSClock;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
+import org.apache.geode.internal.SystemTimer;
 import org.apache.geode.internal.cache.CachePerfStats;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.TXManagerImpl;
+import org.apache.geode.internal.logging.InternalLogWriter;
+import org.apache.geode.internal.security.SecurableCommunicationChannel;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.statistics.StatisticsClock;
+import org.apache.geode.internal.statistics.StatisticsManager;
 import org.apache.geode.pdx.PdxInstanceFactory;
 import org.apache.geode.pdx.internal.TypeRegistry;
 
@@ -67,20 +77,26 @@ public class Fakes {
     GemFireCacheImpl cache = mock(GemFireCacheImpl.class);
     InternalDistributedSystem system = mock(InternalDistributedSystem.class);
     DistributionConfig config = mock(DistributionConfig.class);
+    when(config.getSecurableCommunicationChannels())
+        .thenReturn(new SecurableCommunicationChannel[] {SecurableCommunicationChannel.ALL});
     ClusterDistributionManager distributionManager = mock(ClusterDistributionManager.class);
     PdxInstanceFactory pdxInstanceFactory = mock(PdxInstanceFactory.class);
     TypeRegistry pdxRegistryMock = mock(TypeRegistry.class);
     CancelCriterion systemCancelCriterion = mock(CancelCriterion.class);
     DSClock clock = mock(DSClock.class);
-    LogWriter logger = mock(LogWriter.class);
+    InternalLogWriter logger = mock(InternalLogWriter.class);
     Statistics stats = mock(Statistics.class);
     TXManagerImpl txManager = mock(TXManagerImpl.class);
+    QueryMonitor queryMonitor = mock(QueryMonitor.class);
+    StatisticsManager statisticsManager = mock(StatisticsManager.class);
 
     InternalDistributedMember member;
     member = new InternalDistributedMember("localhost", 5555);
 
     when(config.getCacheXmlFile()).thenReturn(new File(""));
     when(config.getDeployWorkingDir()).thenReturn(new File("."));
+    when(config.getJmxManagerUpdateRate()).thenReturn(100);
+
 
     when(cache.getDistributedSystem()).thenReturn(system);
     when(cache.getInternalDistributedSystem()).thenReturn(system);
@@ -93,6 +109,11 @@ public class Fakes {
     when(cache.createPdxInstanceFactory(any())).thenReturn(pdxInstanceFactory);
     when(cache.getPdxRegistry()).thenReturn(pdxRegistryMock);
     when(cache.getTxManager()).thenReturn(txManager);
+    when(cache.getLogger()).thenReturn(logger);
+    when(cache.getQueryMonitor()).thenReturn(queryMonitor);
+    when(cache.getMeterRegistry()).thenReturn(new SimpleMeterRegistry());
+    when(cache.getCCPTimer()).thenReturn(mock(SystemTimer.class));
+    when(cache.getStatisticsClock()).thenReturn(mock(StatisticsClock.class));
 
     when(system.getDistributedMember()).thenReturn(member);
     when(system.getConfig()).thenReturn(config);
@@ -101,9 +122,12 @@ public class Fakes {
     when(system.getClock()).thenReturn(clock);
     when(system.getLogWriter()).thenReturn(logger);
     when(system.getSecurityService()).thenReturn(mock(SecurityService.class));
+    when(system.getCache()).thenReturn(cache);
+    when(system.getStatisticsManager()).thenReturn(statisticsManager);
     when(system.createAtomicStatistics(any(), any(), anyLong())).thenReturn(stats);
     when(system.createAtomicStatistics(any(), any())).thenReturn(stats);
-    when(system.getCache()).thenReturn(cache);
+    when(system.getProperties()).thenReturn(mock(Properties.class));
+    when(system.isConnected()).thenReturn(true);
 
     when(distributionManager.getId()).thenReturn(member);
     when(distributionManager.getDistributionManagerId()).thenReturn(member);
@@ -112,6 +136,10 @@ public class Fakes {
     when(distributionManager.getCancelCriterion()).thenReturn(systemCancelCriterion);
     when(distributionManager.getCache()).thenReturn(cache);
     when(distributionManager.getExistingCache()).thenReturn(cache);
+    when(distributionManager.getExecutors()).thenReturn(mock(OperationExecutors.class));
+
+    when(statisticsManager.createAtomicStatistics(any(), any(), anyLong())).thenReturn(stats);
+    when(statisticsManager.createAtomicStatistics(any(), any())).thenReturn(stats);
 
     return cache;
   }
@@ -135,7 +163,7 @@ public class Fakes {
     when(region.getCache()).thenReturn(cache);
     when(region.getRegionService()).thenReturn(cache);
     when(region.getName()).thenReturn(name);
-    when(region.getFullPath()).thenReturn("/" + name);
+    when(region.getFullPath()).thenReturn(SEPARATOR + name);
     return region;
   }
 

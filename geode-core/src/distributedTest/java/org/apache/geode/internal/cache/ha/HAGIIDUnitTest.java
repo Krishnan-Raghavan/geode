@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
@@ -21,6 +22,7 @@ import static org.apache.geode.test.dunit.Assert.assertNotNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
 
+import java.net.ConnectException;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
@@ -53,8 +55,10 @@ import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.ClientTombstoneMessage;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
 import org.apache.geode.internal.cache.versions.VersionSource;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
+import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
@@ -103,22 +107,26 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
     // Start the client
     client0.invoke(() -> HAGIIDUnitTest.createClientCache(NetworkUtils.getServerHostName(host),
         new Integer(PORT1), new Integer(PORT2)));
+    client0.invoke(() -> checker.resetUpdateCounter());
   }
 
   @Test
   public void testGIIRegionQueue() {
-    client0.invoke(() -> HAGIIDUnitTest.createEntries());
-    client0.invoke(() -> HAGIIDUnitTest.registerInterestList());
-    server0.invoke(() -> HAGIIDUnitTest.put());
+    try (IgnoredException ignoredException =
+        IgnoredException.addIgnoredException(ConnectException.class)) {
+      client0.invoke(() -> HAGIIDUnitTest.createEntries());
+      client0.invoke(() -> HAGIIDUnitTest.registerInterestList());
+      server0.invoke(() -> HAGIIDUnitTest.put());
 
-    server0.invoke(() -> HAGIIDUnitTest.tombstonegc());
+      server0.invoke(() -> HAGIIDUnitTest.tombstonegc());
 
-    client0.invoke(() -> HAGIIDUnitTest.verifyEntries());
-    server1.invoke(HAGIIDUnitTest.class, "createServer2Cache", new Object[] {new Integer(PORT2)});
-    Wait.pause(6000);
-    server0.invoke(() -> HAGIIDUnitTest.stopServer());
-    // pause(10000);
-    client0.invoke(() -> HAGIIDUnitTest.verifyEntriesAfterGiiViaListener());
+      client0.invoke(() -> HAGIIDUnitTest.verifyEntries());
+      server1.invoke(HAGIIDUnitTest.class, "createServer2Cache", new Object[] {new Integer(PORT2)});
+      Wait.pause(6000);
+      server0.invoke(() -> HAGIIDUnitTest.stopServer());
+      // pause(10000);
+      client0.invoke(() -> HAGIIDUnitTest.verifyEntriesAfterGiiViaListener());
+    }
   }
 
   public void createCache(Properties props) throws Exception {
@@ -139,7 +147,7 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
     new HAGIIDUnitTest().createCache(props);
     AttributesFactory factory = new AttributesFactory();
     ClientServerTestCase.configureConnectionPool(factory, host, new int[] {PORT1, PORT2}, true, -1,
-        2, null, 1000, -1, false, -1);
+        2, null, 1000, -1, -1);
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.addCacheListener(HAGIIDUnitTest.checker);
     RegionAttributes attrs = factory.create();
@@ -176,7 +184,7 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
   public static void registerInterestList() {
     try {
-      Region r = cache.getRegion("/" + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.registerInterest("key-1", InterestResultPolicy.KEYS_VALUES);
       r.registerInterest("key-2", InterestResultPolicy.KEYS_VALUES);
@@ -188,7 +196,7 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
   public static void createEntries() {
     try {
-      Region r = cache.getRegion("/" + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.create("key-1", "key-1");
       r.create("key-2", "key-2");
@@ -213,7 +221,7 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
   public static void put() {
     try {
-      Region r = cache.getRegion("/" + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
 
       r.put("key-1", "value-1");
@@ -227,7 +235,7 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
   /** queue a tombstone GC message for the client. See bug #46832 */
   public static void tombstonegc() throws Exception {
-    LocalRegion r = (LocalRegion) cache.getRegion("/" + REGION_NAME);
+    LocalRegion r = (LocalRegion) cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
 
     DistributedMember id = r.getCache().getDistributedSystem().getDistributedMember();
@@ -246,16 +254,18 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
   public static void verifyEntries() {
     try {
-      final Region r = cache.getRegion("/" + REGION_NAME);
+      final Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       // wait until we
       // have a dead
       // server
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-1").getValue().equals("key-1");
         }
 
+        @Override
         public String description() {
           return null;
         }
@@ -265,30 +275,34 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
       // have a dead
       // server
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-2").getValue().equals("key-2");
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
       // assertIndexDetailsEquals( "key-2",r.getEntry("key-2").getValue());
 
       // wait until we
       // have a dead
       // server
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-3").getValue().equals("key-3");
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
       // assertIndexDetailsEquals( "key-3",r.getEntry("key-3").getValue());
     } catch (Exception ex) {
       Assert.fail("failed while verifyEntries()", ex);
@@ -299,87 +313,99 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
     // Check whether just the 3 expected updates arrive.
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        return HAGIIDUnitTest.checker.gotFirst();
+        return checker.gotFirst();
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 90 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        return HAGIIDUnitTest.checker.gotSecond();
+        return checker.gotSecond();
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        return HAGIIDUnitTest.checker.gotThird();
+        return checker.gotThird();
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
-    assertEquals(3, HAGIIDUnitTest.checker.getUpdates());
+    assertEquals(3, checker.getUpdates());
   }
 
   public static void verifyEntriesAfterGII() {
     try {
-      final Region r = cache.getRegion("/" + REGION_NAME);
+      final Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       // wait until
       // we have a
       // dead server
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-1").getValue().equals("value-1");
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       // wait until
       // we have a
       // dead server
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-2").getValue().equals("value-2");
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
       // assertIndexDetailsEquals( "key-2",r.getEntry("key-2").getValue());
 
       // wait until
       // we have a
       // dead server
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return r.getEntry("key-3").getValue().equals("value-3");
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       /*
        * assertIndexDetailsEquals( "value-1",r.getEntry("key-1").getValue());
@@ -444,6 +470,10 @@ public class HAGIIDUnitTest extends JUnit4DistributedTestCase {
 
     public int getUpdates() {
       return this.updates;
+    }
+
+    public void resetUpdateCounter() {
+      updates = 0;
     }
 
     public boolean gotFirst() {

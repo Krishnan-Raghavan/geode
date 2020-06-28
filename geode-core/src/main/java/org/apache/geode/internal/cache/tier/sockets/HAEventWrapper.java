@@ -24,10 +24,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.DataSerializer;
-import org.apache.geode.internal.DSCODE;
-import org.apache.geode.internal.DataSerializableFixedID;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.Conflatable;
 import org.apache.geode.internal.cache.EnumListenerEvent;
 import org.apache.geode.internal.cache.EventID;
@@ -35,8 +32,13 @@ import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl.Clie
 import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl.CqNameToOp;
 import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl.CqNameToOpHashMap;
 import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl.CqNameToOpSingleEntry;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.DSCODE;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.size.Sizeable;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This new class acts as a wrapper for the existing <code>ClientUpdateMessageImpl</code>. Now, the
@@ -73,7 +75,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
   private EventID eventIdentifier;
 
   /**
-   * The underlying map for all the ha region queues associated with a bridge server.
+   * The underlying map for all the ha region queues associated with a cache server.
    */
   private Map haContainer;
 
@@ -140,6 +142,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#getEventId()
    */
+  @Override
   public EventID getEventId() {
     return this.eventIdentifier;
   }
@@ -149,6 +152,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#getKeyToConflate()
    */
+  @Override
   public Object getKeyToConflate() {
     return this.keyOfInterest;
   }
@@ -158,6 +162,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#getRegionToConflate()
    */
+  @Override
   public String getRegionToConflate() {
     return this.regionName;
   }
@@ -167,6 +172,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#getValueToConflate()
    */
+  @Override
   public Object getValueToConflate() {
     return null;
   }
@@ -176,6 +182,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#setLatestValue(java.lang.Object)
    */
+  @Override
   public void setLatestValue(Object value) {
     // this.value = (byte[])value;
   }
@@ -185,6 +192,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @see org.apache.geode.internal.cache.Conflatable#shouldBeConflated()
    */
+  @Override
   public boolean shouldBeConflated() {
     return this.shouldConflate;
   }
@@ -221,7 +229,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    */
   @Override
   public boolean equals(Object other) {
-    if (other == null || !(other instanceof HAEventWrapper)) {
+    if (!(other instanceof HAEventWrapper)) {
       return false;
     }
 
@@ -263,7 +271,9 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @param out The output stream which the object should be written to.
    */
-  public void toData(DataOutput out) throws IOException {
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     ClientUpdateMessageImpl cum = (ClientUpdateMessageImpl) this.haContainer.get(this);
 
     // If the dispatcher sends the cum object to the client and removes it from
@@ -271,10 +281,10 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
     // by sending false boolean value.
     if (cum != null) {
       DataSerializer.writePrimitiveBoolean(true, out);
-      DataSerializer.writeObject(cum.getEventId(), out);
+      context.getSerializer().writeObject(cum.getEventId(), out);
     } else {
       DataSerializer.writePrimitiveBoolean(false, out);
-      DataSerializer.writeObject(new EventID(), out);
+      context.getSerializer().writeObject(new EventID(), out);
       // Create a dummy ClientUpdateMessageImpl instance
       cum = new ClientUpdateMessageImpl(EnumListenerEvent.AFTER_CREATE,
           new ClientProxyMembershipID(), null);
@@ -291,10 +301,12 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @param in The input stream from which the object should be constructed.
    */
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     if (DataSerializer.readPrimitiveBoolean(in)) {
       // Indicates that we have a ClientUpdateMessage along with the HAEW instance in inputstream.
-      this.eventIdentifier = (EventID) DataSerializer.readObject(in);
+      this.eventIdentifier = (EventID) context.getDeserializer().readObject(in);
       this.clientUpdateMessage = new ClientUpdateMessageImpl();
       InternalDataSerializer.invokeFromData(this.clientUpdateMessage, in);
       ((ClientUpdateMessageImpl) this.clientUpdateMessage).setEventIdentifier(this.eventIdentifier);
@@ -351,7 +363,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
       rcUpdater.set(this, 0);
     } else {
       // Read and ignore dummy eventIdentifier instance.
-      DataSerializer.readObject(in);
+      context.getDeserializer().readObject(in);
       // Read and ignore dummy ClientUpdateMessageImpl instance.
       InternalDataSerializer.invokeFromData(new ClientUpdateMessageImpl(), in);
       // hasCq will be false here, so client CQs are not read from this input
@@ -363,6 +375,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
     }
   }
 
+  @Override
   public int getDSFID() {
     return HA_EVENT_WRAPPER;
   }
@@ -374,6 +387,7 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
    *
    * @return int Size of this instance in bytes.
    */
+  @Override
   public int getSizeInBytes() {
     return 0;
   }
@@ -395,8 +409,16 @@ public class HAEventWrapper implements Conflatable, DataSerializableFixedID, Siz
     return rcUpdater.decrementAndGet(this);
   }
 
-  public long incrementPutInProgressCounter() {
-    return putInProgressCountUpdater.incrementAndGet(this);
+  public long incrementPutInProgressCounter(String location) {
+    long putInProgressCounter = putInProgressCountUpdater.incrementAndGet(this);
+
+    if (logger.isDebugEnabled()) {
+      logger.debug("Incremented PutInProgressCounter from " + location
+          + " on HAEventWrapper with Event ID hash code: " + hashCode() + "; System ID hash code: "
+          + System.identityHashCode(this) + "; Wrapper details: " + toString());
+    }
+
+    return putInProgressCounter;
   }
 
   public long decrementPutInProgressCounter() {

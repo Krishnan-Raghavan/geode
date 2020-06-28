@@ -14,6 +14,7 @@
  */
 package org.apache.geode.experimental.driver;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
@@ -34,8 +35,8 @@ import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.Locator;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.security.PostProcessor;
-import org.apache.geode.security.SimpleTestSecurityManager;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 
 @Category({ClientServerTest.class})
@@ -48,7 +49,6 @@ public class PostProcessingIntegrationTest {
   private Locator locator;
   private Cache cache;
   private Driver driver;
-  private int locatorPort;
   private org.apache.geode.cache.Region<Object, Object> serverRegion;
 
   @Before
@@ -58,13 +58,13 @@ public class PostProcessingIntegrationTest {
     // Create a cache
     CacheFactory cf = new CacheFactory();
     cf.set(ConfigurationProperties.MCAST_PORT, "0");
-    cf.setSecurityManager(new SimpleTestSecurityManager());
+    cf.setSecurityManager(new SimpleSecurityManager());
     cf.set(ConfigurationProperties.SECURITY_POST_PROCESSOR, SpamPostProcessor.class.getName());
     cache = cf.create();
 
     // Start a locator
     locator = Locator.startLocatorAndDS(0, null, new Properties());
-    locatorPort = locator.getPort();
+    int locatorPort = locator.getPort();
 
     serverRegion = cache.createRegionFactory(RegionShortcut.REPLICATE).create("region");
 
@@ -86,7 +86,7 @@ public class PostProcessingIntegrationTest {
   @Test
   public void getResultIsPostProcessed() throws Exception {
     serverRegion.put("key", "value");
-    Region region = driver.getRegion(REGION_NAME);
+    Region<String, String> region = driver.getRegion(REGION_NAME);
     assertEquals(SPAM, region.get("key"));
   }
 
@@ -97,7 +97,8 @@ public class PostProcessingIntegrationTest {
 
     QueryService service = driver.getQueryService();
 
-    Query<String> query = service.newQuery("select value from /region value order by value");
+    Query<String> query =
+        service.newQuery("select value from " + SEPARATOR + "region value order by value");
     final List<String> results = query.execute();
 
     assertEquals(Arrays.asList(SPAM, SPAM), results);

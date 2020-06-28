@@ -18,10 +18,11 @@ import org.apache.geode.cache.query.internal.parse.OQLLexerTokenTypes;
 
 public class CompiledDivision extends CompiledArithmetic implements OQLLexerTokenTypes {
 
-  CompiledDivision(CompiledValue left, CompiledValue right, int op) {
-    super(left, right, op);
+  CompiledDivision(CompiledValue left, CompiledValue right) {
+    super(left, right);
   }
 
+  @Override
   public int getType() {
     return DIVISION;
   }

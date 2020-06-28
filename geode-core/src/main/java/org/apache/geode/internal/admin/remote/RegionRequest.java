@@ -24,7 +24,8 @@ import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.internal.admin.CacheInfo;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message that is sent to a particular application to get the region for the specified path.
@@ -121,13 +122,15 @@ public class RegionRequest extends AdminRequest {
     return RegionResponse.create(dm, this.getSender(), this);
   }
 
+  @Override
   public int getDSFID() {
     return REGION_REQUEST;
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.action);
     out.writeInt(this.cacheId);
     DataSerializer.writeString(this.path, out);
@@ -136,8 +139,9 @@ public class RegionRequest extends AdminRequest {
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.action = in.readInt();
     this.cacheId = in.readInt();
     this.path = DataSerializer.readString(in);
@@ -155,19 +159,19 @@ public class RegionRequest extends AdminRequest {
     switch (rgnRqst.action) {
       case GET_REGION:
         rgnRqst.friendlyName =
-            LocalizedStrings.RegionRequest_GET_A_SPECIFIC_REGION_FROM_THE_ROOT.toLocalizedString();
+            "Get a specific region from the root";
         break;
       case CREATE_VM_ROOT:
         rgnRqst.friendlyName =
-            LocalizedStrings.RegionRequest_CREATE_A_NEW_ROOT_VM_REGION.toLocalizedString();
+            "Create a new root VM region";
         break;
       case CREATE_VM_REGION:
         rgnRqst.friendlyName =
-            LocalizedStrings.RegionRequest_CREATE_A_NEW_VM_REGION.toLocalizedString();
+            "Create a new VM region";
         break;
       default:
-        rgnRqst.friendlyName = LocalizedStrings.RegionRequest_UNKNOWN_OPERATION_0
-            .toLocalizedString(Integer.valueOf(rgnRqst.action));
+        rgnRqst.friendlyName = String.format("Unknown operation %s",
+            Integer.valueOf(rgnRqst.action));
         break;
     }
   }

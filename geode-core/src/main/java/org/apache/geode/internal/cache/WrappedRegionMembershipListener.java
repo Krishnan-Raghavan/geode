@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import org.jgroups.annotations.GuardedBy;
+
 import org.apache.geode.cache.EntryEvent;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionEvent;
@@ -32,9 +34,8 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
 
   /**
    * has initMembers been invoked?
-   *
-   * @guarded.By initLock
    */
+  @GuardedBy("initLock")
   private boolean initialized;
 
 
@@ -61,6 +62,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * org.apache.geode.cache.RegionMembershipListener#afterRemoteRegionCrash(org.apache.geode.cache.
    * RegionEvent)
    */
+  @Override
   public void afterRemoteRegionCrash(RegionEvent event) {
     synchronized (this.initLock) {
       if (this.initialized) {
@@ -76,6 +78,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * org.apache.geode.cache.RegionMembershipListener#afterRemoteRegionCreate(org.apache.geode.cache.
    * RegionEvent)
    */
+  @Override
   public void afterRemoteRegionCreate(RegionEvent event) {
     synchronized (this.initLock) {
       if (this.initialized) {
@@ -91,6 +94,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * org.apache.geode.cache.RegionMembershipListener#afterRemoteRegionDeparture(org.apache.geode.
    * cache.RegionEvent)
    */
+  @Override
   public void afterRemoteRegionDeparture(RegionEvent event) {
     synchronized (this.initLock) {
       if (this.initialized) {
@@ -106,6 +110,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * org.apache.geode.cache.RegionMembershipListener#initialMembers(org.apache.geode.cache.Region,
    * org.apache.geode.distributed.DistributedMember[])
    */
+  @Override
   public void initialMembers(Region region, DistributedMember[] initialMembers) {
     synchronized (this.initLock) {
       if (!this.initialized) {
@@ -120,6 +125,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterCreate(org.apache.geode.cache.EntryEvent)
    */
+  @Override
   public void afterCreate(EntryEvent event) {
     this.wrappedListener.afterCreate(event);
   }
@@ -129,6 +135,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterDestroy(org.apache.geode.cache.EntryEvent)
    */
+  @Override
   public void afterDestroy(EntryEvent event) {
     this.wrappedListener.afterDestroy(event);
   }
@@ -138,6 +145,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterInvalidate(org.apache.geode.cache.EntryEvent)
    */
+  @Override
   public void afterInvalidate(EntryEvent event) {
     this.wrappedListener.afterInvalidate(event);
   }
@@ -147,6 +155,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterRegionClear(org.apache.geode.cache.RegionEvent)
    */
+  @Override
   public void afterRegionClear(RegionEvent event) {
     this.wrappedListener.afterRegionClear(event);
   }
@@ -156,6 +165,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterRegionCreate(org.apache.geode.cache.RegionEvent)
    */
+  @Override
   public void afterRegionCreate(RegionEvent event) {
     this.wrappedListener.afterRegionCreate(event);
   }
@@ -166,6 +176,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * @see
    * org.apache.geode.cache.CacheListener#afterRegionDestroy(org.apache.geode.cache.RegionEvent)
    */
+  @Override
   public void afterRegionDestroy(RegionEvent event) {
     this.wrappedListener.afterRegionDestroy(event);
   }
@@ -176,6 +187,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    * @see
    * org.apache.geode.cache.CacheListener#afterRegionInvalidate(org.apache.geode.cache.RegionEvent)
    */
+  @Override
   public void afterRegionInvalidate(RegionEvent event) {
     this.wrappedListener.afterRegionInvalidate(event);
   }
@@ -185,6 +197,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterRegionLive(org.apache.geode.cache.RegionEvent)
    */
+  @Override
   public void afterRegionLive(RegionEvent event) {
     this.wrappedListener.afterRegionLive(event);
   }
@@ -194,6 +207,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheListener#afterUpdate(org.apache.geode.cache.EntryEvent)
    */
+  @Override
   public void afterUpdate(EntryEvent event) {
     this.wrappedListener.afterUpdate(event);
   }
@@ -203,6 +217,7 @@ class WrappedRegionMembershipListener implements RegionMembershipListener {
    *
    * @see org.apache.geode.cache.CacheCallback#close()
    */
+  @Override
   public void close() {
     this.wrappedListener.close();
   }

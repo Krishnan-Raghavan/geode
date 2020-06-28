@@ -20,14 +20,15 @@ import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.session.StandardSession;
-import org.apache.catalina.util.LifecycleSupport;
 
-public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
+public class Tomcat7DeltaSessionManager extends DeltaSessionManager<Tomcat7CommitSessionValve> {
 
   /**
    * The <code>LifecycleSupport</code> for this component.
    */
-  protected LifecycleSupport lifecycle = new LifecycleSupport(this);
+  @SuppressWarnings("deprecation")
+  protected org.apache.catalina.util.LifecycleSupport lifecycle =
+      new org.apache.catalina.util.LifecycleSupport(this);
 
   /**
    * Prepare for the beginning of active use of the public methods of this component. This method
@@ -39,7 +40,7 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
    */
   @Override
   public void startInternal() throws LifecycleException {
-    super.startInternal();
+    startInternalBase();
     if (getLogger().isDebugEnabled()) {
       getLogger().debug(this + ": Starting");
     }
@@ -61,9 +62,7 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
 
     try {
       load();
-    } catch (ClassNotFoundException e) {
-      throw new LifecycleException("Exception starting manager", e);
-    } catch (IOException e) {
+    } catch (ClassNotFoundException | IOException e) {
       throw new LifecycleException("Exception starting manager", e);
     }
 
@@ -71,7 +70,15 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
     scheduleTimerTasks();
 
     this.started.set(true);
-    this.setState(LifecycleState.STARTING);
+    this.setLifecycleState(LifecycleState.STARTING);
+  }
+
+  void setLifecycleState(LifecycleState newState) throws LifecycleException {
+    this.setState(newState);
+  }
+
+  void startInternalBase() throws LifecycleException {
+    super.startInternal();
   }
 
   /**
@@ -82,7 +89,7 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
    */
   @Override
   public void stopInternal() throws LifecycleException {
-    super.stopInternal();
+    stopInternalBase();
     if (getLogger().isDebugEnabled()) {
       getLogger().debug(this + ": Stopping");
     }
@@ -114,7 +121,15 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
       unregisterCommitSessionValve();
     }
 
-    this.setState(LifecycleState.STOPPING);
+    setLifecycleState(LifecycleState.STOPPING);
+  }
+
+  void stopInternalBase() throws LifecycleException {
+    super.stopInternal();
+  }
+
+  void destroyInternalBase() throws LifecycleException {
+    super.destroyInternal();
   }
 
   /**
@@ -146,8 +161,14 @@ public class Tomcat7DeltaSessionManager extends DeltaSessionManager {
     this.lifecycle.removeLifecycleListener(listener);
   }
 
+  @Override
   protected StandardSession getNewSession() {
     return new DeltaSession7(this);
+  }
+
+  @Override
+  protected Tomcat7CommitSessionValve createCommitSessionValve() {
+    return new Tomcat7CommitSessionValve();
   }
 
 }

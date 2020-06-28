@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.VM.getAllVMs;
 import static org.apache.geode.test.dunit.VM.getHostName;
 import static org.apache.geode.test.dunit.VM.getVM;
@@ -22,10 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -144,13 +143,9 @@ public class AcceptorImplClientQueueDistributedTest implements Serializable {
 
     // Start a second server
     int vm1_port = vm1.invoke("Start server2 in with subscriptions turned on", () -> {
-      try {
-        int serverPort = createSubscriptionServer(cacheRule.getCache());
-        InitialImageOperation.slowImageProcessing = 500;
-        return serverPort;
-      } catch (IOException e) {
-        return 0;
-      }
+      int serverPort = createSubscriptionServer(cacheRule.getCache());
+      InitialImageOperation.slowImageProcessing = 500;
+      return serverPort;
     });
 
     // Make copying the queue slow
@@ -192,7 +187,7 @@ public class AcceptorImplClientQueueDistributedTest implements Serializable {
 
           region.registerInterestRegex(".*", InterestResultPolicy.NONE, true);
           cache.readyForEvents();
-          Awaitility.await().atMost(200, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          await()
               .until(() -> eventCount.get() == NUMBER_OF_ENTRIES);
           cache.close();
           return eventCount.get() == NUMBER_OF_ENTRIES;
@@ -253,7 +248,7 @@ public class AcceptorImplClientQueueDistributedTest implements Serializable {
   }
 
   private int initializeCacheServerWithSubscription(InternalCache cache) throws IOException {
-    CacheServer cacheServer1 = cache.addCacheServer(false);
+    CacheServer cacheServer1 = cache.addCacheServer();
     ClientSubscriptionConfig clientSubscriptionConfig = cacheServer1.getClientSubscriptionConfig();
     clientSubscriptionConfig.setEvictionPolicy("entry");
     clientSubscriptionConfig.setCapacity(5);

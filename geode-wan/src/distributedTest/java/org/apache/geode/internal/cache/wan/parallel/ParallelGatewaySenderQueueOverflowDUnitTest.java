@@ -16,25 +16,24 @@ package org.apache.geode.internal.cache.wan.parallel;
 
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.RegionFactory;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.wan.GatewayEventFilter;
 import org.apache.geode.cache.wan.GatewaySender;
 import org.apache.geode.cache.wan.GatewaySenderFactory;
@@ -51,6 +50,7 @@ import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.junit.categories.WanTest;
+
 
 /**
  * DUnit for ParallelSenderQueue overflow operations.
@@ -74,13 +74,13 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm7.invoke(() -> WANTestBase.createSenderWithoutDiskStore("ln", 2, 10, 10, false, true));
 
     vm4.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm5.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm6.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm7.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
 
     startSenderInVMs("ln", vm4, vm5, vm6, vm7);
 
@@ -89,21 +89,18 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm6.invoke(() -> WANTestBase.pauseSender("ln"));
     vm7.invoke(() -> WANTestBase.pauseSender("ln"));
 
-    // give some time for the senders to pause
-    Wait.pause(1000);
-
     vm2.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
     vm3.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
 
     int numEventPuts = 50;
-    vm4.invoke(() -> WANTestBase.doHeavyPuts(getTestMethodName(), numEventPuts));
+    vm4.invoke(() -> WANTestBase.doHeavyPuts(getUniqueName(), numEventPuts));
 
 
     // considering a memory limit of 40 MB, maximum of 40 events can be in memory. Rest should be on
     // disk.
-    Awaitility.await().atMost(60, TimeUnit.SECONDS).untilAsserted(() -> {
+    await().untilAsserted(() -> {
       long numOvVm4 = (Long) vm4.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
       long numOvVm5 = (Long) vm5.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
       long numOvVm6 = (Long) vm6.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
@@ -134,8 +131,8 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm6.invoke(() -> WANTestBase.resumeSender("ln"));
     vm7.invoke(() -> WANTestBase.resumeSender("ln"));
 
-    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50, 240000));
-    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50, 240000));
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
   }
 
   /**
@@ -158,13 +155,13 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm7.invoke(() -> WANTestBase.createSender("ln", 2, true, 10, 10, false, false, null, true));
 
     vm4.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm5.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm6.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm7.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
 
     startSenderInVMs("ln", vm4, vm5, vm6, vm7);
 
@@ -177,12 +174,12 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     Wait.pause(1000);
 
     vm2.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
     vm3.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
 
     int numEventPuts = 50;
-    vm4.invoke(() -> WANTestBase.doHeavyPuts(getTestMethodName(), numEventPuts));
+    vm4.invoke(() -> WANTestBase.doHeavyPuts(getUniqueName(), numEventPuts));
 
     long numOvVm4 = (Long) vm4.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
     long numOvVm5 = (Long) vm5.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
@@ -215,8 +212,8 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm6.invoke(() -> WANTestBase.resumeSender("ln"));
     vm7.invoke(() -> WANTestBase.resumeSender("ln"));
 
-    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50));
-    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50));
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
   }
 
   /**
@@ -240,13 +237,13 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm7.invoke(() -> WANTestBase.createSender("ln", 2, true, 20, 10, false, false, null, true));
 
     vm4.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm5.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm6.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm7.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
 
     startSenderInVMs("ln", vm4, vm5, vm6, vm7);
 
@@ -259,12 +256,12 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     Wait.pause(1000);
 
     vm2.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
     vm3.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
 
     int numEventPuts = 50;
-    vm4.invoke(() -> WANTestBase.doHeavyPuts(getTestMethodName(), numEventPuts));
+    vm4.invoke(() -> WANTestBase.doHeavyPuts(getUniqueName(), numEventPuts));
 
     long numOvVm4 = (Long) vm4.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
     long numOvVm5 = (Long) vm5.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
@@ -307,8 +304,8 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm6.invoke(() -> WANTestBase.resumeSender("ln"));
     vm7.invoke(() -> WANTestBase.resumeSender("ln"));
 
-    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50));
-    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 50));
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 50));
   }
 
   @Ignore("TODO: test is disabled")
@@ -328,13 +325,13 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm7.invoke(() -> WANTestBase.createSender("ln", 2, true, 10, 10, false, false, null, true));
 
     vm4.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm5.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm6.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
     vm7.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), "ln", 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), "ln", 1, 100, isOffHeap()));
 
     startSenderInVMs("ln", vm4, vm5, vm6, vm7);
 
@@ -347,12 +344,12 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     Wait.pause(1000);
 
     vm2.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
     vm3.invoke(
-        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+        () -> WANTestBase.createPartitionedRegion(getUniqueName(), null, 1, 100, isOffHeap()));
 
     int numEventPuts = 15;
-    vm4.invoke(() -> WANTestBase.doHeavyPuts(getTestMethodName(), numEventPuts));
+    vm4.invoke(() -> WANTestBase.doHeavyPuts(getUniqueName(), numEventPuts));
 
     long numOvVm4 = (Long) vm4.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
     long numOvVm5 = (Long) vm5.invoke(() -> WANTestBase.getNumberOfEntriesOverflownToDisk("ln"));
@@ -384,8 +381,8 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     vm6.invoke(() -> WANTestBase.resumeSender("ln"));
     vm7.invoke(() -> WANTestBase.resumeSender("ln"));
 
-    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 15));
-    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 15));
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 15));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getUniqueName(), 15));
   }
 
   /**
@@ -435,11 +432,9 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     try {
       GatewaySender sender1 = fact.create("TKSender", 2);
 
-      AttributesFactory factory = new AttributesFactory();
+      RegionFactory factory = cache.createRegionFactory(RegionShortcut.PARTITION_PERSISTENT);
       factory.addGatewaySenderId(sender1.getId());
-      factory.setDataPolicy(DataPolicy.PERSISTENT_PARTITION);
-      Region region = cache.createRegionFactory(factory.create())
-          .create("test_ValidateGatewaySenderAttributes");
+      Region region = factory.create("test_ValidateGatewaySenderAttributes");
       Set<GatewaySender> senders = cache.getGatewaySenders();
       assertEquals(senders.size(), 1);
       GatewaySender gatewaySender = senders.iterator().next();
@@ -489,11 +484,9 @@ public class ParallelGatewaySenderQueueOverflowDUnitTest extends WANTestBase {
     final IgnoredException ex = IgnoredException.addIgnoredException("Could not connect");
     try {
       GatewaySender sender1 = fact.create("TKSender", 2);
-      AttributesFactory factory = new AttributesFactory();
+      RegionFactory factory = cache.createRegionFactory(RegionShortcut.PARTITION);
       factory.addGatewaySenderId(sender1.getId());
-      factory.setDataPolicy(DataPolicy.PARTITION);
-      Region region = cache.createRegionFactory(factory.create())
-          .create("test_ValidateGatewaySenderAttributes");
+      Region region = factory.create("test_ValidateGatewaySenderAttributes");
       Set<GatewaySender> senders = cache.getGatewaySenders();
       assertEquals(senders.size(), 1);
       GatewaySender gatewaySender = senders.iterator().next();

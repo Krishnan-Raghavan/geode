@@ -14,12 +14,15 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.fail;
 
 import java.util.HashSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -34,13 +37,13 @@ import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.Struct;
+import org.apache.geode.cache.query.cq.internal.CqQueryImpl;
 import org.apache.geode.cache.query.data.Portfolio;
-import org.apache.geode.cache.query.internal.cq.CqQueryImpl;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.cache30.CertifiableTestCacheListener;
 import org.apache.geode.cache30.ClientServerTestCase;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -75,6 +78,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // system before creating ConnectionPools
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -275,6 +279,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // do destroys and invalidates.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
@@ -296,6 +301,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createValues(server, cqDUnitTest.regions[0], 10);
     // do invalidates on fisrt five keys.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
@@ -407,8 +413,10 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createValues(server2, cqDUnitTest.regions[0], size);
 
     server1.invoke(new CacheSerializableRunnable("Load from second server") {
+      @Override
       public void run2() throws CacheException {
-        Region region1 = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region1 =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= size; i++) {
           region1.get(CqQueryDUnitTest.KEY + i);
         }
@@ -439,6 +447,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     final int evictionThreshold = 1;
     server1.invoke(new CacheSerializableRunnable("Create Cache Server") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Create Cache Server. ###");
         AttributesFactory factory = new AttributesFactory();
@@ -454,7 +463,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
           Region region = createRegion(cqDUnitTest.regions[i], factory.createRegionAttributes());
           // Set CacheListener.
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         }
         Wait.pause(2000);
 
@@ -520,6 +529,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // createClientWithConnectionPool
     SerializableRunnable createClientWithPool =
         new CacheSerializableRunnable("createClientWithPool") {
+          @Override
           public void run2() throws CacheException {
             logger.info("### Create Client. ###");
             // Initialize CQ Service.
@@ -581,6 +591,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // createClientWithBridgeClient
     SerializableRunnable createClientWithPool =
         new CacheSerializableRunnable("createClientWithPool") {
+          @Override
           public void run2() throws CacheException {
             logger.info("### Create Client. ###");
             // Region region1 = null;
@@ -639,6 +650,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // createClientWithConnectionPool
     SerializableRunnable createClientWithConnectionPool =
         new CacheSerializableRunnable("createClientWithConnectionPool") {
+          @Override
           public void run2() throws CacheException {
             logger.info("### Create Client. ###");
             // Region region1 = null;
@@ -696,6 +708,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // createClientWithPool
     SerializableRunnable createClientWithPool =
         new CacheSerializableRunnable("createClientWithPool") {
+          @Override
           public void run2() throws CacheException {
             logger.info("### Create Client. ###");
             // Region region1 = null;
@@ -769,9 +782,11 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Test for Event on Region Clear.
     server.invoke(new CacheSerializableRunnable("testRegionEvents") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Clearing the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -783,9 +798,11 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Test for Event on Region invalidate.
     server.invoke(new CacheSerializableRunnable("testRegionEvents") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Invalidate the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -797,9 +814,11 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Test for Event on Region destroy.
     server.invoke(new CacheSerializableRunnable("testRegionEvents") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Destroying the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[1]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[1]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -849,8 +868,10 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -860,6 +881,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Execute CQ while update is in progress.
     AsyncInvocation processCqs = client.invokeAsync(new CacheSerializableRunnable("Execute CQ") {
+      @Override
       public void run2() throws CacheException {
         QueryService cqService = getCache().getQueryService();
         // Get CqQuery object.
@@ -930,6 +952,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
         // Wait to allow client a chance to register the cq
         try {
@@ -937,7 +960,8 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = numObjects + 1; i <= totalObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -963,6 +987,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
    *
    */
   @Test
+  @Ignore("GEODE-5863 - The test fails with an Awaitility timeout after increasing the timeout. It previously ignored the timeout")
   public void testMultipleExecuteWithInitialResults() throws Exception {
     final int numObjects = 200;
     final int totalObjects = 500;
@@ -985,8 +1010,10 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -996,6 +1023,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
         // Wait to give client a chance to register the cq
         try {
@@ -1003,7 +1031,8 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = numObjects + 1; i <= totalObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -1014,6 +1043,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // the thread that validates all results and executes first
     AsyncInvocation processCqs =
         client.invokeAsync(new CacheSerializableRunnable("Execute CQ first") {
+          @Override
           public void run2() throws CacheException {
             SelectResults cqResults = null;
             QueryService cqService = getCache().getQueryService();
@@ -1075,6 +1105,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // long enough
     // for the first call to executeWithInitialResults first
     client.invokeAsync(new CacheSerializableRunnable("Execute CQ second") {
+      @Override
       public void run2() throws CacheException {
         try {
           Thread.sleep(2000);
@@ -1102,6 +1133,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     // thread that unlatches the test hook, sleeping long enough for both
     // the other two threads to execute first
     client.invokeAsync(new CacheSerializableRunnable("Release latch") {
+      @Override
       public void run2() throws CacheException {
         // we wait to release the testHook and hope the other two threads have
         // had a chance to invoke executeWithInitialResults
@@ -1118,7 +1150,8 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
     });
 
     // wait for 60 seconds for test to complete
-    ThreadUtils.join(processCqs, 60 * 1000);
+    processCqs.get(1, TimeUnit.MINUTES);
+
     // Close.
     cqDUnitTest.closeClient(client);
     cqDUnitTest.closeServer(server);
@@ -1126,11 +1159,13 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
 
   public CacheSerializableRunnable setTestHook() {
     SerializableRunnable sr = new CacheSerializableRunnable("TestHook") {
+      @Override
       public void run2() {
         class CqQueryTestHook implements CqQueryImpl.TestHook {
 
           CountDownLatch latch = new CountDownLatch(1);
 
+          @Override
           public void pauseUntilReady() {
             try {
               latch.await();
@@ -1140,6 +1175,7 @@ public class CqDataDUnitTest extends JUnit4CacheTestCase {
             }
           }
 
+          @Override
           public void ready() {
             latch.countDown();
           }

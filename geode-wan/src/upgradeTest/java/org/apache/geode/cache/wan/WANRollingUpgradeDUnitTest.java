@@ -24,16 +24,16 @@ import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.REMOTE_LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.USE_CLUSTER_CONFIGURATION;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.awaitility.Awaitility;
 import org.junit.Rule;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -52,20 +52,22 @@ import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.distributed.Locator;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePortHelper;
+import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.wan.AbstractGatewaySender;
 import org.apache.geode.internal.cache.wan.parallel.BatchRemovalThreadHelper;
 import org.apache.geode.internal.cache.wan.parallel.ConcurrentParallelGatewaySenderQueue;
 import org.apache.geode.internal.cache.wan.parallel.ParallelGatewaySenderQueue;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
 import org.apache.geode.management.internal.cli.util.CommandStringBuilder;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.dunit.Host;
+import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
-import org.apache.geode.test.dunit.standalone.DUnitLauncher;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.dunit.internal.DUnitLauncher;
 import org.apache.geode.test.junit.categories.WanTest;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.VersionManager;
 
 @SuppressWarnings("ConstantConditions")
 @Category(WanTest.class)
@@ -199,8 +201,8 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
     client.invoke(() -> doPuts(regionName, numPuts));
 
     // Wait for local site queues to be empty
-    localServer1.invoke(() -> waitForEmptyQueueRegion(senderId, primaryOnly));
-    localServer2.invoke(() -> waitForEmptyQueueRegion(senderId, primaryOnly));
+    localServer1.invoke(() -> waitForQueueRegionToCertainSize(senderId, 0, primaryOnly));
+    localServer2.invoke(() -> waitForQueueRegionToCertainSize(senderId, 0, primaryOnly));
 
     // Verify remote site received events
     int remoteServer1EventsReceived = remoteServer1.invoke(() -> getEventsReceived(regionName));
@@ -225,7 +227,7 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
     localServer1.invoke(() -> closeCache());
 
     // Wait for the other sender's queue to be empty
-    localServer2.invoke(() -> waitForEmptyQueueRegion(senderId, false));
+    localServer2.invoke(() -> waitForQueueRegionToCertainSize(senderId, 0, false));
 
     // Verify remote site did not receive any events. The events received were previously cleared on
     // all members, so there should be 0 events received on the remote site.
@@ -264,7 +266,7 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
     server.start();
   }
 
-  private void startClient(String hostName, int locatorPort, String regionName) {
+  protected void startClient(String hostName, int locatorPort, String regionName) {
     ClientCacheFactory ccf = new ClientCacheFactory().addPoolLocator(hostName, locatorPort);
     ClientCache cache = getClientCache(ccf);
     cache.createClientRegionFactory(ClientRegionShortcut.PROXY).create(regionName);
@@ -307,19 +309,62 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
         .setPartitionAttributes(paf.create()).create(regionName);
   }
 
-  private void doPuts(String regionName, int numPuts) {
+  protected void doPuts(String regionName, int numPuts) {
     Region region = getCache().getRegion(regionName);
     for (int i = 0; i < numPuts; i++) {
       region.put(i, i);
     }
   }
 
-  private void waitForEmptyQueueRegion(String gatewaySenderId, boolean primaryOnly) {
-    Awaitility.await().atMost(60, TimeUnit.SECONDS)
-        .until(() -> getQueueRegionSize(gatewaySenderId, primaryOnly) == 0);
+  protected void pauseSender(String senderId) {
+    final IgnoredException exln = IgnoredException.addIgnoredException("Could not connect");
+    IgnoredException exp =
+        IgnoredException.addIgnoredException(ForceReattemptException.class.getName());
+    try {
+      Set<GatewaySender> senders = cache.getGatewaySenders();
+      GatewaySender sender = null;
+      for (GatewaySender s : senders) {
+        if (s.getId().equals(senderId)) {
+          sender = s;
+          break;
+        }
+      }
+      sender.pause();
+      ((AbstractGatewaySender) sender).getEventProcessor().waitForDispatcherToPause();
+
+    } finally {
+      exp.remove();
+      exln.remove();
+    }
   }
 
-  private int getQueueRegionSize(String gatewaySenderId, boolean primaryOnly) {
+  protected void resumeSender(String senderId) {
+    final IgnoredException exln = IgnoredException.addIgnoredException("Could not connect");
+    IgnoredException exp =
+        IgnoredException.addIgnoredException(ForceReattemptException.class.getName());
+    try {
+      Set<GatewaySender> senders = cache.getGatewaySenders();
+      GatewaySender sender = null;
+      for (GatewaySender s : senders) {
+        if (s.getId().equals(senderId)) {
+          sender = s;
+          break;
+        }
+      }
+      sender.resume();
+    } finally {
+      exp.remove();
+      exln.remove();
+    }
+  }
+
+  protected void waitForQueueRegionToCertainSize(String gatewaySenderId, int expectedSize,
+      boolean primaryOnly) {
+    await()
+        .until(() -> getQueueRegionSize(gatewaySenderId, primaryOnly) == expectedSize);
+  }
+
+  protected int getQueueRegionSize(String gatewaySenderId, boolean primaryOnly) {
     // This method currently only supports parallel senders. It gets the size of the local data set
     // from the
     // underlying co-located region. Depending on the value of primaryOnly, it gets either the local
@@ -335,14 +380,14 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
     return localDataSet.size();
   }
 
-  private Integer getEventsReceived(String regionName) {
+  protected Integer getEventsReceived(String regionName) {
     Region region = getCache().getRegion(regionName);
     EventCountCacheListener cl =
         (EventCountCacheListener) region.getAttributes().getCacheListener();
     return cl.getEventsReceived();
   }
 
-  private void clearEventsReceived(String regionName) {
+  protected void clearEventsReceived(String regionName) {
     Region region = getCache().getRegion(regionName);
     EventCountCacheListener cl =
         (EventCountCacheListener) region.getAttributes().getCacheListener();
@@ -353,10 +398,12 @@ public abstract class WANRollingUpgradeDUnitTest extends JUnit4CacheTestCase {
 
     AtomicInteger eventsReceived = new AtomicInteger();
 
+    @Override
     public void afterCreate(EntryEvent event) {
       process(event);
     }
 
+    @Override
     public void afterUpdate(EntryEvent event) {
       process(event);
     }

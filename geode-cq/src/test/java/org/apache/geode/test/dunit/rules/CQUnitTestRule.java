@@ -47,6 +47,7 @@ public class CQUnitTestRule extends ExternalResource {
   public CqService cqService;
   public InternalCqQuery internalCqQuery;
 
+  @Override
   protected void before() throws Throwable {
     securityService = mock(SecurityService.class);
     message = mock(Message.class);
@@ -61,7 +62,7 @@ public class CQUnitTestRule extends ExternalResource {
     DefaultQueryService queryService = mock(DefaultQueryService.class);
     DefaultQuery query = mock(DefaultQuery.class);
 
-    Set<String> regionsInQuery = new HashSet();
+    Set<String> regionsInQuery = new HashSet<>();
     regionsInQuery.add(regionName);
 
     when(connection.getCachedRegionHelper()).thenReturn(crHelper);

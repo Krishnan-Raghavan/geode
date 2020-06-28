@@ -14,20 +14,18 @@
  */
 package org.apache.geode.cache30;
 
-import static org.apache.geode.test.dunit.Assert.assertFalse;
-import static org.apache.geode.test.dunit.Assert.assertNotNull;
-import static org.apache.geode.test.dunit.Assert.fail;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.Properties;
 
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
-import org.apache.geode.cache.Declarable;
 import org.apache.geode.cache.LoaderHelper;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionAttributes;
+import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.Scope;
 import org.apache.geode.cache.client.Pool;
 import org.apache.geode.cache.client.PoolFactory;
@@ -37,8 +35,6 @@ import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
-import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 
 /**
@@ -49,9 +45,12 @@ import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
  */
 public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
 
-  public static String NON_EXISTENT_KEY = "NON_EXISTENT_KEY";
+  public static final String NON_EXISTENT_KEY = "NON_EXISTENT_KEY";
 
   public static boolean AUTO_LOAD_BALANCE = false;
+  public static final String TEST_POOL_NAME = "testPool";
+
+
 
   @Override
   public final void postSetUp() throws Exception {
@@ -72,7 +71,7 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
   protected void preTearDownClientServerTestCase() throws Exception {}
 
   /**
-   * Starts a bridge server on the given port
+   * Starts a cache server on the given port
    *
    * @since GemFire 4.0
    */
@@ -95,43 +94,31 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    *
    * @since GemFire 4.0
    */
   public void stopBridgeServers(Cache cache) {
-    CacheServer bridge = null;
-    for (Iterator bsI = cache.getCacheServers().iterator(); bsI.hasNext();) {
-      bridge = (CacheServer) bsI.next();
+    CacheServer bridge;
+    for (CacheServer cacheServer : cache.getCacheServers()) {
+      bridge = cacheServer;
       bridge.stop();
-      assertFalse(bridge.isRunning());
+      assertThat(bridge.isRunning()).isFalse();
     }
   }
 
   /**
    * Returns region attributes for a <code>LOCAL</code> region
    */
-  protected RegionAttributes getRegionAttributes() {
-    AttributesFactory factory = new AttributesFactory();
+  protected <K, V> RegionAttributes<K, V> getRegionAttributes() {
+    AttributesFactory<K, V> factory = new AttributesFactory<>();
     factory.setScope(Scope.LOCAL);
     return factory.create();
   }
 
-  public static String createBridgeClientConnection(String host, int[] ports) {
-    StringBuffer sb = new StringBuffer();
-    for (int i = 0; i < ports.length; i++) {
-      if (i > 0) {
-        sb.append(",");
-      }
-      sb.append("name" + i + "=");
-      sb.append(host + ":" + ports[i]);
-    }
-    return sb.toString();
-  }
-
   public static Pool configureConnectionPool(AttributesFactory factory, String host, int port1,
       int port2, boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      int pingInterval, int idleTimeout, boolean threadLocalCnxs, int lifetimeTimeout) {
+      int pingInterval, int idleTimeout, int lifetimeTimeout) {
     int[] ports;
     if (port2 != -1) {
       ports = new int[] {port1, port2};
@@ -139,53 +126,44 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
       ports = new int[] {port1};
     }
     return configureConnectionPool(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, pingInterval, idleTimeout, threadLocalCnxs,
-        lifetimeTimeout);
-  }
-
-  public static Pool configureConnectionPool(AttributesFactory factory, String host, int port1,
-      int port2, boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      int pingInterval, int idleTimeout, boolean threadLocalCnxs) {
-    return configureConnectionPool(factory, host, port1, port2, establish, redundancy,
-        connectionsPerServer, serverGroup, pingInterval, idleTimeout, threadLocalCnxs,
-        -2/* lifetimeTimeout */);
-  }
-
-  public static Pool configureConnectionPool(AttributesFactory factory, String host, int port1,
-      int port2, boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      int pingInterval) {
-    return configureConnectionPool(factory, host, port1, port2, establish, redundancy,
-        connectionsPerServer, serverGroup, pingInterval, -1, false);
+        connectionsPerServer, serverGroup, pingInterval, idleTimeout, lifetimeTimeout);
   }
 
   public static Pool configureConnectionPool(AttributesFactory factory, String host, int port1,
       int port2, boolean establish, int redundancy, int connectionsPerServer, String serverGroup) {
     return configureConnectionPool(factory, host, port1, port2, establish, redundancy,
-        connectionsPerServer, serverGroup, -1/* pingInterval */);
+        connectionsPerServer, serverGroup, -1, -1,
+        -2);
   }
 
-  public static Pool configureConnectionPoolWithName(AttributesFactory factory, String host,
-      int[] ports, boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      String poolName) {
-    return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, poolName, PoolManager.createFactory(), -1, -1, false, -2,
-        -1);
+  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
+      boolean establish, int redundancy, int connectionsPerServer, String serverGroup) {
+    return configureConnectionPool(factory, host, ports, establish, redundancy,
+        connectionsPerServer, serverGroup, -1/* pingInterval */, -1/* idleTimeout */,
+        -2/* lifetimeTimeout */);
   }
 
-  public static Pool configureConnectionPoolWithName(AttributesFactory factory, String host,
-      int[] ports, boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      String poolName, int pingInterval, int idleTimeout, boolean threadLocalCnxs,
-      int lifetimeTimeout, int statisticInterval) {
+  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
+      boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
+      int pingInterval, int idleTimeout, int lifetimeTimeout) {
     return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, poolName, PoolManager.createFactory(), pingInterval,
-        idleTimeout, threadLocalCnxs, lifetimeTimeout, statisticInterval);
+        connectionsPerServer, serverGroup, null, PoolManager.createFactory(), pingInterval,
+        idleTimeout, lifetimeTimeout, -1);
+  }
+
+  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
+      boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
+      int pingInterval, int idleTimeout, int lifetimeTimeout, int statisticInterval) {
+    return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
+        connectionsPerServer, serverGroup, null, PoolManager.createFactory(), pingInterval,
+        idleTimeout, lifetimeTimeout, statisticInterval);
   }
 
   public static Pool configureConnectionPoolWithNameAndFactory(AttributesFactory factory,
       String host, int[] ports, boolean establish, int redundancy, int connectionsPerServer,
       String serverGroup, String poolName, PoolFactory pf) {
     return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, poolName, pf, -1, -1, false, -2, -1);
+        connectionsPerServer, serverGroup, poolName, pf, -1, -1, -2, -1);
   }
 
   /**
@@ -196,22 +174,19 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
   public static Pool configureConnectionPoolWithNameAndFactory(AttributesFactory factory,
       String host, int[] ports, boolean establish, int redundancy, int connectionsPerServer,
       String serverGroup, String poolName, PoolFactory pf, int pingInterval, int idleTimeout,
-      boolean threadLocalCnxs, int lifetimeTimeout, int statisticInterval) {
+      int lifetimeTimeout, int statisticInterval) {
 
     if (AUTO_LOAD_BALANCE || ports.length == 0) {
-      pf.addLocator(host, DistributedTestUtils.getDUnitLocatorPort());
+      pf.addLocator(host, DistributedTestUtils.getLocatorPort());
     } else {
-      for (int z = 0; z < ports.length; z++) {
-        pf.addServer(host, ports[z]);
+      for (int port : ports) {
+        pf.addServer(host, port);
       }
     }
 
-    // TODO - probably should pass in minConnections rather than connecions per server
+    // TODO - probably should pass in minConnections rather than connections per server
     if (connectionsPerServer != -1 && ports != null) {
       pf.setMinConnections(connectionsPerServer * ports.length);
-    }
-    if (threadLocalCnxs) {
-      pf.setThreadLocalConnections(true);
     }
     if (pingInterval != -1) {
       pf.setPingInterval(pingInterval);
@@ -233,7 +208,7 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
     if (serverGroup != null) {
       pf.setServerGroup(serverGroup);
     }
-    String rpoolName = "testPool";
+    String rpoolName = TEST_POOL_NAME;
     if (poolName != null) {
       rpoolName = poolName;
     }
@@ -244,50 +219,79 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
     return pool;
   }
 
-  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
-      boolean establish, int redundancy, int connectionsPerServer, String serverGroup) {
-    return configureConnectionPool(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, -1/* pingInterval */, -1/* idleTimeout */,
-        false/* threadLocalCnxs */, -2/* lifetimeTimeout */);
+
+  public static <K, V> Pool configureConnectionPool(RegionFactory<K, V> factory, String host,
+      int[] ports, boolean establish, int redundancy, int connectionsPerServer,
+      String serverGroup) {
+    return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
+        connectionsPerServer, serverGroup, TEST_POOL_NAME, PoolManager.createFactory(), -1, -1, -2,
+        -1);
   }
 
-  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
-      boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      int pingInterval, int idleTimeout, boolean threadLocalCnxs, int lifetimeTimeout) {
-    return configureConnectionPoolWithName(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, null/* poolName */, pingInterval, idleTimeout,
-        threadLocalCnxs, lifetimeTimeout, -1);
+  public static <K, V> Pool configureConnectionPoolWithNameAndFactory(RegionFactory<K, V> factory,
+      String host, int[] ports, boolean establish, int redundancy, int connectionsPerServer,
+      String serverGroup, String poolName, PoolFactory pf) {
+    return configureConnectionPoolWithNameAndFactory(factory, host, ports, establish, redundancy,
+        connectionsPerServer, serverGroup, poolName, pf, -1, -1, -2, -1);
   }
 
-  public static Pool configureConnectionPool(AttributesFactory factory, String host, int[] ports,
-      boolean establish, int redundancy, int connectionsPerServer, String serverGroup,
-      int pingInterval, int idleTimeout, boolean threadLocalCnxs, int lifetimeTimeout,
-      int statisticInterval) {
-    return configureConnectionPoolWithName(factory, host, ports, establish, redundancy,
-        connectionsPerServer, serverGroup, null/* poolName */, pingInterval, idleTimeout,
-        threadLocalCnxs, lifetimeTimeout, statisticInterval);
+  public static <K, V> Pool configureConnectionPoolWithNameAndFactory(RegionFactory<K, V> factory,
+      String host, int[] ports, boolean establish, int redundancy, int connectionsPerServer,
+      String serverGroup, String poolName, PoolFactory pf, int pingInterval, int idleTimeout,
+      int lifetimeTimeout, int statisticInterval) {
+
+    if (AUTO_LOAD_BALANCE || ports.length == 0) {
+      pf.addLocator(host, DistributedTestUtils.getLocatorPort());
+    } else {
+      for (int port : ports) {
+        pf.addServer(host, port);
+      }
+    }
+
+    // TODO - probably should pass in minConnections rather than connections per server
+    if (connectionsPerServer != -1 && ports != null) {
+      pf.setMinConnections(connectionsPerServer * ports.length);
+    }
+    if (pingInterval != -1) {
+      pf.setPingInterval(pingInterval);
+    }
+    if (idleTimeout != -1) {
+      pf.setIdleTimeout(idleTimeout);
+    }
+    if (statisticInterval != -1) {
+      pf.setStatisticInterval(statisticInterval);
+    }
+    if (lifetimeTimeout != -2) {
+      pf.setLoadConditioningInterval(lifetimeTimeout);
+    }
+    if (establish) {
+      pf.setSubscriptionEnabled(true);
+      pf.setSubscriptionRedundancy(redundancy);
+      pf.setSubscriptionAckInterval(1);
+    }
+    if (serverGroup != null) {
+      pf.setServerGroup(serverGroup);
+    }
+    String rpoolName = TEST_POOL_NAME;
+    if (poolName != null) {
+      rpoolName = poolName;
+    }
+    Pool pool = pf.create(rpoolName);
+    if (factory != null) {
+      factory.setPoolName(rpoolName);
+    }
+    return pool;
   }
+
+
 
   protected static DistributedMember getMemberId() {
-    WaitCriterion w = new WaitCriterion() {
-
-      public String description() {
-        return "client never finished connecting: " + getSystemStatic().getMemberId();
-      }
-
-      public boolean done() {
-        return getSystemStatic().getDistributedMember().getPort() > 0;
-      }
-
-    };
-    int waitMillis = 20000;
-    int interval = 100;
-    boolean throwException = true;
-    Wait.waitForCriterion(w, waitMillis, interval, throwException);
+    await("Waiting for client to connect " + getSystemStatic().getMemberId())
+        .until(() -> getSystemStatic().getDistributedMember().getMembershipPort() > 0);
     return getSystemStatic().getDistributedMember();
   }
 
-  public static class CacheServerCacheLoader extends TestCacheLoader implements Declarable {
+  public static class CacheServerCacheLoader extends TestCacheLoader<Object, Object> {
 
     public CacheServerCacheLoader() {}
 
@@ -295,7 +299,7 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
     public Object load2(LoaderHelper helper) {
       if (helper.getArgument() instanceof Integer) {
         try {
-          Thread.sleep(((Integer) helper.getArgument()).intValue());
+          Thread.sleep((Integer) helper.getArgument());
         } catch (InterruptedException ugh) {
           fail("interrupted");
         }
@@ -304,16 +308,15 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
 
       if (ret instanceof String) {
         if (ret != null && ret.equals(NON_EXISTENT_KEY))
-          return null;// return null
+          return null;
       }
       return ret;
 
     }
 
-    public void init(Properties props) {}
   }
 
-  public static final String BridgeServerKey = "BridgeServerKey";
+  private static final String BridgeServerKey = "BridgeServerKey";
 
   /**
    * Create a server that has a value for every key queried and a unique key/value in the specified
@@ -323,12 +326,12 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
    * @param rName the name of the Region to create on the server
    * @param port the TCP port on which the server should listen
    */
-  public void createBridgeServer(VM vm, final String rName, final int port) {
-    vm.invoke(new CacheSerializableRunnable("Create Region on Server") {
+  protected void createBridgeServer(VM vm, final String rName, final int port) {
+    vm.invoke("Create Region on Server", new CacheSerializableRunnable() {
       @Override
       public void run2() {
         try {
-          AttributesFactory factory = new AttributesFactory();
+          AttributesFactory<Object, Object> factory = new AttributesFactory<>();
           factory.setScope(Scope.DISTRIBUTED_ACK); // can't be local since used with
                                                    // registerInterest
           factory.setCacheLoader(new CacheServerCacheLoader());
@@ -337,10 +340,10 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
           startBridgeServer(port);
           finishCacheXml(rName + "-" + port);
 
-          Region region = getRootRegion(rName);
-          assertNotNull(region);
-          region.put(BridgeServerKey, new Integer(port)); // A unique key/value to identify the
-                                                          // BridgeServer
+          Region<Object, Object> region = getRootRegion(rName);
+          assertThat(region).isNotNull();
+          region.put(BridgeServerKey, port); // A unique key/value to identify the
+                                             // BridgeServer
         } catch (Exception e) {
           getSystem().getLogWriter().severe(e);
           fail("Failed to start CacheServer " + e);
@@ -349,8 +352,8 @@ public abstract class ClientServerTestCase extends JUnit4CacheTestCase {
     });
   }
 
-  public static int[] createUniquePorts(int numToCreate) {
-    return AvailablePortHelper.getRandomAvailableTCPPorts(numToCreate);
+  protected static int[] createUniquePorts() {
+    return AvailablePortHelper.getRandomAvailableTCPPorts(1);
   }
 
 }

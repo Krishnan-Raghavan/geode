@@ -14,8 +14,8 @@
  */
 package org.apache.geode.distributed;
 
-import static org.apache.geode.internal.logging.log4j.custom.CustomConfiguration.CONFIG_LAYOUT_PREFIX;
-import static org.apache.geode.internal.logging.log4j.custom.CustomConfiguration.createConfigFileIn;
+import static org.apache.geode.test.util.ResourceUtils.createFileFromResource;
+import static org.apache.geode.test.util.ResourceUtils.getResource;
 import static org.apache.logging.log4j.core.config.ConfigurationFactory.CONFIGURATION_FILE_PROPERTY;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,15 +27,21 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.contrib.java.lang.system.SystemOutRule;
+import org.junit.experimental.categories.Category;
 
 import org.apache.geode.distributed.ServerLauncher.Command;
 import org.apache.geode.internal.process.ProcessStreamReader.InputListener;
+import org.apache.geode.test.junit.categories.GfshTest;
+import org.apache.geode.test.junit.categories.LoggingTest;
 
 /**
  * Integration tests for launching a Server in a forked process with custom logging configuration
  */
+@Category({GfshTest.class, LoggingTest.class})
 public class ServerLauncherRemoteWithCustomLoggingIntegrationTest
     extends ServerLauncherRemoteIntegrationTestCase {
+
+  private static final String CONFIG_LAYOUT_PREFIX = "CUSTOM";
 
   private File customLoggingConfigFile;
 
@@ -43,20 +49,28 @@ public class ServerLauncherRemoteWithCustomLoggingIntegrationTest
   public SystemOutRule systemOutRule = new SystemOutRule().enableLog();
 
   @Before
-  public void setUpServerLauncherRemoteWithCustomLoggingIntegrationTest() throws Exception {
-    this.customLoggingConfigFile = createConfigFileIn(getWorkingDirectory());
+  public void setUpServerLauncherRemoteWithCustomLoggingIntegrationTest() {
+    String configFileName = getClass().getSimpleName() + "_log4j2.xml";
+    customLoggingConfigFile = createFileFromResource(
+        getResource(configFileName),
+        getWorkingDirectory(),
+        configFileName);
   }
 
   @Test
   public void startWithCustomLoggingConfiguration() throws Exception {
     startServer(
-        new ServerCommand(this).addJvmArgument(customLoggingConfigArgument())
-            .disableDefaultServer(true).withCommand(Command.START),
-        new ToSystemOut(), new ToSystemOut());
+        new ServerCommand(this)
+            .addJvmArgument(customLoggingConfigArgument())
+            .disableDefaultServer(true)
+            .withCommand(Command.START),
+        new ToSystemOut(),
+        new ToSystemOut());
 
     assertThat(systemOutRule.getLog())
-        .contains("log4j.configurationFile = " + getCustomLoggingConfigFilePath());
-    assertThat(systemOutRule.getLog()).contains(CONFIG_LAYOUT_PREFIX);
+        .contains(CONFIGURATION_FILE_PROPERTY + " = " + getCustomLoggingConfigFilePath());
+    assertThat(systemOutRule.getLog())
+        .contains(CONFIG_LAYOUT_PREFIX);
   }
 
   private String customLoggingConfigArgument() {

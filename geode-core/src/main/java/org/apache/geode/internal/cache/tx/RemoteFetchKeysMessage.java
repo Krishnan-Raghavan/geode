@@ -46,10 +46,11 @@ import org.apache.geode.internal.cache.InitialImageOperation;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.RemoteOperationException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 import org.apache.geode.internal.util.ObjectIntProcedure;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class RemoteFetchKeysMessage extends RemoteOperationMessage {
 
@@ -75,14 +76,14 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
       if (logger.isDebugEnabled()) {
         logger.debug("Caught exception while sending keys: {}", io.getMessage(), io);
         throw new RemoteOperationException(
-            LocalizedStrings.FetchKeysMessage_UNABLE_TO_SEND_RESPONSE_TO_FETCH_KEYS_REQUEST
-                .toLocalizedString(),
+            "Unable to send response to fetch keys request",
             io);
       }
     }
     return false;
   }
 
+  @Override
   public int getDSFID() {
     return R_FETCH_KEYS_MESSAGE;
   }
@@ -100,13 +101,15 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
   }
 
   public static class RemoteFetchKeysReplyMessage extends ReplyMessage {
@@ -170,6 +173,7 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
              * @param b positive if last chunk
              * @return true to continue to next chunk
              */
+            @Override
             public boolean executeWith(Object a, int b) {
               HeapDataOutputStream chunk = (HeapDataOutputStream) a;
               this.last = b > 0;
@@ -281,8 +285,9 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.seriesNum);
       out.writeInt(this.msgNum);
       out.writeInt(this.numSeries);
@@ -296,8 +301,9 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.seriesNum = in.readInt();
       this.msgNum = in.readInt();
       this.numSeries = in.readInt();
@@ -415,7 +421,7 @@ public class RemoteFetchKeysMessage extends RemoteOperationMessage {
         }
       } catch (Exception e) {
         processException(new ReplyException(
-            LocalizedStrings.FetchKeysMessage_ERROR_DESERIALIZING_KEYS.toLocalizedString(), e));
+            "Error deserializing keys", e));
       }
       return doneProcessing;
     }

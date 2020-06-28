@@ -14,17 +14,18 @@
  */
 package org.apache.geode.cache.lucene;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
+import org.assertj.core.api.Assertions;
+import org.junit.Assume;
 import org.junit.Test;
 
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePortHelper;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
@@ -36,6 +37,9 @@ public class RollingUpgradeReindexShouldBeSuccessfulWhenAllServersRollToCurrentV
 
   @Test
   public void luceneReindexShouldBeSuccessfulWhenAllServersRollToCurrentVersion() throws Exception {
+    Assume.assumeFalse("minor versions should be different",
+        majorMinor(oldVersion).equals(majorMinor(Version.CURRENT.getName())));
+
     final Host host = Host.getHost(0);
     VM locator1 = host.getVM(oldVersion, 0);
     VM server1 = host.getVM(oldVersion, 1);
@@ -45,7 +49,7 @@ public class RollingUpgradeReindexShouldBeSuccessfulWhenAllServersRollToCurrentV
     RegionShortcut shortcut = RegionShortcut.PARTITION_REDUNDANT;
 
     int locatorPort = AvailablePortHelper.getRandomAvailableTCPPort();
-    DistributedTestUtils.deleteLocatorStateFile(locatorPort);
+    locator1.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPort));
 
     String hostName = NetworkUtils.getServerHostName(host);
     String locatorString = getLocatorString(locatorPort);
@@ -59,7 +63,7 @@ public class RollingUpgradeReindexShouldBeSuccessfulWhenAllServersRollToCurrentV
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       locator1.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -111,5 +115,13 @@ public class RollingUpgradeReindexShouldBeSuccessfulWhenAllServersRollToCurrentV
     }
   }
 
+  /**
+   * returns the major.minor prefix of a semver
+   */
+  private static String majorMinor(String version) {
+    String[] parts = version.split("\\.");
+    Assertions.assertThat(parts.length).isGreaterThanOrEqualTo(2);
+    return parts[0] + "." + parts[1];
+  }
 
 }

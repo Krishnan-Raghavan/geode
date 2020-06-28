@@ -44,14 +44,14 @@ import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class IndexCreationMsg extends PartitionMessage {
   private static final Logger logger = LogService.getLogger();
@@ -125,7 +125,7 @@ public class IndexCreationMsg extends PartitionMessage {
       indexes = pr.createIndexes(true, indexDefinitions);
     } catch (IndexCreationException e1) {
       replyEx = new ReplyException(
-          LocalizedStrings.IndexCreationMsg_REMOTE_INDEX_CREAION_FAILED.toLocalizedString(), e1);
+          "Remote Index Creation Failed", e1);
     } catch (MultiIndexCreationException exx) {
       failedIndexNames.addAll(exx.getExceptionsMap().keySet());
 
@@ -135,10 +135,10 @@ public class IndexCreationMsg extends PartitionMessage {
           exceptionMsgs.append(ex.getMessage()).append("\n");
         }
         logger.debug("Got an MultiIndexCreationException with \n: {}", exceptionMsgs);
-        logger.debug("{} indexes were created succesfully", failedIndexNames.size());
+        logger.debug("{} indexes were created successfully", failedIndexNames.size());
       }
       replyEx = new ReplyException(
-          LocalizedStrings.IndexCreationMsg_REMOTE_INDEX_CREAION_FAILED.toLocalizedString(), exx);
+          "Remote Index Creation Failed", exx);
     }
 
     if (null == replyEx) {
@@ -277,8 +277,9 @@ public class IndexCreationMsg extends PartitionMessage {
 
       if (pr == null /* && failIfRegionMissing() */) {
         String msg =
-            LocalizedStrings.IndexCreationMsg_COULD_NOT_GET_PARTITIONED_REGION_FROM_ID_0_FOR_MESSAGE_1_RECEIVED_ON_MEMBER_2_MAP_3
-                .toLocalizedString(new Object[] {Integer.valueOf(this.regionId), this, dm.getId(),
+            String.format(
+                "Could not get Partitioned Region from Id %s for message %s received on member= %s map= %s",
+                new Object[] {Integer.valueOf(this.regionId), this, dm.getId(),
                     PartitionedRegion.dumpPRId()});
         throw new PartitionedRegionException(msg, new RegionNotFoundException(msg));
       }
@@ -310,12 +311,11 @@ public class IndexCreationMsg extends PartitionMessage {
       }
       if (t instanceof RegionDestroyedException && pr != null) {
         if (pr.isClosed) {
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.IndexCreationMsg_REGION_IS_LOCALLY_DESTROYED_THROWING_REGIONDESTROYEDEXCEPTION_FOR__0,
-              pr));
+          logger.info("Region is locally destroyed, throwing RegionDestroyedException for {}",
+              pr);
           thr = new RegionDestroyedException(
-              LocalizedStrings.IndexCreationMsg_REGION_IS_LOCALLY_DESTROYED_ON_0
-                  .toLocalizedString(dm.getId()),
+              String.format("Region is locally destroyed on %s",
+                  dm.getId()),
               pr.getFullPath());
         }
       } else {
@@ -357,7 +357,7 @@ public class IndexCreationMsg extends PartitionMessage {
     }
 
     for (InternalDistributedMember rec : recipients) {
-      if (rec.getVersionObject().compareTo(Version.GFE_81) < 0) {
+      if (rec.getVersionObject().isOlderThan(Version.GFE_81)) {
         throw new UnsupportedOperationException(
             "Indexes should not be created during rolling upgrade");
       }
@@ -409,13 +409,15 @@ public class IndexCreationMsg extends PartitionMessage {
     IndexCreationReplyMsg.send(member, procId, dm, ex, result, indexBucketsMap, numTotalBuckets);
   }
 
+  @Override
   public int getDSFID() {
     return PR_INDEX_CREATION_MSG;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.indexDefinitions = DataSerializer.readHashSet(in);
   }
 
@@ -425,8 +427,9 @@ public class IndexCreationMsg extends PartitionMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeHashSet(this.indexDefinitions, out);
   }
 
@@ -590,8 +593,9 @@ public class IndexCreationMsg extends PartitionMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.result = in.readBoolean();
       this.indexBucketsMap = DataSerializer.readObject(in);
       this.numTotalBuckets = in.readInt();
@@ -600,8 +604,9 @@ public class IndexCreationMsg extends PartitionMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.result);
       DataSerializer.writeObject(this.indexBucketsMap, out);
       out.writeInt(this.numTotalBuckets);

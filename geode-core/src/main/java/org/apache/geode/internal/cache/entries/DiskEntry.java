@@ -19,13 +19,12 @@ import java.nio.ByteBuffer;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.DiskAccessException;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.ByteArrayDataInput;
 import org.apache.geode.internal.HeapDataOutputStream;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.AbstractDiskRegion;
 import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.CachedDeserializable;
@@ -52,8 +51,6 @@ import org.apache.geode.internal.cache.persistence.DiskRecoveryStore;
 import org.apache.geode.internal.cache.persistence.DiskRegionView;
 import org.apache.geode.internal.cache.versions.VersionStamp;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.AddressableMemoryManager;
 import org.apache.geode.internal.offheap.OffHeapHelper;
 import org.apache.geode.internal.offheap.ReferenceCountHelper;
@@ -61,7 +58,10 @@ import org.apache.geode.internal.offheap.StoredObject;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.BlobHelper;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Represents an entry in an {@link RegionMap} whose value may be stored on disk. This interface
@@ -117,14 +117,17 @@ public interface DiskEntry extends RegionEntry {
   /**
    * Used as the entry value if it was invalidated.
    */
+  @Immutable
   byte[] INVALID_BYTES = new byte[0];
   /**
    * Used as the entry value if it was locally invalidated.
    */
+  @Immutable
   byte[] LOCAL_INVALID_BYTES = new byte[0];
   /**
    * Used as the entry value if it was tombstone.
    */
+  @Immutable
   byte[] TOMBSTONE_BYTES = new byte[0];
 
   /**
@@ -147,9 +150,9 @@ public interface DiskEntry extends RegionEntry {
       dr.acquireReadLock();
       try {
         synchronized (id) {
-          if (id == null || (dr.isBackup() && id.getKeyId() == DiskRegion.INVALID_ID)
-              || (!entry.isValueNull() && id.needsToBeWritten()
-                  && !EntryBits.isRecoveredFromDisk(id.getUserBits()))/* fix for bug 41942 */) {
+          if (dr.isBackup() && id.getKeyId() == DiskRegion.INVALID_ID || !entry.isValueNull() && id
+              .needsToBeWritten() && !EntryBits
+                  .isRecoveredFromDisk(id.getUserBits())/* fix for bug 41942 */) {
             return null;
           }
 
@@ -178,7 +181,7 @@ public interface DiskEntry extends RegionEntry {
       dr.acquireReadLock();
       try {
         synchronized (did) {
-          if (did == null || (dr.isBackup() && did.getKeyId() == DiskRegion.INVALID_ID)) {
+          if (dr.isBackup() && did.getKeyId() == DiskRegion.INVALID_ID) {
             return null;
           } else if (!entry.isValueNull() && did.needsToBeWritten()
               && !EntryBits.isRecoveredFromDisk(did.getUserBits())/* fix for bug 41942 */) {
@@ -385,8 +388,7 @@ public interface DiskEntry extends RegionEntry {
                 entry.setSerialized(true);
               } catch (IOException e) {
                 throw new IllegalArgumentException(
-                    LocalizedStrings.DiskEntry_AN_IOEXCEPTION_WAS_THROWN_WHILE_SERIALIZING
-                        .toLocalizedString(),
+                    "An IOException was thrown while serializing.",
                     e);
               }
             }
@@ -426,8 +428,7 @@ public interface DiskEntry extends RegionEntry {
             entry.setSerialized(true);
           } catch (IOException e) {
             RuntimeException e2 = new IllegalArgumentException(
-                LocalizedStrings.DiskEntry_AN_IOEXCEPTION_WAS_THROWN_WHILE_SERIALIZING
-                    .toLocalizedString());
+                "An IOException was thrown while serializing.");
             e2.initCause(e);
             throw e2;
           }
@@ -449,7 +450,7 @@ public interface DiskEntry extends RegionEntry {
       }
       if (drv == null) {
         throw new IllegalArgumentException(
-            LocalizedStrings.DiskEntry_DISK_REGION_IS_NULL.toLocalizedString());
+            "Disk region is null");
       }
 
       if (newValue instanceof RecoveredEntry) {
@@ -481,9 +482,12 @@ public interface DiskEntry extends RegionEntry {
       }
     }
 
+    @Immutable
     private static final ValueWrapper INVALID_VW = new ByteArrayValueWrapper(true, INVALID_BYTES);
+    @Immutable
     private static final ValueWrapper LOCAL_INVALID_VW =
         new ByteArrayValueWrapper(true, LOCAL_INVALID_BYTES);
+    @Immutable
     private static final ValueWrapper TOMBSTONE_VW =
         new ByteArrayValueWrapper(true, TOMBSTONE_BYTES);
 
@@ -842,7 +846,7 @@ public interface DiskEntry extends RegionEntry {
         EntryEventImpl event) throws RegionClearedException {
       if (newValue == null) {
         throw new NullPointerException(
-            LocalizedStrings.DiskEntry_ENTRYS_VALUE_SHOULD_NOT_BE_NULL.toLocalizedString());
+            "Entry's value should not be null.");
       }
       boolean basicUpdateCalled = false;
       try {
@@ -1537,7 +1541,7 @@ public interface DiskEntry extends RegionEntry {
      * Removes the key/value pair in the given entry from disk
      *
      * @throws RegionClearedException If the operation is aborted due to a clear
-     * @see DiskRegion#remove
+     * @see DiskRegion#remove(InternalRegion, DiskEntry, boolean, boolean)
      */
     public static void removeFromDisk(DiskEntry entry, InternalRegion region, boolean isClear)
         throws RegionClearedException {

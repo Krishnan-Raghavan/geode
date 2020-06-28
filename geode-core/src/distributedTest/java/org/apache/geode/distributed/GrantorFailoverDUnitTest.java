@@ -14,16 +14,15 @@
  */
 package org.apache.geode.distributed;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -49,6 +48,12 @@ public class GrantorFailoverDUnitTest {
     locators.add(clusterStartupRule.startLocatorVM(0));
     locators.add(clusterStartupRule.startLocatorVM(1, locators.get(0).getPort()));
     locators.add(clusterStartupRule.startLocatorVM(2, locators.get(0).getPort()));
+
+
+    for (MemberVM locator : locators) {
+      locator.invoke((SerializableRunnableIF) () -> DistributedLockService.create(SERVICE_NAME,
+          ClusterStartupRule.getCache().getDistributedSystem()));
+    }
   }
 
   @After
@@ -64,11 +69,6 @@ public class GrantorFailoverDUnitTest {
     final String lock1 = "lock 1";
     final AtomicBoolean lock0Status = new AtomicBoolean(false);
     final AtomicBoolean lock1Status = new AtomicBoolean(false);
-
-    for (MemberVM locator : locators) {
-      locator.invoke((SerializableRunnableIF) () -> DistributedLockService.create(SERVICE_NAME,
-          ClusterStartupRule.getCache().getDistributedSystem()));
-    }
 
     lock0Status.set(locators.get(0)
         .invoke(() -> DistributedLockService.getServiceNamed(SERVICE_NAME).lock(lock0, 20, -1)));
@@ -109,18 +109,13 @@ public class GrantorFailoverDUnitTest {
 
     locators.get(0).invoke(GrantorFailoverDUnitTest::assertIsElderAndGetId);
 
-    for (MemberVM locator : locators) {
-      locator.invoke((SerializableRunnableIF) () -> DistributedLockService.create(SERVICE_NAME,
-          ClusterStartupRule.getCache().getDistributedSystem()));
-    }
-
     // Grantor but not the elder
     final MemberVM grantorVM = locators.get(1);
     final MemberVM survivor1 = locators.get(0);
     final MemberVM survivor2 = locators.get(2);
     grantorVM.invoke(() -> {
       DistributedLockService.becomeLockGrantor(SERVICE_NAME);
-      Awaitility.waitAtMost(30, TimeUnit.SECONDS).untilAsserted(
+      await().untilAsserted(
           () -> assertThat(DistributedLockService.isLockGrantor(SERVICE_NAME)).isTrue());
     });
 
@@ -180,7 +175,7 @@ public class GrantorFailoverDUnitTest {
   private static InternalDistributedMember assertIsElderAndGetId() {
     DistributionManager distributionManager =
         ClusterStartupRule.getCache().getInternalDistributedSystem().getDistributionManager();
-    Awaitility.await("Wait to be elder").atMost(1, TimeUnit.SECONDS)
+    await("Wait to be elder")
         .untilAsserted(() -> assertThat(distributionManager.isElder()).isTrue());
     return distributionManager.getElderId();
   }

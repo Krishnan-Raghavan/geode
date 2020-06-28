@@ -17,7 +17,6 @@ package org.apache.geode.cache.client.internal;
 import static org.apache.geode.distributed.ConfigurationProperties.CONFLATE_EVENTS;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
 
-import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
@@ -34,10 +33,13 @@ import java.util.Properties;
 
 import javax.net.ssl.SSLSocket;
 
+import org.apache.commons.lang3.StringUtils;
+
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.GemFireConfigException;
 import org.apache.geode.InternalGemFireException;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.GatewayConfigurationException;
 import org.apache.geode.cache.client.ServerRefusedConnectionException;
 import org.apache.geode.distributed.DistributedMember;
@@ -50,9 +52,6 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.InternalInstantiator;
-import org.apache.geode.internal.Version;
-import org.apache.geode.internal.VersionedDataInputStream;
-import org.apache.geode.internal.VersionedDataOutputStream;
 import org.apache.geode.internal.cache.tier.ClientSideHandshake;
 import org.apache.geode.internal.cache.tier.CommunicationMode;
 import org.apache.geode.internal.cache.tier.Encryptor;
@@ -60,8 +59,12 @@ import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.EncryptorImpl;
 import org.apache.geode.internal.cache.tier.sockets.Handshake;
 import org.apache.geode.internal.cache.tier.sockets.ServerQueueStatus;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.internal.serialization.VersionedDataInputStream;
+import org.apache.geode.internal.serialization.VersionedDataOutputStream;
 import org.apache.geode.security.AuthenticationFailedException;
 import org.apache.geode.security.AuthenticationRequiredException;
 import org.apache.geode.security.GemFireSecurityException;
@@ -76,6 +79,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
   /**
    * Another test hook, holding a version ordinal that is higher than CURRENT
    */
+  @MutableForTesting
   private static short overrideClientVersion = -1;
 
   private final byte replyCode;
@@ -124,7 +128,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
     // handshakes.
     // Client side handshake code uses this.currentClientVersion which can be
     // set via tests.
-    if (currentClientVersion.compareTo(Version.GFE_603) >= 0) {
+    if (currentClientVersion.isNotOlderThan(Version.GFE_603)) {
       this.overrides = new byte[] {this.clientConflation};
     }
   }
@@ -174,7 +178,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
       DistributionManager dm = ((InternalDistributedSystem) this.system).getDistributionManager();
       InternalDistributedMember idm = dm.getDistributionManagerId();
       synchronized (idm) {
-        if (idm.getPort() == 0 && dm instanceof LonerDistributionManager) {
+        if (idm.getMembershipPort() == 0 && dm instanceof LonerDistributionManager) {
           int port = sock.getLocalPort();
           ((LonerDistributionManager) dm).updateLonerPort(port);
           this.id.updateID(dm.getDistributionManagerId());
@@ -187,8 +191,9 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
           this.clientReadTimeout, null, this.credentials, member, false);
 
       String authInit = this.system.getProperties().getProperty(SECURITY_CLIENT_AUTH_INIT);
-      if (!communicationMode.isWAN() && intermediateAcceptanceCode != REPLY_AUTH_NOT_REQUIRED
-          && (authInit != null && authInit.length() != 0)) {
+      if (!communicationMode.isWAN()
+          && intermediateAcceptanceCode != REPLY_AUTH_NOT_REQUIRED
+          && (StringUtils.isNotBlank(authInit) || multiuserSecureMode)) {
         location.compareAndSetRequiresCredentials(true);
       }
       // Read the acceptance code
@@ -197,7 +202,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
         // This is likely the case of server setup with SSL and client not using
         // SSL
         throw new AuthenticationRequiredException(
-            LocalizedStrings.HandShake_SERVER_EXPECTING_SSL_CONNECTION.toLocalizedString());
+            "Server expecting SSL connection");
       }
       if (acceptanceCode == REPLY_SERVER_IS_LOCATOR) {
         throw new GemFireConfigException("Improperly configured client detected.  " + "Server at "
@@ -230,13 +235,13 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
       // Read delta-propagation property value from server.
       // [sumedh] Static variable below? Client can connect to different
       // DSes with different values of this. It shoule be a member variable.
-      if (!communicationMode.isWAN() && currentClientVersion.compareTo(Version.GFE_61) >= 0) {
+      if (!communicationMode.isWAN() && currentClientVersion.isNotOlderThan(Version.GFE_61)) {
         ((InternalDistributedSystem) system).setDeltaEnabledOnServer(dis.readBoolean());
       }
 
       // validate that the remote side has a different distributed system id.
       if (communicationMode.isWAN() && Version.GFE_66.compareTo(conn.getWanSiteVersion()) <= 0
-          && currentClientVersion.compareTo(Version.GFE_66) >= 0) {
+          && currentClientVersion.isNotOlderThan(Version.GFE_66)) {
         int remoteDistributedSystemId = in.read();
         int localDistributedSystemId =
             ((InternalDistributedSystem) system).getDistributionManager().getDistributedSystemId();
@@ -249,7 +254,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
       }
       // Read the PDX registry size from the remote size
       if (communicationMode.isWAN() && Version.GFE_80.compareTo(conn.getWanSiteVersion()) <= 0
-          && currentClientVersion.compareTo(Version.GFE_80) >= 0) {
+          && currentClientVersion.isNotOlderThan(Version.GFE_80)) {
         int remotePdxSize = dis.readInt();
         serverQStatus.setPdxSize(remotePdxSize);
       }
@@ -265,19 +270,15 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
   private InternalDistributedMember readServerMember(DataInputStream p_dis) throws IOException {
 
     byte[] memberBytes = DataSerializer.readByteArray(p_dis);
-    ByteArrayInputStream bais = new ByteArrayInputStream(memberBytes);
-    DataInputStream dis = new DataInputStream(bais);
-    Version v = InternalDataSerializer.getVersionForDataStreamOrNull(p_dis);
-    if (v != null) {
-      dis = new VersionedDataInputStream(dis, v);
-    }
+    Version v = StaticSerialization.getVersionForDataStreamOrNull(p_dis);
+    ByteArrayDataInput dis = new ByteArrayDataInput(memberBytes, v);
     try {
       return DataSerializer.readObject(dis);
     } catch (EOFException e) {
       throw e;
     } catch (Exception e) {
       throw new InternalGemFireException(
-          LocalizedStrings.HandShake_UNABLE_TO_DESERIALIZE_MEMBER.toLocalizedString(), e);
+          "Unable to deserialize member", e);
     }
   }
 
@@ -310,7 +311,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
         // This is likely the case of server setup with SSL and client not using
         // SSL
         throw new AuthenticationRequiredException(
-            LocalizedStrings.HandShake_SERVER_EXPECTING_SSL_CONNECTION.toLocalizedString());
+            "Server expecting SSL connection");
       }
 
       byte endpointType = dis.readByte();
@@ -322,7 +323,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
       // [sumedh] nothing more to be done for older clients used in tests
       // there is a difference in serializer map registration for >= 6.5.1.6
       // clients but that is not used in tests
-      if (currentClientVersion.compareTo(Version.GFE_61) < 0) {
+      if (currentClientVersion.isOlderThan(Version.GFE_61)) {
         return new ServerQueueStatus(endpointType, queueSize, member);
       }
       HashMap instantiatorMap = DataSerializer.readHashMap(dis);
@@ -392,7 +393,7 @@ public class ClientSideHandshakeImpl extends Handshake implements ClientSideHand
       DataOutput idOut = new VersionedDataOutputStream(hdos, Version.GFE_82);
       DataSerializer.writeObject(this.id, idOut);
 
-      if (currentClientVersion.compareTo(Version.GFE_603) >= 0) {
+      if (currentClientVersion.isNotOlderThan(Version.GFE_603)) {
         byte[] overrides = getOverrides();
         for (int bytes = 0; bytes < overrides.length; bytes++) {
           hdos.writeByte(overrides[bytes]);

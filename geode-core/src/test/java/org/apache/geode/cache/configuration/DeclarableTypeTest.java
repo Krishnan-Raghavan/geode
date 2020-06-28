@@ -19,8 +19,9 @@ package org.apache.geode.cache.configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.junit.Test;
+import java.util.Properties;
 
+import org.junit.Test;
 
 
 public class DeclarableTypeTest {
@@ -71,5 +72,16 @@ public class DeclarableTypeTest {
     p3.setDeclarable(new DeclarableType("anotherClassName", "{'k':'v2'}"));
     d3.getParameters().add(p3);
     assertThat(declarable).isNotEqualTo(d3);
+  }
+
+  @Test
+  public void emptyDeclarable() {
+    assertThat(new DeclarableType(""))
+        .isEqualTo(new DeclarableType("", (Properties) null))
+        .isEqualTo(new DeclarableType("", ""))
+        .isEqualTo(new DeclarableType("", "{}"))
+        .isEqualTo(new DeclarableType(" ", "{}"))
+        .isEqualTo(new DeclarableType(null, "{}"))
+        .isEqualTo(DeclarableType.EMPTY);
   }
 }

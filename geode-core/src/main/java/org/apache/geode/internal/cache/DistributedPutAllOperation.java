@@ -42,10 +42,7 @@ import org.apache.geode.cache.query.internal.cq.CqService;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DirectReplyProcessor;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.ByteArrayDataInput;
-import org.apache.geode.internal.DataSerializableFixedID;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.FilterRoutingInfo.FilterInfo;
 import org.apache.geode.internal.cache.ha.ThreadIdentifier;
 import org.apache.geode.internal.cache.partitioned.PutAllPRMessage;
@@ -55,11 +52,17 @@ import org.apache.geode.internal.cache.tx.RemotePutAllMessage;
 import org.apache.geode.internal.cache.versions.DiskVersionTag;
 import org.apache.geode.internal.cache.versions.VersionSource;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Handles distribution of a Region.putall operation.
@@ -180,10 +183,12 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
     return new Iterator() {
       int position = 0;
 
+      @Override
       public boolean hasNext() {
         return DistributedPutAllOperation.this.putAllDataSize > position;
       };
 
+      @Override
       @Unretained
       public Object next() {
         @Unretained
@@ -192,6 +197,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
         return ev;
       };
 
+      @Override
       public void remove() {
         throw new UnsupportedOperationException();
       };
@@ -328,12 +334,13 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
     /**
      * Constructor to use when receiving a putall from someone else
      */
-    public PutAllEntryData(DataInput in, EventID baseEventID, int idx, Version version,
+    public PutAllEntryData(DataInput in, DeserializationContext context, EventID baseEventID,
+        int idx, Version version,
         ByteArrayDataInput bytesIn) throws IOException, ClassNotFoundException {
-      this.key = DataSerializer.readObject(in);
+      this.key = context.getDeserializer().readObject(in);
       byte flgs = in.readByte();
       if ((flgs & IS_OBJECT) != 0) {
-        this.value = DataSerializer.readObject(in);
+        this.value = context.getDeserializer().readObject(in);
       } else {
         byte[] bb = DataSerializer.readByteArray(in);
         if ((flgs & IS_CACHED_DESER) != 0) {
@@ -346,7 +353,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
       this.op = Operation.fromOrdinal(in.readByte());
       this.flags = in.readByte();
       if ((this.flags & FILTER_ROUTING) != 0) {
-        this.filterRouting = (FilterRoutingInfo) DataSerializer.readObject(in);
+        this.filterRouting = (FilterRoutingInfo) context.getDeserializer().readObject(in);
       }
       if ((this.flags & VERSION_TAG) != 0) {
         boolean persistentTag = (this.flags & PERSISTENT_TAG) != 0;
@@ -394,14 +401,15 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
      * that the callers to this method are backwards compatible by creating toDataPreXX methods for
      * them even if they are not changed. <br>
      * Callers for this method are: <br>
-     * {@link PutAllMessage#toData(DataOutput)} <br>
-     * {@link PutAllPRMessage#toData(DataOutput)} <br>
-     * {@link RemotePutAllMessage#toData(DataOutput)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
      */
-    public void toData(final DataOutput out) throws IOException {
+    public void toData(final DataOutput out,
+        SerializationContext context) throws IOException {
       Object key = this.key;
       final Object v = this.value;
-      DataSerializer.writeObject(key, out);
+      context.getSerializer().writeObject(key, out);
 
       if (v instanceof byte[] || v == null) {
         out.writeByte(0);
@@ -431,7 +439,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
       out.writeByte(bits);
 
       if (this.filterRouting != null) {
-        DataSerializer.writeObject(this.filterRouting, out);
+        context.getSerializer().writeObject(this.filterRouting, out);
       }
       if (this.versionTag != null) {
         InternalDataSerializer.invokeToData(this.versionTag, out);
@@ -661,7 +669,8 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
     static final byte FLAG_TAG_WITH_NUMBER_ID = 3;
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       int flags = 0;
       boolean hasTags = false;
 
@@ -717,7 +726,8 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       int flags = in.readByte();
       boolean hasTags = (flags & 0x04) == 0x04;
       boolean persistent = (flags & 0x20) == 0x20;
@@ -761,12 +771,12 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
 
     @Override
     public void writeExternal(ObjectOutput out) throws IOException {
-      toData(out);
+      toData(out, InternalDataSerializer.createSerializationContext(out));
     }
 
     @Override
     public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-      fromData(in);
+      fromData(in, InternalDataSerializer.createDeserializationContext(in));
     }
 
     @Override
@@ -1150,7 +1160,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
           InternalDistributedMember id = rgn.getMyId();
           ev.setLocalFilterInfo(entry.filterRouting.getFilterInfo(id));
         }
-        /**
+        /*
          * Setting tailKey for the secondary bucket here. Tail key was update by the primary.
          */
         ev.setTailKey(entry.getTailKey());
@@ -1172,6 +1182,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
       }
 
       rgn.syncBulkOp(new Runnable() {
+        @Override
         public void run() {
           final boolean isDebugEnabled = logger.isDebugEnabled();
           for (int i = 0; i < putAllDataSize; ++i) {
@@ -1186,22 +1197,24 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
       }, ev.getEventId());
     }
 
+    @Override
     public int getDSFID() {
       return PUT_ALL_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
 
-      super.fromData(in);
-      this.eventId = (EventID) DataSerializer.readObject(in);
+      super.fromData(in, context);
+      this.eventId = (EventID) context.getDeserializer().readObject(in);
       this.putAllDataSize = (int) InternalDataSerializer.readUnsignedVL(in);
       this.putAllData = new PutAllEntryData[this.putAllDataSize];
       if (this.putAllDataSize > 0) {
-        final Version version = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+        final Version version = StaticSerialization.getVersionForDataStreamOrNull(in);
         final ByteArrayDataInput bytesIn = new ByteArrayDataInput();
         for (int i = 0; i < this.putAllDataSize; i++) {
-          this.putAllData[i] = new PutAllEntryData(in, eventId, i, version, bytesIn);
+          this.putAllData[i] = new PutAllEntryData(in, context, eventId, i, version, bytesIn);
         }
 
         boolean hasTags = in.readBoolean();
@@ -1214,15 +1227,16 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
       }
 
       if ((flags & HAS_BRIDGE_CONTEXT) != 0) {
-        this.context = DataSerializer.readObject(in);
+        this.context = context.getDeserializer().readObject(in);
       }
       this.skipCallbacks = (flags & SKIP_CALLBACKS) != 0;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
-      DataSerializer.writeObject(this.eventId, out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
+      context.getSerializer().writeObject(this.eventId, out);
       InternalDataSerializer.writeUnsignedVL(this.putAllDataSize, out);
       if (this.putAllDataSize > 0) {
         EntryVersionsList versionTags = new EntryVersionsList(putAllDataSize);
@@ -1235,7 +1249,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
           VersionTag<?> tag = putAllData[i].versionTag;
           versionTags.add(tag);
           putAllData[i].versionTag = null;
-          this.putAllData[i].toData(out);
+          this.putAllData[i].toData(out, context);
           this.putAllData[i].versionTag = tag;
         }
 
@@ -1245,7 +1259,7 @@ public class DistributedPutAllOperation extends AbstractUpdateOperation {
         }
       }
       if (this.context != null) {
-        DataSerializer.writeObject(this.context, out);
+        context.getSerializer().writeObject(this.context, out);
       }
     }
 

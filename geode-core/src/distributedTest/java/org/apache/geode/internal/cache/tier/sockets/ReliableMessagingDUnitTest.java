@@ -14,8 +14,11 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static java.util.Map.Entry;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -48,13 +51,13 @@ import org.apache.geode.internal.cache.ClientServerObserverHolder;
 import org.apache.geode.internal.cache.ha.HAHelper;
 import org.apache.geode.internal.cache.ha.HARegionQueue;
 import org.apache.geode.internal.cache.ha.ThreadIdentifier;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientServerTest;
@@ -156,27 +159,29 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
   public static void setCreationTimeTidAndSeq() {
     final Map map = pool.getThreadIdToSequenceIdMap();
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         synchronized (map) {
           return map.entrySet().size() > 0;
         }
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 10 * 1000, 200, true);
-    Map.Entry entry;
+    GeodeAwaitility.await().untilAsserted(ev);
+    Entry entry;
     synchronized (map) {
       Iterator iter = map.entrySet().iterator();
-      entry = (Map.Entry) iter.next();
+      entry = (Entry) iter.next();
     }
 
     SequenceIdAndExpirationObject seo = (SequenceIdAndExpirationObject) entry.getValue();
     assertFalse(seo.getAckSend());
     creationTime = seo.getCreationTime();
-    LogWriterUtils.getLogWriter().info("seo is " + seo.toString());
+    getLogWriter().info("seo is " + seo.toString());
     assertTrue("Creation time not set", creationTime != 0);
 
     Object args[] = new Object[] {((ThreadIdentifier) entry.getKey()).getMembershipID(),
@@ -208,7 +213,7 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
 
   public static void createEntries() throws Exception {
     creationTime = 0;
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     String keyPrefix = "server-";
     for (int i = 0; i < 5; i++) {
       r1.create(keyPrefix + i, "val");
@@ -216,7 +221,7 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public static void putOnServer() throws Exception {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     String keyPrefix = "server-";
     for (int i = 0; i < 5; i++) {
       r1.put(keyPrefix + i, "val-" + i);
@@ -258,10 +263,10 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
   }
 
   /**
-   * Wait for new value on bridge server to become visible in this cache
+   * Wait for new value on cache server to become visible in this cache
    */
   public static void waitForServerUpdate() {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     final long maxWaitTime = 60000;
     final long start = System.currentTimeMillis();
@@ -278,6 +283,7 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
   public static void setClientServerObserverForBeforeSendingClientAck() throws Exception {
     PoolImpl.BEFORE_SENDING_CLIENT_ACK_CALLBACK_FLAG = true;
     origObserver = ClientServerObserverHolder.setInstance(new ClientServerObserverAdapter() {
+      @Override
       public void beforeSendingClientAck() {
         LogWriterUtils.getLogWriter().info("beforeSendingClientAck invoked");
         setCreationTimeTidAndSeq();
@@ -365,7 +371,7 @@ public class ReliableMessagingDUnitTest extends JUnit4DistributedTestCase {
     String host = NetworkUtils.getServerHostName(Host.getHost(0));
     PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer(host, PORT1)
         .addServer(host, PORT2).setSubscriptionEnabled(true).setSubscriptionRedundancy(1)
-        .setThreadLocalConnections(true).setMinConnections(6).setReadTimeout(20000)
+        .setMinConnections(6).setReadTimeout(20000)
         .setPingInterval(10000).setRetryAttempts(5).setSubscriptionAckInterval(CLIENT_ACK_INTERVAL)
         .create("ReliableMessagingDUnitTestPool");
 

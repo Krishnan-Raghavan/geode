@@ -14,21 +14,26 @@
  */
 package org.apache.geode.internal.cache;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import org.apache.geode.DataSerializable;
+import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
@@ -56,7 +61,8 @@ import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 
-@Category({ClientServerTest.class})
+@Category(ClientServerTest.class)
+@SuppressWarnings("serial")
 public class SingleHopStatsDUnitTest extends JUnit4CacheTestCase {
 
   private static final String Region_Name = "42010";
@@ -293,8 +299,7 @@ public class SingleHopStatsDUnitTest extends JUnit4CacheTestCase {
         cms = ((GemFireCacheImpl) cache).getClientMetadataService();
         // since PR metadata is fetched in a background executor thread
         // we need to wait for it to arrive for a bit
-        Awaitility.await().timeout(120, TimeUnit.SECONDS).pollDelay(100, TimeUnit.MILLISECONDS)
-            .pollInterval(500, TimeUnit.MILLISECONDS).until(() -> regionMetaData.size() == 1);
+        await().timeout(120, SECONDS).until(() -> regionMetaData.size() == 1);
 
         assertTrue(regionMetaData.containsKey(region.getFullPath()));
         regionMetaData.get(region.getFullPath());
@@ -332,12 +337,12 @@ public class SingleHopStatsDUnitTest extends JUnit4CacheTestCase {
 
       customerRegion.put(custid, customer);
       for (int j = 1; j <= 10; j++) {
-        int oid = (i * 10) + j;
+        int oid = i * 10 + j;
         OrderId orderId = new OrderId(oid, custid);
         Order order = new Order(ORDER_REGION_NAME + oid);
         orderRegion.put(orderId, order);
         for (int k = 1; k <= 10; k++) {
-          int sid = (oid * 10) + k;
+          int sid = oid * 10 + k;
           ShipmentId shipmentId = new ShipmentId(sid, orderId);
           Shipment shipment = new Shipment("Shipment" + sid);
           shipmentRegion.put(shipmentId, shipment);
@@ -385,11 +390,11 @@ public class SingleHopStatsDUnitTest extends JUnit4CacheTestCase {
         CustId custid = new CustId(i);
         customerRegion.get(custid);
         for (int j = 1; j <= 10; j++) {
-          int oid = (i * 10) + j;
+          int oid = i * 10 + j;
           OrderId orderId = new OrderId(oid, custid);
           orderRegion.get(orderId);
           for (int k = 1; k <= 10; k++) {
-            int sid = (oid * 10) + k;
+            int sid = oid * 10 + k;
             ShipmentId shipmentId = new ShipmentId(sid, orderId);
             shipmentRegion.get(shipmentId);
           }
@@ -428,6 +433,153 @@ public class SingleHopStatsDUnitTest extends JUnit4CacheTestCase {
         assertEquals(metaDataRefreshCount,
             ((LocalRegion) region).getCachePerfStats().getMetaDataRefreshCount());
       }
+    }
+  }
+
+  private static class Customer implements DataSerializable {
+    private String name;
+    private String address;
+
+    public Customer() {
+      // nothing
+    }
+
+    private Customer(String name, String address) {
+      this.name = name;
+      this.address = address;
+    }
+
+    @Override
+    public void fromData(DataInput in) throws IOException {
+      name = DataSerializer.readString(in);
+      address = DataSerializer.readString(in);
+
+    }
+
+    @Override
+    public void toData(DataOutput out) throws IOException {
+      DataSerializer.writeString(name, out);
+      DataSerializer.writeString(address, out);
+    }
+
+    @Override
+    public String toString() {
+      return "Customer { name=" + name + " address=" + address + "}";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+
+      if (!(o instanceof Customer)) {
+        return false;
+      }
+
+      Customer cust = (Customer) o;
+      return cust.name.equals(name) && cust.address.equals(address);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(name, address);
+    }
+  }
+
+  private static class Order implements DataSerializable {
+    private String orderName;
+
+    public Order() {
+      // nothing
+    }
+
+    private Order(String orderName) {
+      this.orderName = orderName;
+    }
+
+    @Override
+    public void fromData(DataInput in) throws IOException {
+      orderName = DataSerializer.readString(in);
+    }
+
+    @Override
+    public void toData(DataOutput out) throws IOException {
+      DataSerializer.writeString(orderName, out);
+    }
+
+    @Override
+    public String toString() {
+      return orderName;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) {
+        return true;
+      }
+
+      if (obj instanceof Order) {
+        Order other = (Order) obj;
+        return other.orderName != null && other.orderName.equals(orderName);
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      if (orderName == null) {
+        return super.hashCode();
+      }
+      return orderName.hashCode();
+    }
+  }
+
+  private static class Shipment implements DataSerializable {
+    private String shipmentName;
+
+    public Shipment() {
+      // nothing
+    }
+
+    private Shipment(String shipmentName) {
+      this.shipmentName = shipmentName;
+    }
+
+    @Override
+    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+      shipmentName = DataSerializer.readString(in);
+    }
+
+    @Override
+    public void toData(DataOutput out) throws IOException {
+      DataSerializer.writeString(shipmentName, out);
+    }
+
+    @Override
+    public String toString() {
+      return shipmentName;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) {
+        return true;
+      }
+
+      if (obj instanceof Shipment) {
+        Shipment other = (Shipment) obj;
+        return other.shipmentName != null && other.shipmentName.equals(shipmentName);
+      }
+      return false;
+    }
+
+    @Override
+    public int hashCode() {
+      if (shipmentName == null) {
+        return super.hashCode();
+      }
+      return shipmentName.hashCode();
     }
   }
 }

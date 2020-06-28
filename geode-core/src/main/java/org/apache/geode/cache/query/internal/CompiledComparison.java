@@ -73,10 +73,12 @@ public class CompiledComparison extends AbstractCompiledValue
     return list;
   }
 
+  @Override
   public int getType() {
     return COMPARISON;
   }
 
+  @Override
   public Object evaluate(ExecutionContext context) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     Object left = _left.evaluate(context);
@@ -237,6 +239,7 @@ public class CompiledComparison extends AbstractCompiledValue
     return null;
   }
 
+  @Override
   public void negate() {
     _operator = inverseOperator(_operator);
   }
@@ -281,6 +284,7 @@ public class CompiledComparison extends AbstractCompiledValue
     return operator;
   }
 
+  @Override
   public boolean isRangeEvaluatable() {
     if (this._left instanceof MapIndexable || this._right instanceof MapIndexable) {
       return false;
@@ -288,16 +292,25 @@ public class CompiledComparison extends AbstractCompiledValue
     return true;
   }
 
+  @Override
   public int getSizeEstimate(ExecutionContext context) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     IndexInfo[] idxInfo = getIndexInfo(context);
-    if (idxInfo == null) {
-      // Asif: This implies it is an independent condition. So evaluate it first
-      // in filter operand
+
+    // Both operands are indexed, evaluate it first in the filter operand.
+    if (idxInfo != null && idxInfo.length > 1) {
       return 0;
     }
+
+    // Asif: This implies it is an independent condition. So evaluate it second in filter operand.
+    if (idxInfo == null) {
+      return 1;
+    }
+
     assert idxInfo.length == 1;
     Object key = idxInfo[0].evaluateIndexKey(context);
+
+    // Key not found (indexes have mapping for UNDEFINED), evaluation is fast so do it first.
     if (key != null && key.equals(QueryService.UNDEFINED)) {
       return 0;
     }
@@ -313,11 +326,10 @@ public class CompiledComparison extends AbstractCompiledValue
     int op = reflectOnOperator(idxInfo[0]._key());
 
     return idxInfo[0]._index.getSizeEstimate(key, op, idxInfo[0]._matchLevel);
-
   }
 
-  /** **************** PRIVATE METHODS ************************** */
-  /**
+  /* **************** PRIVATE METHODS ************************** */
+  /*
    * evaluate as a filter, involving a single iterator. Use an index if possible.
    */
   // Invariant: the receiver is dependent on the current iterator.
@@ -590,6 +602,7 @@ public class CompiledComparison extends AbstractCompiledValue
   // as key is not a meaningful entity. The 0th element will refer to LHS
   // operand
   // and 1th element will refer to RHS operannd
+  @Override
   public IndexInfo[] getIndexInfo(ExecutionContext context)
       throws TypeMismatchException, AmbiguousNameException, NameResolutionException {
     IndexInfo[] indexInfo = privGetIndexInfo(context);
@@ -730,6 +743,7 @@ public class CompiledComparison extends AbstractCompiledValue
     return false;
   }
 
+  @Override
   public boolean isConditioningNeededForIndex(RuntimeIterator independentIter,
       ExecutionContext context, boolean completeExpnsNeeded)
       throws AmbiguousNameException, TypeMismatchException, NameResolutionException {
@@ -757,10 +771,12 @@ public class CompiledComparison extends AbstractCompiledValue
 
   }
 
+  @Override
   public int getOperator() {
     return this._operator;
   }
 
+  @Override
   public boolean isBetterFilter(Filter comparedTo, ExecutionContext context, final int thisSize)
       throws FunctionDomainException, TypeMismatchException, NameResolutionException,
       QueryInvocationTargetException {

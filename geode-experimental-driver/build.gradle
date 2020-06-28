@@ -15,18 +15,43 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+apply from: "${project.projectDir}/../gradle/warnings.gradle"
+
+
 dependencies {
-    compile project(':geode-common')
-    compile project(':geode-protobuf-messages')
-    compile 'com.google.protobuf:protobuf-java:' + project.'protobuf-java.version'
+  compile(platform(project(':boms:geode-all-bom')))
+  compile(project(':geode-common'))
+  compile(project(':geode-protobuf-messages'))
+  testImplementation(project(':geode-core'))
+  testImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  testImplementation(project(':geode-protobuf'))
+  integrationTestImplementation(project(':geode-core'))
+  integrationTestImplementation(project(':geode-dunit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-protobuf'))
 
+  implementation('com.google.protobuf:protobuf-java')
 
-    testCompile project(':geode-core')
-    testCompile project(':geode-junit')
-    testCompile project(':geode-protobuf')
+  testImplementation('com.github.stefanbirkner:system-rules') {
+    exclude module: 'junit-dep'
+  }
 
-
-    integrationTestCompile project(':geode-core')
-    integrationTestCompile project(":geode-dunit")
-    integrationTestCompile project(':geode-protobuf')
+  integrationTestImplementation(project(':geode-logging'))
+  integrationTestImplementation(project(':geode-serialization'))
+  integrationTestImplementation('com.github.stefanbirkner:system-rules') {
+    exclude module: 'junit-dep'
+  }
+  integrationTestImplementation('junit:junit')
+  integrationTestImplementation('org.hamcrest:hamcrest-all')
+  integrationTestImplementation('org.hamcrest:hamcrest-core')
+  integrationTestImplementation('org.hamcrest:hamcrest-library')
 }

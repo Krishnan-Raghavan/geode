@@ -15,18 +15,18 @@
 
 package org.apache.geode.security;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_MANAGER;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_POST_PROCESSOR;
 import static org.apache.geode.security.SecurityTestUtil.createClientCache;
 import static org.apache.geode.security.SecurityTestUtil.createProxyRegion;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -44,7 +44,7 @@ import org.apache.geode.cache.query.CqEvent;
 import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.CqResults;
 import org.apache.geode.cache.query.QueryService;
-import org.apache.geode.cache.query.internal.cq.CqListenerImpl;
+import org.apache.geode.cache.query.cq.internal.CqListenerImpl;
 import org.apache.geode.pdx.SimpleClass;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
@@ -87,7 +87,7 @@ public class CQPDXPostProcessorDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testCQ() {
-    String query = "select * from /" + REGION_NAME;
+    String query = "select * from " + SEPARATOR + REGION_NAME;
     client1.invoke(() -> {
       ClientCache cache = createClientCache("super-user", "1234567", server.getPort());
       Region region = createProxyRegion(cache, REGION_NAME);
@@ -125,7 +125,7 @@ public class CQPDXPostProcessorDUnitTest extends JUnit4DistributedTestCase {
     });
 
     // wait for events to fire
-    Awaitility.await().atMost(1, TimeUnit.SECONDS);
+    await();
     PDXPostProcessor pp =
         (PDXPostProcessor) server.getCache().getSecurityService().getPostProcessor();
     assertEquals(pp.getCount(), 2);

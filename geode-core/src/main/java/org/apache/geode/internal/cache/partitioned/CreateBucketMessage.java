@@ -29,6 +29,7 @@ import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
@@ -40,8 +41,10 @@ import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.Node;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionHelper;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A request from an accessor to a datastore telling it to direct the creation of a bucket. This
@@ -77,12 +80,12 @@ public class CreateBucketMessage extends PartitionMessage {
   }
 
   public CreateBucketMessage(DataInput in) throws IOException, ClassNotFoundException {
-    fromData(in);
+    fromData(in, InternalDataSerializer.createDeserializationContext(in));
   }
 
   @Override
   public int getProcessorType() {
-    return ClusterDistributionManager.WAITING_POOL_EXECUTOR;
+    return OperationExecutors.WAITING_POOL_EXECUTOR;
   }
 
   /**
@@ -145,26 +148,29 @@ public class CreateBucketMessage extends PartitionMessage {
     }
     r.checkReadiness();
     InternalDistributedMember primary = r.getRedundancyProvider().createBucketAtomically(bucketId,
-        bucketSize, startTime, false, partitionName);
+        bucketSize, false, partitionName);
     r.getPrStats().endPartitionMessagesProcessing(startTime);
     CreateBucketReplyMessage.sendResponse(getSender(), getProcessorId(), dm, primary);
     return false;
   }
 
+  @Override
   public int getDSFID() {
     return PR_CREATE_BUCKET_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = in.readInt();
     this.bucketSize = in.readInt();
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.bucketId);
     out.writeInt(this.bucketSize);
   }
@@ -204,7 +210,7 @@ public class CreateBucketMessage extends PartitionMessage {
     public CreateBucketReplyMessage() {}
 
     public CreateBucketReplyMessage(DataInput in) throws IOException, ClassNotFoundException {
-      fromData(in);
+      fromData(in, InternalDataSerializer.createDeserializationContext(in));
     }
 
     private CreateBucketReplyMessage(int processorId, InternalDistributedMember primary) {
@@ -256,8 +262,9 @@ public class CreateBucketMessage extends PartitionMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(primary != null);
       if (primary != null) {
         InternalDataSerializer.invokeToData(primary, out);
@@ -270,8 +277,9 @@ public class CreateBucketMessage extends PartitionMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       boolean hasPrimary = in.readBoolean();
       if (hasPrimary) {
         primary = new InternalDistributedMember();

@@ -25,6 +25,7 @@ import java.util.TreeMap;
 import org.apache.geode.InternalGemFireException;
 import org.apache.geode.InvalidDeltaException;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.CacheWriterException;
 import org.apache.geode.cache.CommitConflictException;
 import org.apache.geode.cache.DiskAccessException;
@@ -42,8 +43,8 @@ import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
 import org.apache.geode.internal.cache.tx.DistTxEntryEvent;
 import org.apache.geode.internal.cache.tx.DistTxKeyInfo;
 import org.apache.geode.internal.cache.versions.RegionVersionVector;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.internal.statistics.StatisticsClock;
 
 /**
  * TxState on a data node VM
@@ -52,13 +53,16 @@ import org.apache.geode.internal.offheap.annotations.Released;
  */
 public class DistTXState extends TXState {
 
+  @MutableForTesting
   public static Runnable internalBeforeApplyChanges; // TODO: cleanup this test hook
+  @MutableForTesting
   public static Runnable internalBeforeNonTXBasicPut; // TODO: cleanup this test hook
 
   private boolean updatingTxStateDuringPreCommit = false;
 
-  public DistTXState(TXStateProxy proxy, boolean onBehalfOfRemoteStub) {
-    super(proxy, onBehalfOfRemoteStub);
+  public DistTXState(TXStateProxy proxy, boolean onBehalfOfRemoteStub,
+      StatisticsClock statisticsClock) {
+    super(proxy, onBehalfOfRemoteStub, statisticsClock);
   }
 
   @Override
@@ -174,7 +178,7 @@ public class DistTXState extends TXState {
 
     if (onBehalfOfRemoteStub && !proxy.isCommitOnBehalfOfRemoteStub()) {
       throw new UnsupportedOperationInTransactionException(
-          LocalizedStrings.TXState_CANNOT_COMMIT_REMOTED_TRANSACTION.toLocalizedString());
+          "Cannot commit a transaction being run on behalf of a remote thread");
     }
 
     cleanupNonDirtyRegions();
@@ -187,8 +191,7 @@ public class DistTXState extends TXState {
     } catch (PrimaryBucketException pbe) {
       // not sure what to do here yet
       RuntimeException re = new TransactionDataRebalancedException(
-          LocalizedStrings.PartitionedRegion_TRANSACTIONAL_DATA_MOVED_DUE_TO_REBALANCING
-              .toLocalizedString());
+          "Transactional data moved, due to rebalancing.");
       re.initCause(pbe);
       throw re;
     }
@@ -532,6 +535,7 @@ public class DistTXState extends TXState {
    * .gemfire.internal.cache.DistributedPutAllOperation, java.util.Map,
    * org.apache.geode.internal.cache.LocalRegion)
    */
+  @Override
   public void postPutAll(final DistributedPutAllOperation putallOp,
       final VersionedObjectList successfulPuts, InternalRegion reg) {
 
@@ -551,6 +555,7 @@ public class DistTXState extends TXState {
      * We need to put this into the tx state.
      */
     theRegion.syncBulkOp(new Runnable() {
+      @Override
       public void run() {
         // final boolean requiresRegionContext =
         // theRegion.keyRequiresRegionContext();
@@ -610,6 +615,7 @@ public class DistTXState extends TXState {
      * will push them out. We need to put this into the tx state.
      */
     theRegion.syncBulkOp(new Runnable() {
+      @Override
       public void run() {
         InternalDistributedMember myId =
             theRegion.getDistributionManager().getDistributionManagerId();

@@ -14,17 +14,17 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.REMOVE_UNRESPONSIVE_CLIENT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.net.SocketException;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -159,9 +159,8 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
     AttributesFactory factory = new AttributesFactory();
     PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer("localhost", port1)
         .addServer("localhost", port2).addServer("localhost", port3).setSubscriptionEnabled(true)
-        .setSubscriptionRedundancy(rLevel.intValue()).setThreadLocalConnections(true)
-        .setMinConnections(6).setReadTimeout(20000).setPingInterval(1000).setRetryAttempts(5)
-        .create("HASlowReceiverDUnitTestPool");
+        .setSubscriptionRedundancy(rLevel.intValue()).setMinConnections(6).setReadTimeout(20000)
+        .setPingInterval(1000).setRetryAttempts(5).create("HASlowReceiverDUnitTestPool");
 
     factory.setScope(Scope.LOCAL);
     factory.setPoolName(p.getName());
@@ -193,7 +192,7 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void registerInterest() {
     try {
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       r.registerInterest("ALL_KEYS");
     } catch (Exception ex) {
@@ -204,7 +203,7 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
   public static void putEntries() {
     try {
 
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       for (long i = 0; i < 300; i++) {
         r.put("k" + (i % 10), "v" + i);
@@ -217,7 +216,7 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void createEntries(Long num) {
     try {
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       for (long i = 0; i < num.longValue(); i++) {
         r.create("k" + i, "v" + i);
@@ -228,7 +227,7 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public static void checkRedundancyLevel(final Integer redundantServers) {
-    Awaitility.await().atMost(20, TimeUnit.SECONDS).untilAsserted(() -> {
+    await().untilAsserted(() -> {
       // check for slow client queue is removed or not.
       assertTrue(
           "Expected redundant count (" + pool.getRedundantNames().size() + ") to become "
@@ -254,7 +253,7 @@ public class HASlowReceiverDUnitTest extends JUnit4DistributedTestCase {
 
     putEntries();
 
-    Awaitility.await().atMost(60, TimeUnit.SECONDS).untilAsserted(() -> {
+    await().untilAsserted(() -> {
       // check for slow client queue is removed or not.
       assertTrue("isUnresponsiveClientRemoved is false, but should be true " + "after 60 seconds",
           isUnresponsiveClientRemoved);

@@ -14,12 +14,14 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.test.dunit.Assert.assertNotNull;
 import static org.apache.geode.test.dunit.Assert.assertNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -55,12 +57,12 @@ import org.apache.geode.internal.cache.EntryEventImpl;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.RegionEventImpl;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -110,6 +112,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
   private CacheSerializableRunnable stopServer() {
 
     CacheSerializableRunnable stopserver = new CacheSerializableRunnable("stopServer") {
+      @Override
       public void run2() throws CacheException {
         server.stop();
       }
@@ -174,7 +177,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
     factory.setCacheListener(clientListener);
     RegionAttributes attrs = factory.create();
     cache.createRegion(REGION_NAME, attrs);
-    Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region region = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(region);
     region.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     System.out.println("KKKKKK:[" + pi.getName() + "]");;
@@ -199,19 +202,21 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
     assertNotNull(map);
     // changed to check for size 1 due to marker message
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         synchronized (map) {
           return map.size() == 1;
         }
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 10 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     synchronized (map) {
-      LogWriterUtils.getLogWriter()
+      getLogWriter()
           .info("assertThreadIdToSequenceIdMapisNotNullButEmpty: map size is " + map.size());
       assertTrue(map.size() == 1);
     }
@@ -442,7 +447,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object putKey1Val1() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.create("key1", "value1");
@@ -459,7 +464,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object updateKey1() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.put("key1", "value2");
@@ -476,7 +481,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object[] putAll() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       Map map = new LinkedHashMap();
@@ -511,7 +516,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object invalidateKey1() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.invalidate("key1");
@@ -528,7 +533,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object destroyKey1() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.destroy("key1");
@@ -546,7 +551,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object removePUTALL_KEY1() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.remove(PUTALL_KEY1);
@@ -564,7 +569,7 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object clearRg() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
       region.clear();
       return eventId;
@@ -581,11 +586,11 @@ public class HAEventIdPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static Object destroyRegion() {
     try {
-      Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(region);
 
       region.destroyRegion();
-      region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      region = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNull(region);
       return eventId;
     } catch (Exception e) {

@@ -14,12 +14,16 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -30,6 +34,7 @@ import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.EvictionAction;
 import org.apache.geode.cache.EvictionAttributes;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.client.ClientCacheFactory;
 import org.apache.geode.cache.query.CqAttributes;
@@ -39,10 +44,11 @@ import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.Query;
 import org.apache.geode.cache.query.QueryExecutionTimeoutException;
 import org.apache.geode.cache.query.QueryService;
+import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.cq.dunit.CqQueryTestListener;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.internal.DefaultQuery;
-import org.apache.geode.cache.query.internal.QueryMonitor;
+import org.apache.geode.cache.query.internal.ExecutionContext;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.test.dunit.AsyncInvocation;
@@ -67,6 +73,7 @@ import org.apache.geode.test.junit.rules.VMProvider;
 @Category({OQLQueryTest.class})
 public class QueryMonitorDUnitTest {
   private static int MAX_QUERY_EXECUTE_TIME = 1;
+
   @Rule
   public ClusterStartupRule cluster = new ClusterStartupRule(5);
 
@@ -85,7 +92,7 @@ public class QueryMonitorDUnitTest {
     // configure the server to make the query to wait for at least 1 second in every execution spot
     // and set a MAX_QUERY_EXECUTION_TIME to be 10ms
     VMProvider.invokeInEveryMember(() -> {
-      DefaultQuery.testHook = new QueryTimeoutHook();
+      DefaultQuery.testHook = QueryMonitorDUnitTest::delayQueryTestHook;
       GemFireCacheImpl.MAX_QUERY_EXECUTION_TIME = MAX_QUERY_EXECUTE_TIME;
     }, server1, server2);
     gfsh.connectAndVerify(locator);
@@ -102,33 +109,39 @@ public class QueryMonitorDUnitTest {
   @Test
   public void testMultipleClientToOneServer() throws Exception {
     int server1Port = server1.getPort();
-    client3 = cluster.startClientVM(3, true, server1Port);
-    client4 = cluster.startClientVM(4, true, server1Port);
+    client3 =
+        cluster.startClientVM(3,
+            c1 -> c1.withPoolSubscription(true).withServerConnection(server1Port));
+    client4 =
+        cluster.startClientVM(4,
+            c -> c.withPoolSubscription(true).withServerConnection(server1Port));
 
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
 
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(0, 100));
 
     // execute the query
-    VMProvider.invokeInEveryMember(() -> exuteQuery(), client3, client4);
+    VMProvider.invokeInEveryMember(() -> executeQueries(), client3, client4);
   }
 
   @Test
   public void testOneClientToMultipleServerOnReplicateRegion() throws Exception {
     int server1Port = server1.getPort();
     int server2Port = server2.getPort();
-    client3 = cluster.startClientVM(3, true, server1Port, server2Port);
+    client3 =
+        cluster.startClientVM(3, c -> c.withPoolSubscription(true)
+            .withServerConnection(new int[] {server1Port, server2Port}));
 
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
 
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(0, 100));
 
     // execute the query from client3
-    client3.invoke(() -> exuteQuery());
+    client3.invoke(() -> executeQueries());
   }
 
   @Test
@@ -136,18 +149,22 @@ public class QueryMonitorDUnitTest {
     // client3 connects to server1, client4 connects to server2
     int server1Port = server1.getPort();
     int server2Port = server2.getPort();
-    client3 = cluster.startClientVM(3, true, server1Port);
-    client4 = cluster.startClientVM(4, true, server2Port);
+    client3 =
+        cluster.startClientVM(3,
+            c1 -> c1.withPoolSubscription(true).withServerConnection(server1Port));
+    client4 =
+        cluster.startClientVM(4,
+            c -> c.withPoolSubscription(true).withServerConnection(server2Port));
 
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=PARTITION")
         .statusIsSuccess();
 
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(0, 100));
     server2.invoke(() -> populateRegion(100, 200));
 
-    client3.invoke(() -> exuteQuery());
-    client4.invoke(() -> exuteQuery());
+    client3.invoke(() -> executeQueries());
+    client4.invoke(() -> executeQueries());
   }
 
   @Test
@@ -155,22 +172,23 @@ public class QueryMonitorDUnitTest {
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
 
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(0, 100));
 
     // execute the query from one server
-    server1.invoke(() -> exuteQuery());
+    server1.invoke(() -> executeQueries());
 
     // Create index and Perform cache op. Bug#44307
     server1.invoke(() -> {
       QueryService queryService = ClusterStartupRule.getCache().getQueryService();
-      queryService.createIndex("idIndex", "ID", "/exampleRegion");
-      queryService.createIndex("statusIndex", "status", "/exampleRegion");
+      queryService.createIndex("idIndex", "ID", SEPARATOR + "exampleRegion");
+      queryService.createIndex("statusIndex", "status", SEPARATOR + "exampleRegion");
       populateRegion(100, 10);
     });
 
     // destroy indices created in this test
-    gfsh.executeAndAssertThat("destroy index --region=/exampleRegion").statusIsSuccess();
+    gfsh.executeAndAssertThat("destroy index --region=" + SEPARATOR + "exampleRegion")
+        .statusIsSuccess();
   }
 
   @Test
@@ -178,13 +196,13 @@ public class QueryMonitorDUnitTest {
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=PARTITION")
         .statusIsSuccess();
 
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(100, 200));
     server2.invoke(() -> populateRegion(200, 300));
 
     // execute the query from one server
-    server1.invoke(() -> exuteQuery());
-    server2.invoke(() -> exuteQuery());
+    server1.invoke(() -> executeQueries());
+    server2.invoke(() -> executeQueries());
   }
 
   @Test
@@ -199,61 +217,72 @@ public class QueryMonitorDUnitTest {
     // client3 connects to server1, client4 connects to server2
     int server1Port = server1.getPort();
     int server2Port = server2.getPort();
-    client3 = cluster.startClientVM(3, ccf -> {
+    client3 = cluster.startClientVM(3, new Properties(), ccf -> {
       configureClientCacheFactory(ccf, server1Port);
     });
 
-    client4 = cluster.startClientVM(4, ccf -> {
+    client4 = cluster.startClientVM(4, new Properties(), ccf -> {
       configureClientCacheFactory(ccf, server2Port);
     });
-    client3.invoke(() -> exuteQuery());
-    client4.invoke(() -> exuteQuery());
+    client3.invoke(() -> executeQueries());
+    client4.invoke(() -> executeQueries());
   }
 
   @Test
   public void testQueryMonitorRegionWithIndex() throws Exception {
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
 
     // create the indices using API
     VMProvider.invokeInEveryMember(() -> {
       // create index.
       QueryService cacheQS = ClusterStartupRule.getCache().getQueryService();
-      cacheQS.createIndex("idIndex", "p.ID", "/exampleRegion p");
-      cacheQS.createIndex("statusIndex", "p.status", "/exampleRegion p");
-      cacheQS.createIndex("secIdIndex", "pos.secId", "/exampleRegion p, p.positions.values pos");
-      cacheQS.createIndex("posIdIndex", "pos.Id", "/exampleRegion p, p.positions.values pos");
-      cacheQS.createKeyIndex("pkIndex", "pk", "/exampleRegion");
-      cacheQS.createKeyIndex("pkidIndex", "pkid", "/exampleRegion");
+      cacheQS.createIndex("idIndex", "p.ID", SEPARATOR + "exampleRegion p");
+      cacheQS.createIndex("statusIndex", "p.status", SEPARATOR + "exampleRegion p");
+      cacheQS.createIndex("secIdIndex", "pos.secId",
+          SEPARATOR + "exampleRegion p, p.positions.values pos");
+      cacheQS.createIndex("posIdIndex", "pos.Id",
+          SEPARATOR + "exampleRegion p, p.positions.values pos");
+      cacheQS.createKeyIndex("pkIndex", "pk", SEPARATOR + "exampleRegion");
+      cacheQS.createKeyIndex("pkidIndex", "pkid", SEPARATOR + "exampleRegion");
       populateRegion(0, 150);
     }, server1, server2);
 
     // client3 connects to server1, client4 connects to server2
     int server1Port = server1.getPort();
     int server2Port = server2.getPort();
-    client3 = cluster.startClientVM(3, true, server1Port);
-    client4 = cluster.startClientVM(4, true, server2Port);
+    client3 =
+        cluster.startClientVM(3,
+            c1 -> c1.withPoolSubscription(true).withServerConnection(server1Port));
+    client4 =
+        cluster.startClientVM(4,
+            c -> c.withPoolSubscription(true).withServerConnection(server2Port));
 
-    client3.invoke(() -> exuteQuery());
-    client4.invoke(() -> exuteQuery());
+    client3.invoke(() -> executeQueries());
+    client4.invoke(() -> executeQueries());
   }
 
   @Test
   public void testCqExecuteDoesNotGetAffectedByTimeout() throws Exception {
+    // uninstall the test hook installed in @Before
+    VMProvider.invokeInEveryMember(() -> {
+      DefaultQuery.testHook = null;
+    }, server1, server2);
+
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 2);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 2);
     server1.invoke(() -> populateRegion(0, 100));
 
     int server1Port = server1.getPort();
-    client3 = cluster.startClientVM(3, ccf -> {
+    client3 = cluster.startClientVM(3, new Properties(), ccf -> {
       configureClientCacheFactory(ccf, server1Port);
     });
 
     client3.invoke(() -> {
       String cqName = "testCQForQueryMonitorDUnitTest";
-      String query = "select * from /exampleRegion";
+      String query = "select * from " + SEPARATOR + "exampleRegion";
       // Get CQ Service.
       QueryService cqService = ClusterStartupRule.getClientCache().getQueryService();
 
@@ -279,19 +308,19 @@ public class QueryMonitorDUnitTest {
     MemberVM server3 = cluster.startServerVM(3, locatorPort);
 
     server3.invoke(() -> {
-      DefaultQuery.testHook = new QueryTimeoutHook();
+      DefaultQuery.testHook = QueryMonitorDUnitTest::delayQueryTestHook;
       GemFireCacheImpl.MAX_QUERY_EXECUTION_TIME = MAX_QUERY_EXECUTE_TIME;
     });
 
     gfsh.executeAndAssertThat("create region --name=exampleRegion --type=REPLICATE")
         .statusIsSuccess();
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/exampleRegion", 3);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "exampleRegion", 3);
 
     server1.invoke(() -> {
       QueryService queryService = ClusterStartupRule.getCache().getQueryService();
-      queryService.createIndex("statusIndex", "status", "/exampleRegion");
+      queryService.createIndex("statusIndex", "status", SEPARATOR + "exampleRegion");
       queryService.createIndex("secIdIndex", "pos.secId",
-          "/exampleRegion p, p.positions.values pos");
+          SEPARATOR + "exampleRegion p, p.positions.values pos");
       populateRegion(100, 1000);
     });
 
@@ -312,7 +341,8 @@ public class QueryMonitorDUnitTest {
       Region exampleRegion = ClusterStartupRule.getCache().getRegion("exampleRegion");
       QueryService queryService = GemFireCacheImpl.getInstance().getQueryService();
       String qStr =
-          "SELECT DISTINCT * FROM /exampleRegion p, p.positions.values pos1, p.positions.values pos"
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values pos1, p.positions.values pos"
               + " where p.ID < pos.sharesOutstanding OR p.ID > 0 OR p.position1.mktValue > 0 "
               + " OR pos.secId in SET ('SUN', 'IBM', 'YHOO', 'GOOG', 'MSFT', "
               + " 'AOL', 'APPL', 'ORCL', 'SAP', 'DELL', 'RHAT', 'NOVL', 'HP')"
@@ -338,6 +368,48 @@ public class QueryMonitorDUnitTest {
     });
   }
 
+  @Test
+  public void testQueryObjectReusableAfterFirstExecutionTimesOut() throws Exception {
+    server1.invoke(() -> {
+      // Setting query timeout to 10 seconds
+      GemFireCacheImpl.MAX_QUERY_EXECUTION_TIME = 10000;
+
+      final InternalCache cache = ClusterStartupRule.getCache();
+      final String regionName = "exampleRegion";
+      final RegionFactory<Integer, Integer> regionFactory =
+          cache.createRegionFactory(RegionShortcut.LOCAL);
+      final Region<Integer, Integer> exampleRegion = regionFactory.create(regionName);
+      final int numRegionEntries = 10;
+      for (int i = 0; i < numRegionEntries; ++i) {
+        exampleRegion.put(i, i);
+      }
+
+      final String queryString = "select * from " + SEPARATOR + regionName;
+      final Query query = cache.getQueryService().newQuery(queryString);
+
+      // Install a test hook which causes the query to timeout
+      DefaultQuery.testHook =
+          (spot, qry, executionContext) -> {
+            if (spot != DefaultQuery.TestHook.SPOTS.BEFORE_QUERY_DEPENDENCY_COMPUTATION) {
+              return;
+            }
+
+            await("stall the query execution so that it gets cancelled")
+                .until(executionContext::isCanceled);
+          };
+
+      assertThatThrownBy(query::execute).isInstanceOf(QueryExecutionTimeoutException.class);
+
+      // Uninstall test hook so that query object is reused to execute again, this time successfully
+      DefaultQuery.testHook = null;
+
+      final SelectResults results = (SelectResults) query.execute();
+
+      for (int i = 0; i < numRegionEntries; ++i) {
+        assertThat(results.contains(i)).isTrue();
+      }
+    });
+  }
 
   private static void populateRegion(int startingId, int endingId) {
     Region exampleRegion = ClusterStartupRule.getCache().getRegion("exampleRegion");
@@ -346,7 +418,7 @@ public class QueryMonitorDUnitTest {
     }
   }
 
-  private static void exuteQuery() {
+  private static void executeQueries() {
     QueryService queryService;
     if (ClusterStartupRule.getClientCache() == null) {
       queryService = ClusterStartupRule.getCache().getQueryService();
@@ -362,6 +434,21 @@ public class QueryMonitorDUnitTest {
       } catch (Exception e) {
         verifyException(e);
       }
+    }
+
+    final String queryString =
+        "SELECT DISTINCT * FROM " + SEPARATOR + "exampleRegion p WHERE p.id = $1";
+    final Query query = queryService.newQuery(queryString);
+
+    try {
+      for (int i = 0; i < 100; ++i) {
+        final Object[] params = new Object[1];
+        params[0] = i;
+
+        query.execute(params);
+      }
+    } catch (final Exception e) {
+      verifyException(e);
     }
   }
 
@@ -391,7 +478,7 @@ public class QueryMonitorDUnitTest {
       error = e.getCause().getMessage();
     }
 
-    if (error.contains("Query execution cancelled after exceeding max execution time")
+    if (error.contains("Query execution canceled after exceeding max execution time")
         || error.contains("The Query completed sucessfully before it got canceled")
         || error.contains("The QueryMonitor thread may be sleeping longer than the set sleep time")
         || error.contains(
@@ -411,58 +498,88 @@ public class QueryMonitorDUnitTest {
         + "\"Query execution taking more than the max execution time\"" + "\n Found \n" + error);
   }
 
-  private static class QueryTimeoutHook implements DefaultQuery.TestHook {
-    public void doTestHook(int spot, DefaultQuery query) {
-      if (spot != 6) {
-        return;
-      }
-      if (query.isCqQuery() || QueryMonitor.getQueryMonitorThreadCount() == 0) {
-        return;
-      }
-
-      Awaitility.await().pollDelay(5, TimeUnit.MILLISECONDS).until(() -> query.isCanceled());
+  /**
+   * This method is used as an implementation of the TestHook functional interface, to delay
+   * query execution long enough for the QueryMonitor to mark the query as cancelled.
+   */
+  private static void delayQueryTestHook(final DefaultQuery.TestHook.SPOTS spot,
+      final DefaultQuery query,
+      final ExecutionContext executionContext) {
+    if (spot != DefaultQuery.TestHook.SPOTS.BEFORE_QUERY_DEPENDENCY_COMPUTATION) {
+      return;
     }
+    if (query.isCqQuery()) {
+      return;
+    }
+
+    /*
+     * The pollDelay() value was chosen to be larger than the
+     * GemFireCacheImpl.MAX_QUERY_EXECUTION_TIME (system property) value,
+     * set during test initialization.
+     */
+    await("stall the query execution so that it gets cancelled")
+        .pollDelay(10, TimeUnit.MILLISECONDS)
+        .until(() -> executionContext.isCanceled());
   }
 
-  private static String[] queryStr = {"SELECT ID FROM /exampleRegion p WHERE  p.ID > 100",
-      "SELECT DISTINCT * FROM /exampleRegion x, x.positions.values WHERE  x.pk != '1000'",
-      "SELECT DISTINCT * FROM /exampleRegion x, x.positions.values WHERE  x.pkid != '1'",
-      "SELECT DISTINCT * FROM /exampleRegion p, p.positions.values WHERE  p.pk > '1'",
-      "SELECT DISTINCT * FROM /exampleRegion p, p.positions.values WHERE  p.pkid != '53'",
-      "SELECT DISTINCT pos FROM /exampleRegion p, p.positions.values pos WHERE  pos.Id > 100",
-      "SELECT DISTINCT pos FROM /exampleRegion p, p.positions.values pos WHERE  pos.Id > 100 and pos.secId IN SET('YHOO', 'IBM', 'AMZN')",
-      "SELECT * FROM /exampleRegion p WHERE  p.ID > 100 and p.status = 'active' and p.ID < 100000",
-      "SELECT * FROM /exampleRegion WHERE  ID > 100 and status = 'active'",
-      "SELECT DISTINCT * FROM /exampleRegion p WHERE  p.ID > 100 and p.status = 'active' and p.ID < 100000",
-      "SELECT DISTINCT ID FROM /exampleRegion WHERE  status = 'active'",
-      "SELECT DISTINCT ID FROM /exampleRegion p WHERE  p.status = 'active'",
-      "SELECT DISTINCT pos FROM /exampleRegion p, p.positions.values pos WHERE  pos.secId IN SET('YHOO', 'IBM', 'AMZN')",
-      "SELECT DISTINCT proj1:p, proj2:itrX FROM /exampleRegion p, (SELECT DISTINCT pos FROM /exampleRegion p, p.positions.values pos"
-          + " WHERE  pos.secId = 'YHOO') as itrX",
-      "SELECT DISTINCT * FROM /exampleRegion p, (SELECT DISTINCT pos FROM /exampleRegion p, p.positions.values pos"
-          + " WHERE  pos.secId = 'YHOO') as itrX",
-      "SELECT DISTINCT * FROM /exampleRegion p, (SELECT DISTINCT p.ID FROM /exampleRegion x"
-          + " WHERE  x.ID = p.ID) as itrX",
-      "SELECT DISTINCT * FROM /exampleRegion p, (SELECT DISTINCT pos FROM /exampleRegion x, x.positions.values pos"
-          + " WHERE  x.ID = p.ID) as itrX",
-      "SELECT DISTINCT x.ID FROM /exampleRegion x, x.positions.values v WHERE  "
-          + "v.secId = element(SELECT DISTINCT vals.secId FROM /exampleRegion p, p.positions.values vals WHERE  vals.secId = 'YHOO')",
-      "SELECT DISTINCT * FROM /exampleRegion p, positions.values pos WHERE   (p.ID > 1 or p.status = 'active') or (true AND pos.secId ='IBM')",
-      "SELECT DISTINCT * FROM /exampleRegion p, positions.values pos WHERE   (p.ID > 1 or p.status = 'active') or (true AND pos.secId !='IBM')",
-      "SELECT DISTINCT structset.sos, structset.key "
-          + "FROM /exampleRegion p, p.positions.values outerPos, "
-          + "(SELECT DISTINCT key: key, sos: pos.sharesOutstanding "
-          + "FROM /exampleRegion.entries pf, pf.value.positions.values pos "
-          + "where outerPos.secId != 'IBM' AND "
-          + "pf.key IN (SELECT DISTINCT * FROM pf.value.collectionHolderMap['0'].arr)) structset "
-          + "where structset.sos > 2000",
-      "SELECT DISTINCT * " + "FROM /exampleRegion p, p.positions.values outerPos, "
-          + "(SELECT DISTINCT key: key, sos: pos.sharesOutstanding "
-          + "FROM /exampleRegion.entries pf, pf.value.positions.values pos "
-          + "where outerPos.secId != 'IBM' AND "
-          + "pf.key IN (SELECT DISTINCT * FROM pf.value.collectionHolderMap['0'].arr)) structset "
-          + "where structset.sos > 2000",
-      "SELECT DISTINCT * FROM /exampleRegion p, p.positions.values position "
-          + "WHERE (true = null OR position.secId = 'SUN') AND true",};
+  private static String[] queryStr =
+      {"SELECT ID FROM " + SEPARATOR + "exampleRegion p WHERE  p.ID > 100",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion x, x.positions.values WHERE  x.pk != '1000'",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion x, x.positions.values WHERE  x.pkid != '1'",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values WHERE  p.pk > '1'",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values WHERE  p.pkid != '53'",
+          "SELECT DISTINCT pos FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values pos WHERE  pos.Id > 100",
+          "SELECT DISTINCT pos FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values pos WHERE  pos.Id > 100 and pos.secId IN SET('YHOO', 'IBM', 'AMZN')",
+          "SELECT * FROM " + SEPARATOR
+              + "exampleRegion p WHERE  p.ID > 100 and p.status = 'active' and p.ID < 100000",
+          "SELECT * FROM " + SEPARATOR + "exampleRegion WHERE  ID > 100 and status = 'active'",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p WHERE  p.ID > 100 and p.status = 'active' and p.ID < 100000",
+          "SELECT DISTINCT ID FROM " + SEPARATOR + "exampleRegion WHERE  status = 'active'",
+          "SELECT DISTINCT ID FROM " + SEPARATOR + "exampleRegion p WHERE  p.status = 'active'",
+          "SELECT DISTINCT pos FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values pos WHERE  pos.secId IN SET('YHOO', 'IBM', 'AMZN')",
+          "SELECT DISTINCT proj1:p, proj2:itrX FROM " + SEPARATOR
+              + "exampleRegion p, (SELECT DISTINCT pos FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values pos"
+              + " WHERE  pos.secId = 'YHOO') as itrX",
+          "SELECT DISTINCT * FROM " + SEPARATOR + "exampleRegion p, (SELECT DISTINCT pos FROM "
+              + SEPARATOR + "exampleRegion p, p.positions.values pos"
+              + " WHERE  pos.secId = 'YHOO') as itrX",
+          "SELECT DISTINCT * FROM " + SEPARATOR + "exampleRegion p, (SELECT DISTINCT p.ID FROM "
+              + SEPARATOR + "exampleRegion x"
+              + " WHERE  x.ID = p.ID) as itrX",
+          "SELECT DISTINCT * FROM " + SEPARATOR + "exampleRegion p, (SELECT DISTINCT pos FROM "
+              + SEPARATOR + "exampleRegion x, x.positions.values pos"
+              + " WHERE  x.ID = p.ID) as itrX",
+          "SELECT DISTINCT x.ID FROM " + SEPARATOR + "exampleRegion x, x.positions.values v WHERE  "
+              + "v.secId = element(SELECT DISTINCT vals.secId FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values vals WHERE  vals.secId = 'YHOO')",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p, positions.values pos WHERE   (p.ID > 1 or p.status = 'active') or (true AND pos.secId ='IBM')",
+          "SELECT DISTINCT * FROM " + SEPARATOR
+              + "exampleRegion p, positions.values pos WHERE   (p.ID > 1 or p.status = 'active') or (true AND pos.secId !='IBM')",
+          "SELECT DISTINCT structset.sos, structset.key "
+              + "FROM " + SEPARATOR + "exampleRegion p, p.positions.values outerPos, "
+              + "(SELECT DISTINCT key: key, sos: pos.sharesOutstanding "
+              + "FROM " + SEPARATOR + "exampleRegion.entries pf, pf.value.positions.values pos "
+              + "where outerPos.secId != 'IBM' AND "
+              + "pf.key IN (SELECT DISTINCT * FROM pf.value.collectionHolderMap['0'].arr)) structset "
+              + "where structset.sos > 2000",
+          "SELECT DISTINCT * " + "FROM " + SEPARATOR
+              + "exampleRegion p, p.positions.values outerPos, "
+              + "(SELECT DISTINCT key: key, sos: pos.sharesOutstanding "
+              + "FROM " + SEPARATOR + "exampleRegion.entries pf, pf.value.positions.values pos "
+              + "where outerPos.secId != 'IBM' AND "
+              + "pf.key IN (SELECT DISTINCT * FROM pf.value.collectionHolderMap['0'].arr)) structset "
+              + "where structset.sos > 2000",
+          "SELECT DISTINCT * FROM " + SEPARATOR + "exampleRegion p, p.positions.values position "
+              + "WHERE (true = null OR position.secId = 'SUN') AND true",};
 
 }

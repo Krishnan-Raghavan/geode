@@ -17,6 +17,7 @@ package org.apache.geode.internal.statistics;
 import static org.apache.geode.internal.statistics.StatArchiveFormat.NANOS_PER_MILLI;
 import static org.apache.geode.internal.statistics.TestStatArchiveWriter.WRITER_INITIAL_DATE_MILLIS;
 import static org.apache.geode.internal.statistics.TestStatArchiveWriter.WRITER_PREVIOUS_TIMESTAMP_NANOS;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -54,7 +55,6 @@ import org.apache.geode.StatisticsType;
 import org.apache.geode.internal.NanoTimer;
 import org.apache.geode.internal.statistics.StatArchiveReader.StatValue;
 import org.apache.geode.test.junit.categories.StatisticsTest;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * Integration tests for {@link StatArchiveWriter} and {@link StatArchiveReader}.
@@ -196,8 +196,8 @@ public class StatArchiveWriterReaderIntegrationTest {
 
     final StatisticsType ST1 = manager.createType("ST1", "ST1", statsST1);
     final Statistics st1_1 = manager.createAtomicStatistics(ST1, "st1_1", 1);
-    final int value = 5;
-    incInt(st1_1, "int_counter_1", value);
+    final long value = 5;
+    incInt(st1_1, "int_counter_1", (int) value);
 
     final long sampleIncNanos = NANOS_PER_MILLI * 1000;
     final long sampleTimeNanos = WRITER_PREVIOUS_TIMESTAMP_NANOS + sampleIncNanos;
@@ -277,8 +277,8 @@ public class StatArchiveWriterReaderIntegrationTest {
 
     final StatisticsType ST1 = manager.createType("ST1", "ST1", statsST1);
     final Statistics st1_1 = manager.createAtomicStatistics(ST1, "st1_1", 1);
-    final int value = 5;
-    incInt(st1_1, "int_gauge_1", value);
+    final long value = 5;
+    incInt(st1_1, "int_gauge_1", (int) value);
 
     final long sampleIncNanos = NANOS_PER_MILLI * 1000;
     final long sampleTimeNanos = WRITER_PREVIOUS_TIMESTAMP_NANOS + sampleIncNanos;
@@ -989,12 +989,14 @@ public class StatArchiveWriterReaderIntegrationTest {
 
     // validate byte content of stat archive file against saved expected file
 
-    final File expected = new File(TestUtil.getResourcePath(getClass(),
-        "StatArchiveWriterReaderJUnitTest_" + this.testName.getMethodName() + "_expected.gfs"));
+    final File expected = new File(createTempFileFromResource(getClass(),
+        "StatArchiveWriterReaderJUnitTest_" + this.testName.getMethodName() + "_expected.gfs")
+            .getAbsolutePath());
     assertTrue(expected + " does not exist!", expected.exists());
     assertEquals(expected.length(), actual.length());
 
-    assertTrue("Actual stat archive file bytes differ from expected stat archive file bytes!",
+    assertTrue("Actual stat archive file: " + actual.getAbsolutePath()
+        + " bytes differ from expected stat archive file bytes!",
         Arrays.equals(readBytes(expected), readBytes(actual)));
   }
 
@@ -1394,12 +1396,14 @@ public class StatArchiveWriterReaderIntegrationTest {
 
     // validate byte content of stat archive file against saved expected file
 
-    final File expected = new File(TestUtil.getResourcePath(getClass(),
-        "StatArchiveWriterReaderJUnitTest_" + this.testName.getMethodName() + "_expected.gfs"));
+    final File expected = new File(createTempFileFromResource(getClass(),
+        "StatArchiveWriterReaderJUnitTest_" + this.testName.getMethodName() + "_expected.gfs")
+            .getAbsolutePath());
     assertTrue(expected + " does not exist!", expected.exists());
     assertEquals(expected.length(), actual.length());
 
-    assertTrue("Actual stat archive file bytes differ from expected stat archive file bytes!",
+    assertTrue("Actual stat archive file: " + actual.getAbsolutePath()
+        + " bytes differ from expected stat archive file bytes!",
         Arrays.equals(readBytes(expected), readBytes(actual)));
   }
 

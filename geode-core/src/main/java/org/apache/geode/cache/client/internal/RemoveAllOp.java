@@ -17,7 +17,6 @@ package org.apache.geode.cache.client.internal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +29,8 @@ import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.client.ServerOperationException;
 import org.apache.geode.distributed.internal.ServerLocation;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.EventID;
+import org.apache.geode.internal.cache.InternalRegion;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PutAllPartialResultException;
 import org.apache.geode.internal.cache.PutAllPartialResultException.PutAllPartialResult;
@@ -40,7 +39,8 @@ import org.apache.geode.internal.cache.tier.sockets.ChunkedMessage;
 import org.apache.geode.internal.cache.tier.sockets.Message;
 import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Does a region removeAll on a server
@@ -87,9 +87,9 @@ public class RemoveAllOp {
   public static VersionedObjectList execute(ExecutablePool pool, Region region,
       Collection<Object> keys, EventID eventId, int retryAttempts, Object callbackArg) {
     final boolean isDebugEnabled = logger.isDebugEnabled();
-    ClientMetadataService cms = ((LocalRegion) region).getCache().getClientMetadataService();
+    ClientMetadataService cms = ((InternalRegion) region).getCache().getClientMetadataService();
 
-    Map<ServerLocation, HashSet> serverToFilterMap = cms.getServerToFilterMap(keys, region, true);
+    Map<ServerLocation, Set> serverToFilterMap = cms.getServerToFilterMap(keys, region, true);
 
     if (serverToFilterMap == null || serverToFilterMap.isEmpty()) {
       AbstractOp op = new RemoveAllOpImpl(region, keys, eventId,
@@ -108,8 +108,9 @@ public class RemoveAllOp {
         new HashMap<ServerLocation, RuntimeException>();
     PutAllPartialResult result = new PutAllPartialResult(keys.size());
     try {
-      Map<ServerLocation, Object> results = SingleHopClientExecutor.submitBulkOp(callableTasks, cms,
-          (LocalRegion) region, failedServers);
+      Map<ServerLocation, Object> results = SingleHopClientExecutor
+          .submitBulkOp(callableTasks, cms,
+              (LocalRegion) region, failedServers);
       for (Map.Entry<ServerLocation, Object> entry : results.entrySet()) {
         Object value = entry.getValue();
         if (value instanceof PutAllPartialResultException) {
@@ -209,10 +210,10 @@ public class RemoveAllOp {
 
 
   static List constructAndGetRemoveAllTasks(Region region, final EventID eventId,
-      final Map<ServerLocation, HashSet> serverToFilterMap, final PoolImpl pool,
+      final Map<ServerLocation, Set> serverToFilterMap, final PoolImpl pool,
       Object callbackArg) {
-    final List<SingleHopOperationCallable> tasks = new ArrayList<SingleHopOperationCallable>();
-    ArrayList<ServerLocation> servers = new ArrayList<ServerLocation>(serverToFilterMap.keySet());
+    final List<SingleHopOperationCallable> tasks = new ArrayList<>();
+    ArrayList<ServerLocation> servers = new ArrayList<>(serverToFilterMap.keySet());
 
     if (logger.isDebugEnabled()) {
       logger.debug("Constructing tasks for the servers{}", servers);
@@ -246,7 +247,7 @@ public class RemoveAllOp {
       super(MessageType.REMOVE_ALL, 5 + keys.size());
       this.prSingleHopEnabled = prSingleHopEnabled;
       this.region = (LocalRegion) region;
-      getMessage().addStringPart(region.getFullPath());
+      getMessage().addStringPart(region.getFullPath(), true);
       getMessage().addBytesPart(eventId.calcBytes());
       this.keys = keys;
       this.callbackArg = callbackArg;
@@ -288,6 +289,7 @@ public class RemoveAllOp {
       final boolean isDebugEnabled = logger.isDebugEnabled();
       try {
         processChunkedResponse((ChunkedMessage) msg, "removeAll", new ChunkHandler() {
+          @Override
           public void handle(ChunkedMessage cm) throws Exception {
             int numParts = msg.getNumberOfParts();
             if (isDebugEnabled) {

@@ -17,11 +17,12 @@ package org.apache.geode.internal.admin;
 import java.util.Date;
 import java.util.Map;
 
-import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.Statistics;
 import org.apache.geode.StatisticsType;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.CacheWriterException;
 import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.client.internal.ServerRegionProxy;
@@ -32,9 +33,8 @@ import org.apache.geode.internal.cache.EntryEventImpl;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This class publishes the client statistics using the admin region.
@@ -46,16 +46,19 @@ public class ClientStatsManager {
    *
    * GuardedBy ClientStatsManager.class
    */
+  @MakeNotStatic
   private static InternalCache lastInitializedCache = null;
 
   /**
    * GuardedBy ClientStatsManager.class
    */
+  @MakeNotStatic
   private static Statistics cachePerfStats = null;
 
   /**
    * GuardedBy ClientStatsManager.class
    */
+  @MakeNotStatic
   private static Statistics vmStats = null;
 
   private static final Logger logger = LogService.getLogger();
@@ -82,12 +85,18 @@ public class ClientStatsManager {
       ServerRegionProxy regionProxy =
           new ServerRegionProxy(ClientHealthMonitoringRegion.ADMIN_REGION_NAME, pool);
 
+      boolean isOffHeap;
+      if (ds.getOffHeapStore() != null) {
+        isOffHeap = true;
+      } else {
+        isOffHeap = false;
+      }
       EventID eventId = new EventID(ds);
       @Released
-      EntryEventImpl event = new EntryEventImpl((Object) null);
+      EntryEventImpl event = new EntryEventImpl((Object) null, isOffHeap);
       try {
         event.setEventId(eventId);
-        regionProxy.putForMetaRegion(ds.getDistributedMember(), stats, null, event, null, true);
+        regionProxy.putForMetaRegion(ds.getDistributedMember(), stats, null, event, null);
       } finally {
         event.release();
       }
@@ -98,12 +107,12 @@ public class ClientStatsManager {
       currentCache.getCancelCriterion().checkCancelInProgress(cwx);
       // TODO: Need to analyze these exception scenarios.
       logger.warn(
-          LocalizedStrings.ClientStatsManager_FAILED_TO_SEND_CLIENT_HEALTH_STATS_TO_CACHESERVER,
+          "Failed to send client health stats to cacheserver.",
           cwx);
     } catch (Exception e) {
       pool.getCancelCriterion().checkCancelInProgress(e);
       currentCache.getCancelCriterion().checkCancelInProgress(e);
-      logger.info(LocalizedStrings.ClientStatsManager_FAILED_TO_PUBLISH_CLIENT_STATISTICS, e);
+      logger.info("Failed to publish client statistics", e);
     }
 
     if (logger.isDebugEnabled()) {
@@ -138,7 +147,7 @@ public class ClientStatsManager {
     if (restart) {
       if (logger.isInfoEnabled()) {
         logger.info(
-            LocalizedStrings.ClientStatsManager_CLIENTSTATSMANAGER_INTIALIZING_THE_STATISTICS);
+            "ClientStatsManager, intializing the statistics...");
       }
       cachePerfStats = null;
       vmStats = null;
@@ -166,14 +175,14 @@ public class ClientStatsManager {
 
     // Validate that cache has changed before logging the warning, thus logging it once per cache
     if (cachePerfStats == null && restart) {
-      logger.warn(LocalizedStrings.ClientStatsManager_CLIENTSTATSMANAGER_0_ARE_NOT_AVAILABLE
-          .toLocalizedString("CachePerfStats"));
+      logger.warn(String.format("ClientStatsManager, %s are not available.",
+          "CachePerfStats"));
     }
 
     // Validate that cache has changed before logging the warning, thus logging it once per cache
     if (vmStats == null && restart) {
-      logger.warn(LocalizedStrings.ClientStatsManager_CLIENTSTATSMANAGER_0_ARE_NOT_AVAILABLE
-          .toLocalizedString("VMStats"));
+      logger.warn(String.format("ClientStatsManager, %s are not available.",
+          "VMStats"));
     }
 
     return true;
@@ -191,15 +200,15 @@ public class ClientStatsManager {
     }
     ClientHealthStats stats = new ClientHealthStats();
 
-    int gets = -1;
-    int puts = -1;
-    int misses = -1;
+    long gets = -1;
+    long puts = -1;
+    long misses = -1;
     int cacheListenerCalls = -1;
 
     if (cachePerfStats != null) {
-      gets = cachePerfStats.getInt("gets");
-      puts = cachePerfStats.getInt("puts");
-      misses = cachePerfStats.getInt("misses");
+      gets = cachePerfStats.getLong("gets");
+      puts = cachePerfStats.getLong("puts");
+      misses = cachePerfStats.getLong("misses");
       cacheListenerCalls = cachePerfStats.getInt("cacheListenerCallsCompleted");
     }
 

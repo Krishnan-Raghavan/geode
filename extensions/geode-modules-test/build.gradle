@@ -1,3 +1,5 @@
+import org.apache.geode.gradle.plugins.DependencyConstraints
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -15,19 +17,41 @@
  * limitations under the License.
  */
 
-dependencies {
-  compileOnly ('org.apache.tomcat:catalina-ha:' + project.'tomcat6.version') {
-    exclude module: 'annotations-api'
-    exclude module: 'coyote'
-    exclude module: 'tribes'
-  }
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
 
-  compile(project(':extensions:geode-modules')) {
+
+dependencies {
+  implementation(platform(project(':boms:geode-all-bom')))
+  implementation(project(':extensions:geode-modules')) {
     // Remove everything related to Tomcat 6.x
     exclude group: 'org.apache.tomcat'
   }
-  compile project(':geode-junit')
-  compile 'org.httpunit:httpunit:' + project.'httpunit.version'
+  implementation(project(':geode-core'))
+  implementation(project(':geode-logging'))
+
+  implementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+
+  implementation(project(':geode-dunit')) {
+    exclude module: 'geode-core'
+  }
+
+  implementation('org.assertj:assertj-core')
+  implementation('org.springframework:spring-core')
+  implementation('org.mockito:mockito-core')
+  implementation('commons-io:commons-io')
+  implementation('javax.servlet:javax.servlet-api')
+  implementation('junit:junit')
+  implementation('org.httpunit:httpunit') {
+    // this version of httpunit contains very outdated xercesImpl
+    exclude group: 'xerces'
+  }
+  implementation('pl.pragmatists:JUnitParams')
+
+  compileOnly('org.apache.tomcat:catalina-ha:' + DependencyConstraints.get('tomcat6.version')) {
+    exclude module: 'annotations-api'
+    exclude module: 'tribes'
+  }
 }
 
-disableMavenPublishing()

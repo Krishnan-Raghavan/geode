@@ -15,6 +15,7 @@
 
 package org.apache.geode.security;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
@@ -46,7 +47,7 @@ import org.apache.geode.cache.query.CqEvent;
 import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.CqResults;
 import org.apache.geode.cache.query.QueryService;
-import org.apache.geode.cache.query.internal.cq.CqListenerImpl;
+import org.apache.geode.cache.query.cq.internal.CqListenerImpl;
 import org.apache.geode.security.templates.UserPasswordAuthInit;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
@@ -80,7 +81,7 @@ public class CQPostProcessorDunitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testPostProcess() {
-    String query = "select * from /AuthRegion";
+    String query = "select * from " + SEPARATOR + "AuthRegion";
     client1.invoke(() -> {
       ClientCache cache = createClientCache("super-user", "1234567", server.getPort());
       Region region = createProxyRegion(cache, REGION_NAME);
@@ -122,7 +123,7 @@ public class CQPostProcessorDunitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testMultiUserPostProcess() {
-    String query = "select * from /" + REGION_NAME;
+    String query = "select * from " + SEPARATOR + REGION_NAME;
     client1.invoke(() -> {
       Properties props = new Properties();
       props.setProperty(LOCATORS, "");
@@ -132,7 +133,6 @@ public class CQPostProcessorDunitTest extends JUnit4DistributedTestCase {
       ClientCacheFactory factory = new ClientCacheFactory(props);
 
       factory.addPoolServer("localhost", server.getPort());
-      factory.setPoolThreadLocalConnections(false);
       factory.setPoolMinConnections(5);
       factory.setPoolSubscriptionEnabled(true);
       factory.setPoolMultiuserAuthentication(true);

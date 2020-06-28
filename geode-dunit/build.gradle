@@ -15,39 +15,57 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+
+
 dependencies {
-  compile project(':geode-core')
-  //compileOnly files("${System.getProperty('java.home')}/../lib/tools.jar")
+  compile(platform(project(':boms:geode-all-bom')))
+  implementation(project(':geode-logging'))
+  implementation(project(':geode-serialization'))
+  implementation(project(':geode-membership'))
+  implementation(project(':geode-tcp-server'))
+  implementation(project(':geode-core'))
+  implementation(project(':geode-gfsh'))
+  implementation(project(':geode-log4j')) {
+    exclude module: 'geode-core'
+  }
 
-  compile project(':geode-junit')
-  compile project(':geode-json')
+  compile(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
 
-  compile 'com.jayway.jsonpath:json-path:' + project.'json-path.version'
-  compile 'org.apache.logging.log4j:log4j-api:' + project.'log4j.version'
-  compile 'org.apache.logging.log4j:log4j-core:' + project.'log4j.version'
-  compile 'commons-io:commons-io:' + project.'commons-io.version'
-  compile 'commons-lang:commons-lang:' + project.'commons-lang.version'
-  compile ('org.springframework.shell:spring-shell:' + project.'spring-shell.version') {
+  implementation('com.jayway.jsonpath:json-path')
+  implementation('org.apache.logging.log4j:log4j-api')
+  implementation('org.apache.logging.log4j:log4j-core')
+  implementation('commons-io:commons-io')
+  implementation('org.apache.commons:commons-lang3')
+  implementation('org.springframework.shell:spring-shell') {
     exclude module: 'aopalliance'
     exclude module: 'asm'
     exclude module: 'cglib'
     exclude module: 'guava'
     exclude module: 'spring-aop'
     exclude module: 'spring-context-support'
+    exclude module: 'spring-core'
     ext.optional = true
   }
-  compile 'com.google.guava:guava:' + project.'guava.version'
-  compile ('com.github.stefanbirkner:system-rules:' + project.'system-rules.version') {
+  implementation('com.google.guava:guava')
+  implementation('com.github.stefanbirkner:system-rules') {
     exclude module: 'junit-dep'
   }
 
-  compile 'org.assertj:assertj-core:' + project.'assertj-core.version'
-  compile 'org.mockito:mockito-core:' + project.'mockito-core.version'
-  compile 'org.awaitility:awaitility:' + project.'awaitility.version'
+  implementation('org.assertj:assertj-core')
+  implementation('org.mockito:mockito-core')
+  implementation('org.awaitility:awaitility')
+  implementation('pl.pragmatists:JUnitParams')
 
-  compile('junit:junit:' + project.'junit.version') {
+  implementation('junit:junit') {
     exclude module: 'hamcrest-core'
   }
+
+  distributedTestRuntimeOnly(project(path: ':geode-old-versions', configuration: 'testOutput'))
 }
 
 distributedTest {

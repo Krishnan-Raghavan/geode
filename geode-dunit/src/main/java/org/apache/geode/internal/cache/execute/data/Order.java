@@ -23,7 +23,7 @@ import org.apache.geode.DataSerializer;
 import org.apache.geode.internal.cache.execute.PRColocationDUnitTestHelper;
 
 public class Order implements DataSerializable {
-  String orderName;
+  private String orderName;
 
   public Order() {
 
@@ -33,18 +33,22 @@ public class Order implements DataSerializable {
     this.orderName = orderName + PRColocationDUnitTestHelper.getDefaultAddOnString();
   }
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     this.orderName = DataSerializer.readString(in);
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     DataSerializer.writeString(this.orderName, out);
   }
 
+  @Override
   public String toString() {
     return this.orderName;
   }
 
+  @Override
   public boolean equals(Object obj) {
     if (this == obj)
       return true;
@@ -56,5 +60,13 @@ public class Order implements DataSerializable {
       }
     }
     return false;
+  }
+
+  @Override
+  public int hashCode() {
+    if (orderName == null) {
+      return super.hashCode();
+    }
+    return orderName.hashCode();
   }
 }

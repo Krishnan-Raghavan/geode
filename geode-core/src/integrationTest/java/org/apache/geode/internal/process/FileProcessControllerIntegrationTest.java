@@ -16,6 +16,7 @@ package org.apache.geode.internal.process;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -28,8 +29,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.io.FileUtils;
-import org.awaitility.Awaitility;
-import org.awaitility.core.ConditionFactory;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -113,6 +112,9 @@ public class FileProcessControllerIntegrationTest {
     FileUtils.writeStringToFile(pidFile, String.valueOf(pid), Charset.defaultCharset());
     FileProcessController controller = new FileProcessController(params, pid, 2, MINUTES);
 
+    // create an empty dummy stale status file that needs to be deleted before we write our own
+    // "real" status file
+    statusFile.createNewFile();
     // when: status is called in one thread
     executorServiceRule.execute(() -> {
       try {
@@ -121,6 +123,7 @@ public class FileProcessControllerIntegrationTest {
         errorCollector.addError(e);
       }
     });
+    await().untilAsserted(() -> assertThat(statusFile.exists()).isEqualTo(false));
 
     // and: json is written to the status file
     FileUtils.writeStringToFile(statusFile, STATUS_JSON, Charset.defaultCharset());
@@ -222,10 +225,6 @@ public class FileProcessControllerIntegrationTest {
 
     // assert
     await().untilAsserted(() -> assertThat(statusRequestFile).exists());
-  }
-
-  private ConditionFactory await() {
-    return Awaitility.await().atMost(2, MINUTES);
   }
 
   private static String generateStatusJson() {

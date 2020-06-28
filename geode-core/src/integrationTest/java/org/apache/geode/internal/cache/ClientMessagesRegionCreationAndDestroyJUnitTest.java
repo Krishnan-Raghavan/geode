@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -31,7 +32,6 @@ import org.junit.Test;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.cache.Region;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.ha.HAContainerWrapper;
@@ -47,7 +47,7 @@ public class ClientMessagesRegionCreationAndDestroyJUnitTest {
 
   /** The cache instance */
   private Cache cache = null;
-  // max number of bridge server can attached to the cache
+  // max number of cache server can attached to the cache
   private int brigeNum = 5;
   // stores corresponding names of client messages region created by bridge
   // server
@@ -64,7 +64,7 @@ public class ClientMessagesRegionCreationAndDestroyJUnitTest {
   }
 
   /**
-   * Create and attach bridge server to cache
+   * Create and attach cache server to cache
    *
    */
 
@@ -82,7 +82,7 @@ public class ClientMessagesRegionCreationAndDestroyJUnitTest {
         ((HAContainerWrapper) server.getAcceptor().getCacheClientNotifier().getHaContainer())
             .getName();
     EvictionAttributesImpl ea = (EvictionAttributesImpl) cache
-        .getRegion(Region.SEPARATOR + regionName).getAttributes().getEvictionAttributes();
+        .getRegion(SEPARATOR + regionName).getAttributes().getEvictionAttributes();
     assertTrue("Eviction Algorithm is not LIFO", ea.isLIFO());
     // The CacheClientNotifier is a singleton.
     if (cache.getCacheServers().size() <= 1) {
@@ -110,12 +110,12 @@ public class ClientMessagesRegionCreationAndDestroyJUnitTest {
   }
 
   /**
-   * Attach bridge server
+   * Attach cache server
    */
   private void attachmentOfBridgeServer() {
     if (cache.getCacheServers().size() < brigeNum) {
       try {
-        // attaching and starting bridge server
+        // attaching and starting cache server
         attachBridgeServer();
       } catch (IOException e) {
         e.printStackTrace();
@@ -124,21 +124,21 @@ public class ClientMessagesRegionCreationAndDestroyJUnitTest {
   }
 
   /**
-   * Stop's all bridge servers attached
+   * Stop's all cache servers attached
    */
   private void dettachmentOfBridgeServer() {
-    // detach all bridge server to test destroy of client_messages_region
+    // detach all cache server to test destroy of client_messages_region
     for (Iterator itr = cache.getCacheServers().iterator(); itr.hasNext();) {
       CacheServerImpl server = (CacheServerImpl) itr.next();
       String rName =
           ((HAContainerWrapper) server.getAcceptor().getCacheClientNotifier().getHaContainer())
               .getName();
-      assertNotNull("client messages region is null ", cache.getRegion(Region.SEPARATOR + rName));
+      assertNotNull("client messages region is null ", cache.getRegion(SEPARATOR + rName));
       server.stop();
 
       if (!itr.hasNext()) {
         assertNull("client messages region is not null ",
-            cache.getRegion(Region.SEPARATOR + rName));
+            cache.getRegion(SEPARATOR + rName));
       }
     }
   }

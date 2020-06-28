@@ -16,7 +16,6 @@ package org.apache.geode.cache.client.internal;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -29,20 +28,22 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.client.Pool;
 import org.apache.geode.cache.client.ServerOperationException;
 import org.apache.geode.distributed.internal.ServerLocation;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PutAllPartialResultException;
 import org.apache.geode.internal.cache.PutAllPartialResultException.PutAllPartialResult;
+import org.apache.geode.internal.cache.RegionMapOwner;
 import org.apache.geode.internal.cache.tier.MessageType;
 import org.apache.geode.internal.cache.tier.sockets.ChunkedMessage;
 import org.apache.geode.internal.cache.tier.sockets.Message;
 import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Does a region putAll on a server
@@ -69,7 +70,7 @@ public class PutAllOp {
   public static VersionedObjectList execute(ExecutablePool pool, Region region, Map map,
       EventID eventId, boolean skipCallbacks, boolean isRetry, Object callbackArg) {
     PutAllOpImpl op = new PutAllOpImpl(region, map, eventId,
-        ((PoolImpl) pool).getPRSingleHopEnabled(), skipCallbacks, callbackArg);
+        ((Pool) pool).getPRSingleHopEnabled(), skipCallbacks, callbackArg);
     op.initMessagePart();
     if (isRetry) {
       op.getMessage().setIsRetry();
@@ -86,33 +87,35 @@ public class PutAllOp {
    * @param map the Map of keys and values to put
    * @param eventId the event id for this putAll
    */
-  public static VersionedObjectList execute(ExecutablePool pool, Region region, Map map,
-      EventID eventId, boolean skipCallbacks, int retryAttempts, Object callbackArg) {
-    ClientMetadataService cms = ((LocalRegion) region).getCache().getClientMetadataService();
+  public static VersionedObjectList execute(ExecutablePool pool, Region<Object, Object> region,
+      Map<Object, Object> map, EventID eventId, boolean skipCallbacks, int retryAttempts,
+      Object callbackArg) {
+    ClientMetadataService clientMetadataService =
+        ((RegionMapOwner) region).getCache().getClientMetadataService();
 
-    Map<ServerLocation, HashSet> serverToFilterMap =
-        cms.getServerToFilterMap(map.keySet(), region, true);
+    Map<ServerLocation, Set> serverToFilterMap =
+        clientMetadataService.getServerToFilterMap(map.keySet(), region, true);
 
     if (serverToFilterMap == null || serverToFilterMap.isEmpty()) {
       AbstractOp op = new PutAllOpImpl(region, map, eventId,
-          ((PoolImpl) pool).getPRSingleHopEnabled(), skipCallbacks, callbackArg);
+          ((Pool) pool).getPRSingleHopEnabled(), skipCallbacks, callbackArg);
       op.initMessagePart();
       return (VersionedObjectList) pool.execute(op);
     }
 
     List callableTasks = constructAndGetPutAllTasks(region, map, eventId, skipCallbacks,
-        serverToFilterMap, (PoolImpl) pool, callbackArg);
+        serverToFilterMap, (InternalPool) pool, callbackArg);
 
     final boolean isDebugEnabled = logger.isDebugEnabled();
     if (isDebugEnabled) {
       logger.debug("PutAllOp#execute : Number of putAll tasks is : {}", callableTasks.size());
     }
-    HashMap<ServerLocation, RuntimeException> failedServers =
-        new HashMap<ServerLocation, RuntimeException>();
+    Map<ServerLocation, RuntimeException> failedServers = new HashMap<>();
     PutAllPartialResult result = new PutAllPartialResult(map.size());
     try {
-      Map<ServerLocation, Object> results = SingleHopClientExecutor.submitBulkOp(callableTasks, cms,
-          (LocalRegion) region, failedServers);
+      Map<ServerLocation, Object> results = SingleHopClientExecutor
+          .submitBulkOp(callableTasks, clientMetadataService,
+              (LocalRegion) region, failedServers);
       for (Map.Entry<ServerLocation, Object> entry : results.entrySet()) {
         Object value = entry.getValue();
         if (value instanceof PutAllPartialResultException) {
@@ -207,8 +210,7 @@ public class PutAllOp {
 
       // If all retries succeeded, the PRE in first tries can be ignored
       if (oneSubMapRetryFailed && result.hasFailure()) {
-        PutAllPartialResultException pre = new PutAllPartialResultException(result);
-        throw pre;
+        throw new PutAllPartialResultException(result);
       }
     } // failedServers!=null
 
@@ -219,12 +221,12 @@ public class PutAllOp {
     // no instances allowed
   }
 
-
-  static List constructAndGetPutAllTasks(Region region, final Map map, final EventID eventId,
-      boolean skipCallbacks, final Map<ServerLocation, HashSet> serverToFilterMap,
-      final PoolImpl pool, Object callbackArg) {
-    final List<SingleHopOperationCallable> tasks = new ArrayList<SingleHopOperationCallable>();
-    ArrayList<ServerLocation> servers = new ArrayList<ServerLocation>(serverToFilterMap.keySet());
+  private static List constructAndGetPutAllTasks(Region region, final Map map,
+      final EventID eventId,
+      boolean skipCallbacks, final Map<ServerLocation, Set> serverToFilterMap,
+      final InternalPool pool, Object callbackArg) {
+    final List<SingleHopOperationCallable> tasks = new ArrayList<>();
+    List<ServerLocation> servers = new ArrayList<>(serverToFilterMap.keySet());
 
     if (logger.isDebugEnabled()) {
       logger.debug("Constructing tasks for the servers {}", servers);
@@ -266,7 +268,7 @@ public class PutAllOp {
           (callbackArg != null ? 6 : 5) + (map.size() * 2));
       this.prSingleHopEnabled = prSingleHopEnabled;
       this.region = (LocalRegion) region;
-      getMessage().addStringPart(region.getFullPath());
+      getMessage().addStringPart(region.getFullPath(), true);
       getMessage().addBytesPart(eventId.calcBytes());
       getMessage().addIntPart(skipCallbacks ? 1 : 0);
       this.map = map;
@@ -331,6 +333,7 @@ public class PutAllOp {
       final Exception[] exceptionRef = new Exception[1];
       try {
         processChunkedResponse((ChunkedMessage) msg, "putAll", new ChunkHandler() {
+          @Override
           public void handle(ChunkedMessage cm) throws Exception {
             int numParts = msg.getNumberOfParts();
             final boolean isDebugEnabled = logger.isDebugEnabled();

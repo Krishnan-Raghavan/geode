@@ -14,12 +14,10 @@
  */
 package org.apache.geode.internal.cache.rollingupgrade;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.RegionShortcut;
@@ -29,6 +27,7 @@ import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
+import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
@@ -56,7 +55,7 @@ public class RollingUpgradeConcurrentPutsReplicated extends RollingUpgrade2DUnit
     String hostName = NetworkUtils.getServerHostName();
     String locatorString = getLocatorString(locatorPorts);
 
-    DistributedTestUtils.deleteLocatorStateFile(locatorPorts);
+    Invoke.invokeInEveryVM(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPorts));
 
     try {
       locator.invoke(invokeStartLocator(hostName, locatorPorts[0], getTestMethodName(),
@@ -65,7 +64,7 @@ public class RollingUpgradeConcurrentPutsReplicated extends RollingUpgrade2DUnit
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       locator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -78,6 +77,7 @@ public class RollingUpgradeConcurrentPutsReplicated extends RollingUpgrade2DUnit
       // async puts through server 2
       AsyncInvocation asyncPutsThroughOld =
           server2.invokeAsync(new CacheSerializableRunnable("async puts") {
+            @Override
             public void run2() {
               try {
                 for (int i = 0; i < 500; i++) {
@@ -100,6 +100,7 @@ public class RollingUpgradeConcurrentPutsReplicated extends RollingUpgrade2DUnit
       // aync puts through server 1
       AsyncInvocation asyncPutsThroughNew =
           server1.invokeAsync(new CacheSerializableRunnable("async puts") {
+            @Override
             public void run2() {
               try {
                 for (int i = 250; i < 750; i++) {

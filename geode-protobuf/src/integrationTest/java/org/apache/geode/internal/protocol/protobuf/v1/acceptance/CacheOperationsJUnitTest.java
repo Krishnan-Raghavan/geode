@@ -15,6 +15,7 @@
 
 package org.apache.geode.internal.protocol.protobuf.v1.acceptance;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_ENABLED_COMPONENTS;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_KEYSTORE;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_KEYSTORE_PASSWORD;
@@ -23,6 +24,8 @@ import static org.apache.geode.distributed.ConfigurationProperties.SSL_REQUIRE_A
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE_PASSWORD;
 import static org.apache.geode.internal.protocol.protobuf.v1.MessageUtil.validateGetResponse;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -34,11 +37,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -53,6 +54,7 @@ import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.ConfigurationProperties;
+import org.apache.geode.distributed.internal.tcpserver.HostAndPort;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.admin.SSLConfig;
 import org.apache.geode.internal.net.SocketCreator;
@@ -68,7 +70,6 @@ import org.apache.geode.internal.protocol.protobuf.v1.serializer.ProtobufProtoco
 import org.apache.geode.internal.protocol.protobuf.v1.serializer.exception.InvalidProtocolMessageException;
 import org.apache.geode.internal.protocol.protobuf.v1.utilities.ProtobufUtilities;
 import org.apache.geode.test.junit.categories.ClientServerTest;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * Test operations using ProtoBuf
@@ -134,7 +135,7 @@ public class CacheOperationsJUnitTest {
     } else {
       socket = new Socket("localhost", cacheServerPort);
     }
-    Awaitility.await().atMost(5, TimeUnit.SECONDS).until(socket::isConnected);
+    await().until(socket::isConnected);
     outputStream = socket.getOutputStream();
 
     MessageUtil.performAndVerifyHandshake(socket);
@@ -285,7 +286,7 @@ public class CacheOperationsJUnitTest {
         response.getMessageTypeCase());
     RegionAPI.GetRegionNamesResponse getRegionsResponse = response.getGetRegionNamesResponse();
     assertEquals(1, getRegionsResponse.getRegionsCount());
-    assertEquals("/" + TEST_REGION, getRegionsResponse.getRegions(0));
+    assertEquals(SEPARATOR + TEST_REGION, getRegionsResponse.getRegions(0));
   }
 
   private void validatePutAllResponse(Socket socket,
@@ -363,8 +364,12 @@ public class CacheOperationsJUnitTest {
   }
 
   private void updatePropertiesForSSLCache(Properties properties) {
-    String keyStore = TestUtil.getResourcePath(CacheOperationsJUnitTest.class, DEFAULT_STORE);
-    String trustStore = TestUtil.getResourcePath(CacheOperationsJUnitTest.class, DEFAULT_STORE);
+    String keyStore =
+        createTempFileFromResource(CacheOperationsJUnitTest.class, DEFAULT_STORE)
+            .getAbsolutePath();
+    String trustStore =
+        createTempFileFromResource(CacheOperationsJUnitTest.class, DEFAULT_STORE)
+            .getAbsolutePath();
 
     properties.put(SSL_ENABLED_COMPONENTS, "server");
     properties.put(ConfigurationProperties.SSL_PROTOCOLS, SSL_PROTOCOLS);
@@ -379,21 +384,26 @@ public class CacheOperationsJUnitTest {
   }
 
   private Socket getSSLSocket() throws IOException {
-    String keyStorePath = TestUtil.getResourcePath(CacheOperationsJUnitTest.class, DEFAULT_STORE);
-    String trustStorePath = TestUtil.getResourcePath(CacheOperationsJUnitTest.class, DEFAULT_STORE);
+    String keyStorePath =
+        createTempFileFromResource(CacheOperationsJUnitTest.class, DEFAULT_STORE)
+            .getAbsolutePath();
+    String trustStorePath =
+        createTempFileFromResource(CacheOperationsJUnitTest.class, DEFAULT_STORE)
+            .getAbsolutePath();
 
-    SSLConfig sslConfig = new SSLConfig();
-    sslConfig.setEnabled(true);
-    sslConfig.setCiphers(SSL_CIPHERS);
-    sslConfig.setProtocols(SSL_PROTOCOLS);
-    sslConfig.setRequireAuth(true);
-    sslConfig.setKeystoreType("jks");
-    sslConfig.setKeystore(keyStorePath);
-    sslConfig.setKeystorePassword("password");
-    sslConfig.setTruststore(trustStorePath);
-    sslConfig.setKeystorePassword("password");
+    SSLConfig.Builder sslConfigBuilder = new SSLConfig.Builder();
+    sslConfigBuilder.setEnabled(true);
+    sslConfigBuilder.setCiphers(SSL_CIPHERS);
+    sslConfigBuilder.setProtocols(SSL_PROTOCOLS);
+    sslConfigBuilder.setRequireAuth(true);
+    sslConfigBuilder.setKeystoreType("jks");
+    sslConfigBuilder.setKeystore(keyStorePath);
+    sslConfigBuilder.setKeystorePassword("password");
+    sslConfigBuilder.setTruststore(trustStorePath);
+    sslConfigBuilder.setKeystorePassword("password");
 
-    SocketCreator socketCreator = new SocketCreator(sslConfig);
-    return socketCreator.connectForClient("localhost", cacheServerPort, 5000);
+    SocketCreator socketCreator = new SocketCreator(sslConfigBuilder.build());
+    return socketCreator.forClient().connect(new HostAndPort("localhost", cacheServerPort),
+        5000);
   }
 }

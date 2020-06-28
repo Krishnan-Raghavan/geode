@@ -47,8 +47,10 @@ public class InternalCacheForClientAccessTest {
     cache = new InternalCacheForClientAccess(delegate);
     secretRegion = mock(DistributedRegion.class);
     when(secretRegion.isInternalRegion()).thenReturn(true);
+    when(secretRegion.getName()).thenReturn("secretRegion");
     applicationRegion = mock(DistributedRegion.class);
     when(applicationRegion.isInternalRegion()).thenReturn(false);
+    when(applicationRegion.getName()).thenReturn("applicationRegion");
     applicationRegions = Collections.singleton(applicationRegion);
     secretRegions = Collections.singleton(secretRegion);
   }
@@ -129,19 +131,19 @@ public class InternalCacheForClientAccessTest {
 
   @Test
   public void getRegionByPathWithApplicationWorks() {
-    when(delegate.getRegionByPath("application")).thenReturn(applicationRegion);
+    when(delegate.getInternalRegionByPath("application")).thenReturn(applicationRegion);
 
-    Region result = cache.getRegionByPath("application");
+    Region result = cache.getInternalRegionByPath("application");
 
     assertThat(result).isSameAs(applicationRegion);
   }
 
   @Test
   public void getRegionByPathWithSecretThrows() {
-    when(delegate.getRegionByPath("secret")).thenReturn(secretRegion);
+    when(delegate.getInternalRegionByPath("secret")).thenReturn(secretRegion);
 
     assertThatThrownBy(() -> {
-      cache.getRegionByPath("secret");
+      cache.getInternalRegionByPath("secret");
     }).isInstanceOf(NotAuthorizedException.class);
   }
 

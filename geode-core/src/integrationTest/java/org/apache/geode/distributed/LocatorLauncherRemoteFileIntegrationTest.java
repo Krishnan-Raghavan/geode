@@ -15,7 +15,7 @@
 package org.apache.geode.distributed;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -36,44 +36,64 @@ import org.apache.geode.lang.AttachAPINotFoundException;
 public class LocatorLauncherRemoteFileIntegrationTest extends LocatorLauncherRemoteIntegrationTest {
 
   @Before
-  public void setUpLocatorLauncherRemoteFileIntegrationTest() throws Exception {
+  public void setUpLocatorLauncherRemoteFileIntegrationTest() {
     System.setProperty(ProcessControllerFactory.PROPERTY_DISABLE_ATTACH_API, "true");
     assertThat(new ProcessControllerFactory().isAttachAPIFound()).isFalse();
   }
 
   @Test
   @Override
-  public void statusWithPidReturnsOnlineWithDetails() throws Exception {
-    givenRunningLocator();
+  public void statusWithPidReturnsOnlineWithDetails() {
+    givenRunningLocator(withPort(0));
 
-    assertThatThrownBy(() -> new Builder().setPid(getLocatorPid()).build().status())
+    Throwable thrown = catchThrowable(() -> new Builder()
+        .setPid(getLocatorPid())
+        .build()
+        .status());
+
+    assertThat(thrown)
         .isInstanceOf(AttachAPINotFoundException.class);
   }
 
   @Test
   @Override
-  public void stopWithPidDeletesPidFile() throws Exception {
-    givenRunningLocator();
+  public void stopWithPidDeletesPidFile() {
+    givenRunningLocator(withPort(0));
 
-    assertThatThrownBy(() -> new Builder().setPid(getLocatorPid()).build().stop())
+    Throwable thrown = catchThrowable(() -> new Builder()
+        .setPid(getLocatorPid())
+        .build()
+        .stop());
+
+    assertThat(thrown)
         .isInstanceOf(AttachAPINotFoundException.class);
   }
 
   @Test
   @Override
-  public void stopWithPidReturnsStopped() throws Exception {
-    givenRunningLocator();
+  public void stopWithPidReturnsStopped() {
+    givenRunningLocator(withPort(0));
 
-    assertThatThrownBy(() -> new Builder().setPid(getLocatorPid()).build().stop())
+    Throwable thrown = catchThrowable(() -> new Builder()
+        .setPid(getLocatorPid())
+        .build()
+        .stop());
+
+    assertThat(thrown)
         .isInstanceOf(AttachAPINotFoundException.class);
   }
 
   @Test
   @Override
-  public void stopWithPidStopsLocatorProcess() throws Exception {
-    givenRunningLocator();
+  public void stopWithPidStopsLocatorProcess() {
+    givenRunningLocator(withPort(0));
 
-    assertThatThrownBy(() -> new Builder().setPid(getLocatorPid()).build().stop())
+    Throwable thrown = catchThrowable(() -> new Builder()
+        .setPid(getLocatorPid())
+        .build()
+        .stop());
+
+    assertThat(thrown)
         .isInstanceOf(AttachAPINotFoundException.class);
   }
 }

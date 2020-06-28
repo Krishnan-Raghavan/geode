@@ -14,6 +14,8 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.fail;
 import static org.junit.Assert.assertEquals;
@@ -21,14 +23,11 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.Serializable;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
 import org.assertj.core.api.Assertions;
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -47,7 +46,7 @@ import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.data.Position;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
 import org.apache.geode.cache.query.internal.index.IndexManager;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.VM;
@@ -76,12 +75,6 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
   @Rule
   public CacheRule cacheRule = new CacheRule(1);
 
-  @BeforeClass
-  public static void setUpClass() {
-    Awaitility.setDefaultPollInterval(200, TimeUnit.MILLISECONDS);
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS);
-  }
-
   @Before
   public void setUp() {
     server = getVM(0);
@@ -107,7 +100,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
 
       QueryService queryService = cache.getQueryService();
       try {
-        Index index = queryService.createIndex("idIndex", "ID", "/" + repRegionName);
+        Index index = queryService.createIndex("idIndex", "ID", SEPARATOR + repRegionName);
         assertEquals(10, index.getStatistics().getNumberOfKeys());
       } catch (Exception e) {
         logger.error(e);
@@ -125,11 +118,12 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
     });
     server.invoke("query on server", () -> {
       QueryService queryService = cacheRule.getCache().getQueryService();
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       Object resultSet = null;
       try {
         resultSet = queryService
-            .newQuery("<trace> select * from /" + repRegionName + " where ID = 1").execute();
+            .newQuery("<trace> select * from " + SEPARATOR + repRegionName + " where ID = 1")
+            .execute();
       } catch (Exception e) {
         logger.error(e);
         fail("Query execution failed on server.");
@@ -148,11 +142,12 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
     // Client put is again hooked in AFTER_UPDATE_OP call in updateIndex.
     server.invoke("query on server", () -> {
       QueryService queryService = cacheRule.getCache().getQueryService();
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       Object resultSet = null;
       try {
         resultSet = queryService
-            .newQuery("<trace> select * from /" + repRegionName + " where ID = 1").execute();
+            .newQuery("<trace> select * from " + SEPARATOR + repRegionName + " where ID = 1")
+            .execute();
       } catch (Exception e) {
         logger.error(e);
         fail("Query execution failed on server." + e.getMessage());
@@ -170,7 +165,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       }
       hooked = false;// Let client put go further.
     });
-    Awaitility.await().until(joinThread(putThread));
+    await().until(joinThread(putThread));
   }
 
   @Test
@@ -191,7 +186,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       QueryService queryService = cache.getQueryService();
       try {
         Index index = queryService.createIndex("posIndex", "pos.secId",
-            "/" + repRegionName + " p, p.positions.values pos");
+            SEPARATOR + repRegionName + " p, p.positions.values pos");
         assertEquals(12, index.getStatistics().getNumberOfKeys());
       } catch (Exception e) {
         logger.error(e);
@@ -215,10 +210,11 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       Cache cache = cacheRule.getCache();
       QueryService queryService = cache.getQueryService();
       Position pos1 = null;
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       try {
-        Object resultSet = queryService.newQuery("<trace> select pos from /" + repRegionName
-            + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
+        Object resultSet =
+            queryService.newQuery("<trace> select pos from " + SEPARATOR + repRegionName
+                + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
         cache.getLogger().fine("Shobhit: " + resultSet);
         assertTrue(resultSet instanceof SelectResults);
         pos1 = (Position) ((SelectResults) resultSet).iterator().next();
@@ -233,10 +229,11 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       } finally {
         hooked = false;// Let client put go further.
       }
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       try {
-        Object resultSet = queryService.newQuery("<trace> select pos from /" + repRegionName
-            + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
+        Object resultSet =
+            queryService.newQuery("<trace> select pos from " + SEPARATOR + repRegionName
+                + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
         cache.getLogger().fine("Shobhit: " + resultSet);
         assertTrue(resultSet instanceof SelectResults);
         if (((SelectResults) resultSet).size() > 0) {
@@ -254,7 +251,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
         IndexManager.testHook = null;
       }
     });
-    Awaitility.await().until(joinThread(putThread));
+    await().until(joinThread(putThread));
   }
 
   @Test
@@ -273,7 +270,8 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       QueryService queryService = cache.getQueryService();
       try {
         Index index = queryService.createIndex("posIndex", "pos.secId",
-            "/" + repRegionName + " p, p.collectionHolderMap.values coll, p.positions.values pos");
+            SEPARATOR + repRegionName
+                + " p, p.collectionHolderMap.values coll, p.positions.values pos");
         assertEquals(12, index.getStatistics().getNumberOfKeys());
       } catch (Exception e) {
         logger.error(e);
@@ -295,10 +293,11 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       Cache cache = cacheRule.getCache();
       QueryService queryService = cache.getQueryService();
       Position pos1 = null;
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       try {
-        Object resultSet = queryService.newQuery("<trace> select pos from /" + repRegionName
-            + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
+        Object resultSet =
+            queryService.newQuery("<trace> select pos from " + SEPARATOR + repRegionName
+                + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
         cache.getLogger().fine("Shobhit: " + resultSet);
         assertTrue(resultSet instanceof SelectResults);
         pos1 = (Position) ((SelectResults) resultSet).iterator().next();
@@ -313,9 +312,9 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       } finally {
         hooked = false;// Let client put go further.
       }
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       try {
-        Object resultSet = queryService.newQuery("select pos from /" + repRegionName
+        Object resultSet = queryService.newQuery("select pos from " + SEPARATOR + repRegionName
             + " p, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1").execute();
         assertTrue(resultSet instanceof SelectResults);
         if (((SelectResults) resultSet).size() > 0) {
@@ -333,7 +332,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
         IndexManager.testHook = null;
       }
     });
-    Awaitility.await().until(joinThread(putThread));
+    await().until(joinThread(putThread));
   }
 
   @Test
@@ -352,7 +351,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       QueryService queryService = cache.getQueryService();
       try {
         Index index = queryService.createIndex("posIndex", "pos.secId",
-            "/" + repRegionName + " p, p.positions.values pos");
+            SEPARATOR + repRegionName + " p, p.positions.values pos");
         assertEquals(12, index.getStatistics().getNumberOfKeys());
       } catch (Exception e) {
         logger.error(e);
@@ -375,10 +374,10 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       Cache cache = cacheRule.getCache();
       QueryService queryService = cache.getQueryService();
       Position pos1 = null;
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
       try {
         Object resultSet = queryService
-            .newQuery("<trace> select pos from /" + repRegionName
+            .newQuery("<trace> select pos from " + SEPARATOR + repRegionName
                 + " p, p.collectionHolderMap.values coll, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1")
             .execute();
         cache.getLogger().fine("Shobhit: " + resultSet);
@@ -395,11 +394,11 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
       } finally {
         hooked = false;// Let client put go further.
       }
-      Awaitility.await().until(() -> hooked);
+      await().until(() -> hooked);
 
       try {
         Object resultSet = queryService
-            .newQuery("select pos from /" + repRegionName
+            .newQuery("select pos from " + SEPARATOR + repRegionName
                 + " p, p.collectionHolderMap.values coll, p.positions.values pos where pos.secId = 'APPL' AND p.ID = 1")
             .execute();
         assertTrue(resultSet instanceof SelectResults);
@@ -418,7 +417,7 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
         hooked = false;// Let client put go further.
       }
     });
-    Awaitility.await().until(joinThread(putThread));
+    await().until(joinThread(putThread));
   }
 
   private Callable<Boolean> joinThread(AsyncInvocation thread) {
@@ -452,19 +451,20 @@ public class QueryDataInconsistencyDUnitTest implements Serializable {
 
   public class IndexManagerTestHook
       implements org.apache.geode.cache.query.internal.index.IndexManager.TestHook {
+    @Override
     public void hook(final int spot) throws RuntimeException {
       switch (spot) {
         case 9: // Before Index update and after region entry lock.
           hooked = true;
           logger
               .info("QueryDataInconsistency.IndexManagerTestHook is hooked in Update Index Entry.");
-          Awaitility.await().until(() -> !hooked);
+          await().until(() -> !hooked);
           break;
         case 10: // Before Region update and after Index Remove call.
           hooked = true;
           logger
               .info("QueryDataInconsistency.IndexManagerTestHook is hooked in Remove Index Entry.");
-          Awaitility.await().until(() -> !hooked);
+          await().until(() -> !hooked);
           break;
         default:
           break;

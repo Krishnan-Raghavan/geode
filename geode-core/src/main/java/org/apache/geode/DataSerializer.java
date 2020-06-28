@@ -23,7 +23,6 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -48,23 +47,24 @@ import java.util.concurrent.ConcurrentMap;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.admin.RegionNotFoundException;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.Region;
-import org.apache.geode.internal.DSCODE;
 import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.ObjToByteArraySerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.StoredObject;
+import org.apache.geode.internal.serialization.DSCODE;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.pdx.PdxInstance;
 
 /**
@@ -194,8 +194,7 @@ public abstract class DataSerializer {
       Boolean.getBoolean("DataSerializer.TRACE_SERIALIZABLE");
 
   /* Used to prevent standard Java serialization when sending data to a non-Java client */
-  protected static final ThreadLocal<Boolean> DISALLOW_JAVA_SERIALIZATION =
-      new ThreadLocal<Boolean>();
+  protected static final ThreadLocal<Boolean> DISALLOW_JAVA_SERIALIZATION = new ThreadLocal<>();
 
   /**
    * Writes an instance of <code>Class</code> to a <code>DataOutput</code>. This method will handle
@@ -214,7 +213,7 @@ public abstract class DataSerializer {
     }
 
     if (c == null || c.isPrimitive()) {
-      InternalDataSerializer.writePrimitiveClass(c, out);
+      StaticSerialization.writePrimitiveClass(c, out);
     } else {
       // non-primitive classes have a second CLASS byte
       // if readObject/writeObject is called:
@@ -262,10 +261,9 @@ public abstract class DataSerializer {
     byte typeCode = in.readByte();
     if (typeCode == DSCODE.CLASS.toByte()) {
       String className = readString(in);
-      Class<?> c = InternalDataSerializer.getCachedClass(className); // fix for bug 41206
-      return c;
+      return InternalDataSerializer.getCachedClass(className);
     } else {
-      return InternalDataSerializer.decodePrimitiveClass(typeCode);
+      return StaticSerialization.decodePrimitiveClass(typeCode);
     }
   }
 
@@ -315,8 +313,9 @@ public abstract class DataSerializer {
           .getRegion(fullPath);
       if (rgn == null) {
         throw new RegionNotFoundException(
-            LocalizedStrings.DataSerializer_REGION_0_COULD_NOT_BE_FOUND_WHILE_READING_A_DATASERIALIZER_STREAM
-                .toLocalizedString(fullPath));
+            String.format(
+                "Region ' %s ' could not be found while reading a DataSerializer stream",
+                fullPath));
       }
     }
     return rgn;
@@ -446,7 +445,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing InetAddress {}", address);
     }
 
-    writeByteArray((address != null) ? address.getAddress() : null, out);
+    StaticSerialization.writeInetAddress(address, out);
   }
 
   /**
@@ -461,25 +460,13 @@ public abstract class DataSerializer {
   public static InetAddress readInetAddress(DataInput in) throws IOException {
 
     InternalDataSerializer.checkIn(in);
+    InetAddress address = StaticSerialization.readInetAddress(in);
 
-    byte[] address = readByteArray(in);
-    if (address == null) {
-      return null;
+    if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read InetAddress {}", address);
     }
 
-    try {
-      InetAddress addr = InetAddress.getByAddress(address);
-      if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-        logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read InetAddress {}", addr);
-      }
-      return addr;
-    } catch (UnknownHostException ex) {
-      IOException ex2 = new IOException(
-          LocalizedStrings.DataSerializer_WHILE_READING_AN_INETADDRESS.toLocalizedString());
-      ex2.initCause(ex);
-      throw ex2;
-    }
-
+    return address;
   }
 
   /**
@@ -501,71 +488,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing String \"{}\"", value);
     }
 
-    if (value == null) {
-      if (isTraceSerialzerVerbose) {
-        logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing NULL_STRING");
-      }
-      out.writeByte(DSCODE.NULL_STRING.toByte());
-
-    } else {
-      // writeUTF is expensive - it creates a char[] to fetch
-      // the string's contents, iterates over the array to compute the
-      // encoded length, creates a byte[] to hold the encoded bytes,
-      // iterates over the char[] again to create the encode bytes,
-      // then writes the bytes. Since we usually deal with ISO-8859-1
-      // strings, we can accelerate this by accessing chars directly
-      // with charAt and fill a single-byte buffer. If we run into
-      // a multibyte char, we revert to using writeUTF()
-      int len = value.length();
-      int utfLen = len; // added for bug 40932
-      for (int i = 0; i < len; i++) {
-        char c = value.charAt(i);
-        if ((c <= 0x007F) && (c >= 0x0001)) {
-          // nothing needed
-        } else if (c > 0x07FF) {
-          utfLen += 2;
-        } else {
-          utfLen += 1;
-        }
-        // Note we no longer have an early out when we detect the first
-        // non-ascii char because we need to compute the utfLen for bug 40932.
-        // This is not a performance problem because most strings are ascii
-        // and they never did the early out.
-      }
-      boolean writeUTF = utfLen > len;
-      if (writeUTF) {
-        if (utfLen > 0xFFFF) {
-          if (isTraceSerialzerVerbose) {
-            logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing utf HUGE_STRING of len={}", len);
-          }
-          out.writeByte(DSCODE.HUGE_STRING.toByte());
-          out.writeInt(len);
-          out.writeChars(value);
-        } else {
-          if (isTraceSerialzerVerbose) {
-            logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing utf STRING of len={}", len);
-          }
-          out.writeByte(DSCODE.STRING.toByte());
-          out.writeUTF(value);
-        }
-      } else {
-        if (len > 0xFFFF) {
-          if (isTraceSerialzerVerbose) {
-            logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing HUGE_STRING_BYTES of len={}", len);
-          }
-          out.writeByte(DSCODE.HUGE_STRING_BYTES.toByte());
-          out.writeInt(len);
-          out.writeBytes(value);
-        } else {
-          if (isTraceSerialzerVerbose) {
-            logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing STRING_BYTES of len={}", len);
-          }
-          out.writeByte(DSCODE.STRING_BYTES.toByte());
-          out.writeShort(len);
-          out.writeBytes(value);
-        }
-      }
-    }
+    StaticSerialization.writeString(value, out);
   }
 
   /**
@@ -577,7 +500,7 @@ public abstract class DataSerializer {
    * @see #writeString
    */
   public static String readString(DataInput in) throws IOException {
-    return InternalDataSerializer.readString(in, in.readByte());
+    return StaticSerialization.readString(in);
   }
 
   /**
@@ -596,7 +519,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Boolean {}", value);
     }
 
-    out.writeBoolean(value.booleanValue());
+    out.writeBoolean(value);
   }
 
   /**
@@ -607,7 +530,7 @@ public abstract class DataSerializer {
   public static Boolean readBoolean(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Boolean value = Boolean.valueOf(in.readBoolean());
+    Boolean value = in.readBoolean();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Boolean {}", value);
     }
@@ -630,7 +553,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Character {}", value);
     }
 
-    out.writeChar(value.charValue());
+    out.writeChar(value);
   }
 
   /**
@@ -642,7 +565,7 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkIn(in);
 
-    Character value = Character.valueOf(in.readChar());
+    Character value = in.readChar();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Character {}", value);
     }
@@ -665,7 +588,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Byte {}", value);
     }
 
-    out.writeByte(value.byteValue());
+    out.writeByte(value);
   }
 
   /**
@@ -676,7 +599,7 @@ public abstract class DataSerializer {
   public static Byte readByte(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Byte value = Byte.valueOf(in.readByte());
+    Byte value = in.readByte();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Byte {}", value);
     }
@@ -699,7 +622,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Short {}", value);
     }
 
-    out.writeShort(value.shortValue());
+    out.writeShort(value);
   }
 
   /**
@@ -710,7 +633,7 @@ public abstract class DataSerializer {
   public static Short readShort(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Short value = Short.valueOf(in.readShort());
+    Short value = in.readShort();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Short {}", value);
     }
@@ -733,7 +656,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Integer {}", value);
     }
 
-    out.writeInt(value.intValue());
+    out.writeInt(value);
   }
 
   /**
@@ -744,7 +667,7 @@ public abstract class DataSerializer {
   public static Integer readInteger(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Integer value = Integer.valueOf(in.readInt());
+    Integer value = in.readInt();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Integer {}", value);
     }
@@ -767,7 +690,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Long {}", value);
     }
 
-    out.writeLong(value.longValue());
+    out.writeLong(value);
   }
 
   /**
@@ -778,7 +701,7 @@ public abstract class DataSerializer {
   public static Long readLong(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Long value = Long.valueOf(in.readLong());
+    Long value = in.readLong();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Long {}", value);
     }
@@ -801,7 +724,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Float {}", value);
     }
 
-    out.writeFloat(value.floatValue());
+    out.writeFloat(value);
   }
 
   /**
@@ -812,7 +735,7 @@ public abstract class DataSerializer {
   public static Float readFloat(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Float value = Float.valueOf(in.readFloat());
+    Float value = in.readFloat();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Float {}", value);
     }
@@ -835,7 +758,7 @@ public abstract class DataSerializer {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing Double {}", value);
     }
 
-    out.writeDouble(value.doubleValue());
+    out.writeDouble(value);
   }
 
   /**
@@ -846,7 +769,7 @@ public abstract class DataSerializer {
   public static Double readDouble(DataInput in) throws IOException {
     InternalDataSerializer.checkIn(in);
 
-    Double value = Double.valueOf(in.readDouble());
+    Double value = in.readDouble();
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
       logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read Double {}", value);
     }
@@ -1312,7 +1235,7 @@ public abstract class DataSerializer {
       if (object instanceof HeapDataOutputStream) {
         hdos = (HeapDataOutputStream) object;
       } else {
-        Version v = InternalDataSerializer.getVersionForDataStreamOrNull(out);
+        Version v = StaticSerialization.getVersionForDataStreamOrNull(out);
         if (v == null) {
           v = Version.CURRENT;
         }
@@ -1320,10 +1243,7 @@ public abstract class DataSerializer {
         try {
           DataSerializer.writeObject(object, hdos);
         } catch (IOException e) {
-          RuntimeException e2 = new IllegalArgumentException(
-              LocalizedStrings.DataSerializer_PROBELM_WHILE_SERIALIZING.toLocalizedString());
-          e2.initCause(e);
-          throw e2;
+          throw new IllegalArgumentException("Problem while serializing.", e);
         }
       }
       InternalDataSerializer.writeArrayLength(hdos.size(), out);
@@ -1342,19 +1262,14 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkIn(in);
 
-    int length = InternalDataSerializer.readArrayLength(in);
-    if (length == -1) {
-      return null;
-    } else {
-      byte[] array = new byte[length];
-      in.readFully(array, 0, length);
+    byte[] result = StaticSerialization.readByteArray(in);
 
-      if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-        logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read byte array of length {}", length);
-      }
-
-      return array;
+    if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read byte array of length {}",
+          result == null ? "null" : result.length);
     }
+
+    return result;
   }
 
   /**
@@ -1370,20 +1285,18 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkOut(out);
 
-    int length;
-    if (array == null) {
-      length = -1;
-    } else {
-      length = array.length;
-    }
-    InternalDataSerializer.writeArrayLength(length, out);
+
+    StaticSerialization.writeStringArray(array, out);
+
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing String array of length {}", length);
-    }
-    if (length > 0) {
-      for (int i = 0; i < length; i++) {
-        writeString(array[i], out);
+      int length;
+      if (array == null) {
+        length = -1;
+      } else {
+        length = array.length;
       }
+
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing String array of length {}", length);
     }
   }
 
@@ -1398,21 +1311,14 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkIn(in);
 
-    int length = InternalDataSerializer.readArrayLength(in);
-    if (length == -1) {
-      return null;
-    } else {
-      String[] array = new String[length];
-      for (int i = 0; i < length; i++) {
-        array[i] = readString(in);
-      }
+    String array[] = StaticSerialization.readStringArray(in);
 
-      if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-        logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read String array of length {}", length);
-      }
-
-      return array;
+    if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read String array of length {}",
+          array == null ? "null" : array.length);
     }
+
+    return array;
   }
 
   /**
@@ -1583,21 +1489,11 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkOut(out);
 
-    int length;
-    if (array == null) {
-      length = -1;
-    } else {
-      length = array.length;
-    }
-    InternalDataSerializer.writeArrayLength(length, out);
+    StaticSerialization.writeIntArray(array, out);
 
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing int array of length {}", length);
-    }
-    if (length > 0) {
-      for (int i = 0; i < length; i++) {
-        out.writeInt(array[i]);
-      }
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Writing int array of length {}",
+          array == null ? "null" : array.length);
     }
   }
 
@@ -1612,21 +1508,14 @@ public abstract class DataSerializer {
 
     InternalDataSerializer.checkIn(in);
 
-    int length = InternalDataSerializer.readArrayLength(in);
-    if (length == -1) {
-      return null;
-    } else {
-      int[] array = new int[length];
-      for (int i = 0; i < length; i++) {
-        array[i] = in.readInt();
-      }
+    int[] result = StaticSerialization.readIntArray(in);
 
-      if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
-        logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read int array of length {}", length);
-      }
-
-      return array;
+    if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
+      logger.trace(LogMarker.SERIALIZER_VERBOSE, "Read int array of length {}",
+          result == null ? "null" : result.length);
     }
+
+    return result;
   }
 
   /**
@@ -1829,7 +1718,7 @@ public abstract class DataSerializer {
     if (length == -1) {
       return null;
     } else {
-      Class<?> c = null;
+      Class<?> c;
       byte typeCode = in.readByte();
       String typeString = null;
       if (typeCode == DSCODE.CLASS.toByte()) {
@@ -1844,15 +1733,15 @@ public abstract class DataSerializer {
         try {
           c = InternalDataSerializer.getCachedClass(typeString);
           lookForPdxInstance = true;
-        } catch (ClassNotFoundException ignore) {
+        } catch (ClassNotFoundException e) {
           c = Object.class;
-          cnfEx = ignore;
+          cnfEx = e;
         }
       } else {
         if (typeCode == DSCODE.CLASS.toByte()) {
           c = InternalDataSerializer.getCachedClass(typeString);
         } else {
-          c = InternalDataSerializer.decodePrimitiveClass(typeCode);
+          c = StaticSerialization.decodePrimitiveClass(typeCode);
         }
       }
       Object o = null;
@@ -2005,9 +1894,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      ArrayList<E> list = new ArrayList<E>(size);
+      ArrayList<E> list = new ArrayList<>(size);
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         list.add(element);
       }
 
@@ -2071,9 +1960,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      Vector<E> list = new Vector<E>(size);
+      Vector<E> list = new Vector<>(size);
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         list.add(element);
       }
 
@@ -2136,9 +2025,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      Stack<E> list = new Stack<E>();
+      Stack<E> list = new Stack<>();
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         list.add(element);
       }
 
@@ -2202,9 +2091,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      LinkedList<E> list = new LinkedList<E>();
+      LinkedList<E> list = new LinkedList<>();
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         list.add(element);
       }
 
@@ -2251,9 +2140,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      HashSet<E> set = new HashSet<E>(size);
+      HashSet<E> set = new HashSet<>(size);
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         set.add(element);
       }
 
@@ -2300,9 +2189,9 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      LinkedHashSet<E> set = new LinkedHashSet<E>(size);
+      LinkedHashSet<E> set = new LinkedHashSet<>(size);
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         set.add(element);
       }
 
@@ -2367,10 +2256,10 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      HashMap<K, V> map = new HashMap<K, V>(size);
+      HashMap<K, V> map = new HashMap<>(size);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2437,10 +2326,10 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      IdentityHashMap<K, V> map = new IdentityHashMap<K, V>(size);
+      IdentityHashMap<K, V> map = new IdentityHashMap<>(size);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2481,8 +2370,7 @@ public abstract class DataSerializer {
     if (map == null) {
       size = -1;
     } else {
-      // take a snapshot to fix bug 44562
-      entrySnapshot = new ArrayList<Map.Entry<?, ?>>(map.entrySet());
+      entrySnapshot = new ArrayList<>(map.entrySet());
       size = entrySnapshot.size();
     }
     InternalDataSerializer.writeArrayLength(size, out);
@@ -2517,10 +2405,10 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      ConcurrentHashMap<K, V> map = new ConcurrentHashMap<K, V>(size);
+      ConcurrentHashMap<K, V> map = new ConcurrentHashMap<>(size);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2587,10 +2475,10 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      Hashtable<K, V> map = new Hashtable<K, V>(size);
+      Hashtable<K, V> map = new Hashtable<>(size);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2659,12 +2547,11 @@ public abstract class DataSerializer {
     if (size == -1) {
       return null;
     } else {
-      Comparator<? super K> c =
-          InternalDataSerializer.<Comparator<? super K>>readNonPdxInstanceObject(in);
-      TreeMap<K, V> map = new TreeMap<K, V>(c);
+      Comparator<? super K> c = InternalDataSerializer.readNonPdxInstanceObject(in);
+      TreeMap<K, V> map = new TreeMap<>(c);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2730,8 +2617,8 @@ public abstract class DataSerializer {
     } else {
       LinkedHashMap<K, V> map = new LinkedHashMap<>(size);
       for (int i = 0; i < size; i++) {
-        K key = DataSerializer.<K>readObject(in);
-        V value = DataSerializer.<V>readObject(in);
+        K key = DataSerializer.readObject(in);
+        V value = DataSerializer.readObject(in);
         map.put(key, value);
       }
 
@@ -2800,10 +2687,10 @@ public abstract class DataSerializer {
       return null;
     } else {
       Comparator<? super E> c =
-          InternalDataSerializer.<Comparator<? super E>>readNonPdxInstanceObject(in);
-      TreeSet<E> set = new TreeSet<E>(c);
+          InternalDataSerializer.readNonPdxInstanceObject(in);
+      TreeSet<E> set = new TreeSet<>(c);
       for (int i = 0; i < size; i++) {
-        E element = DataSerializer.<E>readObject(in);
+        E element = DataSerializer.readObject(in);
         set.add(element);
       }
 
@@ -3007,8 +2894,9 @@ public abstract class DataSerializer {
    *         the classes reserved by DataSerializer (see {@link #getSupportedClasses} for a list).
    * @see #getSupportedClasses
    */
+  @SuppressWarnings("unchecked")
   public static DataSerializer register(Class<?> c) {
-    return InternalDataSerializer.register(c, true);
+    return InternalDataSerializer.register((Class<? extends DataSerializer>) c, true);
   }
 
   /**
@@ -3152,7 +3040,9 @@ public abstract class DataSerializer {
   /**
    * maps a class to its enum constants.
    */
-  private static final ConcurrentMap knownEnums = new ConcurrentHashMap();
+  @MakeNotStatic
+  private static final ConcurrentMap<Class<? extends Enum>, Enum[]> knownEnums =
+      new ConcurrentHashMap<>();
 
   /**
    * gets the enum constants for the given class. {@link Class#getEnumConstants()} uses reflection,
@@ -3160,6 +3050,7 @@ public abstract class DataSerializer {
    *
    * @return enum constants for the given class
    */
+  @SuppressWarnings("unchecked")
   private static <E extends Enum> E[] getEnumConstantsForClass(Class<E> clazz) {
     E[] returnVal = (E[]) knownEnums.get(clazz);
     if (returnVal == null) {
@@ -3185,7 +3076,7 @@ public abstract class DataSerializer {
 
     if (e == null) {
       throw new NullPointerException(
-          LocalizedStrings.DataSerializer_ENUM_TO_SERIALIZE_IS_NULL.toLocalizedString());
+          "The enum constant to serialize is null");
     }
 
     if (logger.isTraceEnabled(LogMarker.SERIALIZER_VERBOSE)) {
@@ -3214,10 +3105,10 @@ public abstract class DataSerializer {
 
     if (clazz == null) {
       throw new NullPointerException(
-          LocalizedStrings.DataSerializer_ENUM_CLASS_TO_DESERIALIZE_IS_NULL.toLocalizedString());
+          "the enum class to deserialize is null");
     } else if (!clazz.isEnum()) {
       throw new IllegalArgumentException(
-          LocalizedStrings.DataSerializer_CLASS_0_NOT_ENUM.toLocalizedString(clazz.getName()));
+          String.format("Class %s is not an enum", clazz.getName()));
     }
 
     int ordinal = InternalDataSerializer.readArrayLength(in);

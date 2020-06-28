@@ -44,9 +44,12 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.tx.RemoteOperationMessage.RemoteOperationResponse;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class DistTXRollbackMessage extends TXMessage {
 
@@ -105,14 +108,16 @@ public class DistTXRollbackMessage extends TXMessage {
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     // more data
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     // more data
   }
 
@@ -138,7 +143,7 @@ public class DistTXRollbackMessage extends TXMessage {
     public DistTXRollbackReplyMessage() {}
 
     public DistTXRollbackReplyMessage(DataInput in) throws IOException, ClassNotFoundException {
-      fromData(in);
+      fromData(in, InternalDataSerializer.createDeserializationContext(in));
     }
 
     private DistTXRollbackReplyMessage(int processorId, Boolean val) {
@@ -199,14 +204,16 @@ public class DistTXRollbackMessage extends TXMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeBoolean(this.rollbackState, out);
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.rollbackState = DataSerializer.readBoolean(in);
     }
 
@@ -269,9 +276,7 @@ public class DistTXRollbackMessage extends TXMessage {
    * Reply processor which collects all CommitReplyExceptions for Dist Tx and emits a detailed
    * failure exception if problems occur
    *
-   * @see TXCommitMessage.CommitReplyProcessor
-   *
-   *      [DISTTX] TODO see if need ReliableReplyProcessor21? departed members?
+   * [DISTTX] TODO see if need ReliableReplyProcessor21? departed members?
    */
   public static class DistTxRollbackReplyProcessor extends ReplyProcessor21 {
     private HashMap<DistributedMember, DistTXCoordinatorInterface> msgMap;
@@ -306,7 +311,7 @@ public class DistTXRollbackMessage extends TXMessage {
     }
 
     @Override
-    protected void processException(DistributionMessage msg, ReplyException ex) {
+    protected synchronized void processException(DistributionMessage msg, ReplyException ex) {
       if (msg instanceof ReplyMessage) {
         synchronized (this) {
           if (this.exception == null) {

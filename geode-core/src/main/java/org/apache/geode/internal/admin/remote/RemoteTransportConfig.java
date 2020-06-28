@@ -31,14 +31,13 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import org.apache.geode.distributed.internal.DistributionConfig;
-import org.apache.geode.distributed.internal.membership.gms.messenger.MembershipInformation;
+import org.apache.geode.distributed.internal.membership.api.MembershipInformation;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.admin.SSLConfig;
 import org.apache.geode.internal.admin.TransportConfig;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * Tranport config for RemoteGfManagerAgent.
@@ -78,7 +77,7 @@ public class RemoteTransportConfig implements TransportConfig {
     this.vmKind = vmKind;
     this.tcpPort = config.getTcpPort();
     this.membershipPortRange = getMembershipPortRangeString(config.getMembershipPortRange());
-    this.sslConfig = new SSLConfig();
+    this.sslConfig = new SSLConfig.Builder().build();
 
     String initialHosts = config.getLocators();
     if (initialHosts == null) {
@@ -145,8 +144,7 @@ public class RemoteTransportConfig implements TransportConfig {
     if (isMcastEnabled) {
       if (ids.size() < 1) {
         throw new IllegalArgumentException(
-            LocalizedStrings.RemoteTransportConfig_EXPECTED_AT_LEAST_ONE_HOSTPORT_ID
-                .toLocalizedString());
+            "expected at least one host/port id");
       }
       Iterator it = ids.iterator();
       while (it.hasNext() && mid == null) {

@@ -23,8 +23,8 @@ import java.util.logging.Logger;
 
 import javax.sql.DataSource;
 
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * AbstractDataSource implements the Datasource interface. This is base class for the datasouce
@@ -35,8 +35,9 @@ import org.apache.geode.internal.logging.LogService;
  * <jndi-binding>tag. Those parameters which are specified as attributes of <property>tag are not
  * stored.
  */
-public abstract class AbstractDataSource implements Serializable, DataSource {
+public abstract class AbstractDataSource implements Serializable, DataSource, AutoCloseable {
 
+  @Immutable
   private static final org.apache.logging.log4j.Logger logger = LogService.getLogger();
 
   protected transient PrintWriter dataSourcePW;
@@ -72,6 +73,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    *
    * @return Connection Connection object for the Database connection.
    */
+  @Override
   public abstract Connection getConnection() throws SQLException;
 
   /**
@@ -82,6 +84,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    * @param password Passowrd used for making database connection.
    * @return ???
    */
+  @Override
   public abstract Connection getConnection(String username, String password) throws SQLException;
 
   // DataSource Interface functions
@@ -90,6 +93,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    *
    * @return PrintWriter for logs.
    */
+  @Override
   public PrintWriter getLogWriter() throws SQLException {
     return dataSourcePW;
   }
@@ -100,6 +104,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    *
    * @return int login time out.
    */
+  @Override
   public int getLoginTimeout() throws SQLException {
     return loginTimeOut;
   }
@@ -109,6 +114,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    *
    * @param out PrintWriter for writing the logs.
    */
+  @Override
   public void setLogWriter(java.io.PrintWriter out) throws SQLException {
     dataSourcePW = out;
   }
@@ -118,6 +124,7 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
    *
    * @param seconds login time out in seconds.
    */
+  @Override
   public void setLoginTimeout(int seconds) throws SQLException {
     loginTimeOut = seconds;
   }
@@ -199,13 +206,15 @@ public abstract class AbstractDataSource implements Serializable, DataSource {
   public void checkCredentials(String clUser, String clPass) throws SQLException {
     if (clUser == null || !clUser.equals(user) || clPass == null || !clPass.equals(password)) {
       String error =
-          LocalizedStrings.AbstractDataSource_CANNOT_CREATE_A_CONNECTION_WITH_THE_USER_0_AS_IT_DOESNT_MATCH_THE_EXISTING_USER_NAMED_1_OR_THE_PASSWORD_WAS_INCORRECT
-              .toLocalizedString(new Object[] {clUser, clPass});
+          String.format(
+              "Cannot create a connection with the user, %s, as it doesnt match the existing user named %s, or the password was incorrect.",
+              new Object[] {clUser, clPass});
       throw new SQLException(error);
     }
   }
 
-  public void clearUp() {
+  @Override
+  public void close() {
     isActive = false;
   }
 }

@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.execute;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.Map;
 import java.util.Set;
 
@@ -33,6 +35,7 @@ public class LocalDataSetFunction extends FunctionAdapter {
     this.optimizeForWrite = optimizeForWrite;
   }
 
+  @Override
   public void execute(FunctionContext context) {
     RegionFunctionContext rContext = (RegionFunctionContext) context;
     Region cust = rContext.getDataSet();
@@ -47,13 +50,13 @@ public class LocalDataSetFunction extends FunctionAdapter {
     Set custKeySet = cust.keySet();
     Set localCustKeySet = localCust.keySet();
 
-    Region ord = colocatedRegions.get("/OrderPR");
-    Region localOrd = localColocatedRegions.get("/OrderPR");
+    Region ord = colocatedRegions.get(SEPARATOR + "OrderPR");
+    Region localOrd = localColocatedRegions.get(SEPARATOR + "OrderPR");
     Set ordKeySet = ord.keySet();
     Set localOrdKeySet = localOrd.keySet();
 
-    Region ship = colocatedRegions.get("/ShipmentPR");
-    Region localShip = localColocatedRegions.get("/ShipmentPR");
+    Region ship = colocatedRegions.get(SEPARATOR + "ShipmentPR");
+    Region localShip = localColocatedRegions.get(SEPARATOR + "ShipmentPR");
     Set shipKeySet = ship.keySet();
     Set localShipKeySet = localShip.keySet();
 
@@ -72,18 +75,22 @@ public class LocalDataSetFunction extends FunctionAdapter {
     context.getResultSender().lastResult(null);
   }
 
+  @Override
   public String getId() {
     return "LocalDataSetFunction" + optimizeForWrite;
   }
 
+  @Override
   public boolean hasResult() {
     return true;
   }
 
+  @Override
   public boolean optimizeForWrite() {
     return optimizeForWrite;
   }
 
+  @Override
   public boolean isHA() {
     return false;
   }

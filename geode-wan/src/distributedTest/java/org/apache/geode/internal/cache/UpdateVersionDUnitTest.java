@@ -22,6 +22,7 @@ import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.REMOTE_LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.START_LOCATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.USE_CLUSTER_CONFIGURATION;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -35,16 +36,12 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringTokenizer;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.EntryNotFoundException;
@@ -52,7 +49,8 @@ import org.apache.geode.cache.Operation;
 import org.apache.geode.cache.PartitionAttributesFactory;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.Region.Entry;
-import org.apache.geode.cache.Scope;
+import org.apache.geode.cache.RegionFactory;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.client.internal.LocatorDiscoveryCallbackAdapter;
 import org.apache.geode.cache.wan.GatewayEventFilter;
 import org.apache.geode.cache.wan.GatewayReceiver;
@@ -62,7 +60,6 @@ import org.apache.geode.cache.wan.GatewaySenderFactory;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.cache.LocalRegion.NonTXEntry;
 import org.apache.geode.internal.cache.partitioned.PRLocallyDestroyedException;
 import org.apache.geode.internal.cache.versions.VersionSource;
 import org.apache.geode.internal.cache.versions.VersionStamp;
@@ -273,7 +270,6 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
 
     EntryEventImpl event =
         createNewEvent((DistributedRegion) region, versionTag, entry.getKey(), "value-3");
-
     ((LocalRegion) region).basicUpdate(event, false, true, 0L, false);
 
     // Verify the new stamp
@@ -342,9 +338,9 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
   private VersionTag getReplicatedRegionVersionTag(final String key, final VersionTag localTag) {
     final Region region = cache.getRegion(regionName);
 
-    Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> region.getEntry(key) != null);
+    await().until(() -> region.getEntry(key) != null);
 
-    Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       Entry entry = region.getEntry(key);
       assertTrue(entry instanceof NonTXEntry);
       RegionEntry regionEntry = ((NonTXEntry) entry).getRegionEntry();
@@ -363,7 +359,7 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
   private VersionTag getPartitionedRegionVersionTag(final String key, final VersionTag localTag) {
     final PartitionedRegion region = (PartitionedRegion) cache.getRegion(regionName);
 
-    Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       Entry<?, ?> entry = null;
       try {
         entry = region.getDataStore().getEntryLocally(0, key, false, false);
@@ -378,7 +374,7 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
       return (entry != null);
     });
 
-    Awaitility.await().atMost(30, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       Entry entry = region.getEntry(key);
       assertTrue(entry instanceof EntrySnapshot);
       RegionEntry regionEntry = ((EntrySnapshot) entry).getRegionEntry();
@@ -497,7 +493,8 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
 
   private void createPartitionedRegion(String regionName, String senderIds, Integer redundantCopies,
       Integer totalNumBuckets) {
-    AttributesFactory fact = new AttributesFactory();
+    RegionFactory fact = cache.createRegionFactory(RegionShortcut.PARTITION);
+
     if (senderIds != null) {
       StringTokenizer tokenizer = new StringTokenizer(senderIds, ",");
       while (tokenizer.hasMoreTokens()) {
@@ -505,17 +502,19 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
         fact.addGatewaySenderId(senderId);
       }
     }
+
     PartitionAttributesFactory pFact = new PartitionAttributesFactory();
     pFact.setTotalNumBuckets(totalNumBuckets);
     pFact.setRedundantCopies(redundantCopies);
     pFact.setRecoveryDelay(0);
     fact.setPartitionAttributes(pFact.create());
-    Region r = cache.createRegionFactory(fact.create()).create(regionName);
+    Region r = fact.create(regionName);
     assertNotNull(r);
   }
 
   private void createReplicatedRegion(String regionName, String senderIds) {
-    AttributesFactory fact = new AttributesFactory();
+    RegionFactory fact = cache.createRegionFactory(RegionShortcut.REPLICATE);
+
     if (senderIds != null) {
       StringTokenizer tokenizer = new StringTokenizer(senderIds, ",");
       while (tokenizer.hasMoreTokens()) {
@@ -523,15 +522,14 @@ public class UpdateVersionDUnitTest extends JUnit4DistributedTestCase {
         fact.addGatewaySenderId(senderId);
       }
     }
-    fact.setDataPolicy(DataPolicy.REPLICATE);
-    fact.setScope(Scope.DISTRIBUTED_ACK);
-    Region r = cache.createRegionFactory(fact.create()).create(regionName);
+
+    Region r = fact.create(regionName);
     assertNotNull(r);
   }
 
   private void waitForSenderRunningState(String senderId) {
     GatewaySender sender = cache.getGatewaySender(senderId);
-    Awaitility.await().atMost(30, TimeUnit.SECONDS)
+    await()
         .until(() -> sender != null && sender.isRunning());
   }
 

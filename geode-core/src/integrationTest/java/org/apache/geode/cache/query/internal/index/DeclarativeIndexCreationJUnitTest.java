@@ -18,8 +18,10 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -39,7 +41,6 @@ import org.apache.geode.cache.query.CacheUtils;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
-import org.apache.geode.util.test.TestUtil;
 
 @Category({OQLIndexTest.class})
 public class DeclarativeIndexCreationJUnitTest {
@@ -50,7 +51,9 @@ public class DeclarativeIndexCreationJUnitTest {
   @Before
   public void setUp() throws Exception {
     Properties props = new Properties();
-    props.setProperty(CACHE_XML_FILE, TestUtil.getResourcePath(getClass(), "cachequeryindex.xml"));
+    props.setProperty(CACHE_XML_FILE,
+        createTempFileFromResource(getClass(), "cachequeryindex.xml")
+            .getAbsolutePath());
     props.setProperty(MCAST_PORT, "0");
     ds = DistributedSystem.connect(props);
     cache = CacheFactory.create(ds);
@@ -69,7 +72,7 @@ public class DeclarativeIndexCreationJUnitTest {
 
   @Test
   public void testAsynchronousIndexCreatedOnRoot_PortfoliosRegion() {
-    Region root = cache.getRegion("/root/portfolios");
+    Region root = cache.getRegion(SEPARATOR + "root" + SEPARATOR + "portfolios");
     IndexManager im = IndexUtils.getIndexManager((InternalCache) cache, root, true);
     Collection coll = im.getIndexes();
     if (coll.size() > 0) {
@@ -84,7 +87,7 @@ public class DeclarativeIndexCreationJUnitTest {
 
   @Test
   public void testSynchronousIndexCreatedOnRoot_StringRegion() {
-    Region root = cache.getRegion("/root/string");
+    Region root = cache.getRegion(SEPARATOR + "root" + SEPARATOR + "string");
     IndexManager im = IndexUtils.getIndexManager((InternalCache) cache, root, true);
     Collection coll = im.getIndexes();
     if (coll.size() > 0) {
@@ -95,7 +98,7 @@ public class DeclarativeIndexCreationJUnitTest {
     } else
       fail(
           "DeclarativeIndexCreationJUnitTest::testSynchronousIndexCreatedOnRoot_StringRegion Region:No index found in the root region");
-    root = cache.getRegion("/root/string1");
+    root = cache.getRegion(SEPARATOR + "root" + SEPARATOR + "string1");
     im = IndexUtils.getIndexManager((InternalCache) cache, root, true);
     if (!im.isIndexMaintenanceTypeSynchronous())
       fail(
@@ -104,7 +107,7 @@ public class DeclarativeIndexCreationJUnitTest {
 
   @Test
   public void testSynchronousIndexCreatedOnRootRegion() {
-    Region root = cache.getRegion("/root");
+    Region root = cache.getRegion(SEPARATOR + "root");
     IndexManager im = IndexUtils.getIndexManager((InternalCache) cache, root, true);
     Collection coll = im.getIndexes();
     if (coll.size() > 0) {

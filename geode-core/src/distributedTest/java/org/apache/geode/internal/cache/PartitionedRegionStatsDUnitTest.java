@@ -15,10 +15,9 @@
 package org.apache.geode.internal.cache;
 
 import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Host.getHost;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.util.concurrent.TimeoutException;
 
@@ -181,7 +180,7 @@ public class PartitionedRegionStatsDUnitTest extends CacheTestCase {
       Cache cache = getCache();
       PartitionedRegion region = (PartitionedRegion) cache.getRegion(regionName);
       PartitionedRegionStats prStats = region.getPrStats();
-      await().atMost(30, SECONDS)
+      await()
           .untilAsserted(() -> assertThat(prStats.getLowRedundancyBucketCount()).isEqualTo(0));
     });
 
@@ -265,7 +264,8 @@ public class PartitionedRegionStatsDUnitTest extends CacheTestCase {
     CachePerfStats cachePerfStats = region.getCachePerfStats();
 
     assertThat(stats.getDataStoreEntryCount()).isEqualTo(expectedCount);
-    assertThat(cachePerfStats.getEntries()).isEqualTo(expectedCount);
+    long actualCount = cachePerfStats.stats.getLong(CachePerfStats.entryCountId);
+    assertThat(actualCount).isEqualTo(expectedCount);
   }
 
   private void validateTotalNumBucketsCount(final String regionName, final int expectedCount) {

@@ -15,13 +15,15 @@
 
 package org.apache.geode.management;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.Serializable;
+import java.util.Properties;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -62,8 +64,12 @@ public class ClientHealthStatsDUnitTest implements Serializable {
 
   @Test
   public void testClientHealthStats_SubscriptionEnabled() throws Exception {
-    client1 = cluster.startClientVM(2, true, server.getPort());
-    client2 = cluster.startClientVM(3, true, server.getPort());
+    client1 =
+        cluster.startClientVM(2,
+            c1 -> c1.withPoolSubscription(true).withServerConnection(server.getPort()));
+    client2 =
+        cluster.startClientVM(3,
+            c -> c.withPoolSubscription(true).withServerConnection(server.getPort()));
 
     VMProvider.invokeInEveryMember(() -> {
       ClientRegionFactory<String, String> regionFactory =
@@ -80,8 +86,12 @@ public class ClientHealthStatsDUnitTest implements Serializable {
 
   @Test
   public void testClientHealthStats_SubscriptionDisabled() throws Exception {
-    client1 = cluster.startClientVM(2, false, server.getPort());
-    client2 = cluster.startClientVM(3, false, server.getPort());
+    client1 =
+        cluster.startClientVM(2,
+            c1 -> c1.withPoolSubscription(false).withServerConnection(server.getPort()));
+    client2 =
+        cluster.startClientVM(3,
+            c -> c.withPoolSubscription(false).withServerConnection(server.getPort()));
     VMProvider.invokeInEveryMember(() -> {
       ClientRegionFactory<String, String> regionFactory =
           ClusterStartupRule.getClientCache()
@@ -111,7 +121,8 @@ public class ClientHealthStatsDUnitTest implements Serializable {
 
     // do puts in server
     server.invoke(() -> {
-      Region<String, String> region = ClusterStartupRule.getCache().getRegion("/regionA");
+      Region<String, String> region =
+          ClusterStartupRule.getCache().getRegion(SEPARATOR + "regionA");
 
       Thread thread1 = new Thread(() -> {
         for (int i = 0; i < NUMBER_PUTS; i++) {
@@ -144,7 +155,8 @@ public class ClientHealthStatsDUnitTest implements Serializable {
 
     // resume puts on serverVM, add another 100.
     server.invoke(() -> {
-      Region<String, String> region = ClusterStartupRule.getCache().getRegion("/regionA");
+      Region<String, String> region =
+          ClusterStartupRule.getCache().getRegion(SEPARATOR + "regionA");
       for (int i = 0; i < NUMBER_PUTS; i++) {
         region.put("NEWKEY_" + i, "NEWVALUE_" + i);
       }
@@ -154,7 +166,7 @@ public class ClientHealthStatsDUnitTest implements Serializable {
     // start durable client1 again
     client1 = createDurableClient(2);
     // wait for full queue dispatch
-    client1.invoke(() -> Awaitility.await().until(() -> lastKeyReceived));
+    client1.invoke(() -> await().until(() -> lastKeyReceived));
 
     // verify the stats
     server.invoke(() -> {
@@ -171,7 +183,7 @@ public class ClientHealthStatsDUnitTest implements Serializable {
   }
 
   private ClientVM createDurableClient(int index) throws Exception {
-    ClientVM client = cluster.startClientVM(index, ccf -> {
+    ClientVM client = cluster.startClientVM(index, new Properties(), ccf -> {
       ccf.setPoolSubscriptionEnabled(true);
       ccf.addPoolServer("localhost", server.getPort());
       ccf.set(DURABLE_CLIENT_ID, "client" + index);
@@ -215,7 +227,7 @@ public class ClientHealthStatsDUnitTest implements Serializable {
       DistributedSystemMXBean dsBean =
           ClusterStartupRule.memberStarter.getManagementService().getDistributedSystemMXBean();
       assertThat(dsBean.getNumClients()).isEqualTo(2);
-      assertThat(dsBean.getNumSubscriptions()).isEqualTo(subscriptionCount);
+      await().until(() -> dsBean.getNumSubscriptions() == subscriptionCount);
     });
   }
 }

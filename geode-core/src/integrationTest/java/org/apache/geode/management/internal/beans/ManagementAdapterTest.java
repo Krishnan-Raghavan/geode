@@ -14,8 +14,8 @@
  */
 package org.apache.geode.management.internal.beans;
 
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.powermock.api.mockito.PowerMockito.doReturn;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -38,13 +38,13 @@ import org.apache.geode.test.junit.rules.ServerStarterRule;
 
 public class ManagementAdapterTest {
 
-  private InternalCache cache = null;
+  private InternalCache cache;
   private DiskStoreImpl diskStore = mock(DiskStoreImpl.class);
   private AtomicBoolean raceConditionFound = new AtomicBoolean(false);
 
   @Rule
   public ServerStarterRule serverRule =
-      new ServerStarterRule().withWorkingDir().withLogFile().withAutoStart();
+      new ServerStarterRule().withLogFile().withAutoStart();
 
   @Rule
   public ConcurrencyRule concurrencyRule = new ConcurrencyRule();

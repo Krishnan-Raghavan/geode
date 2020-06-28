@@ -14,21 +14,23 @@
  */
 package org.apache.geode.cache.client.internal;
 
+import static java.util.Collections.emptyList;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.apache.geode.logging.internal.spi.LogWriterLevel.FINEST;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
 import org.junit.Before;
@@ -44,7 +47,7 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.cache.NoSubscriptionServersAvailableException;
-import org.apache.geode.cache.RegionService;
+import org.apache.geode.cache.client.SocketFactory;
 import org.apache.geode.cache.client.SubscriptionNotEnabledException;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.distributed.DistributedSystem;
@@ -53,18 +56,11 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.cache.PoolStats;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.ServerQueueStatus;
-import org.apache.geode.internal.logging.InternalLogWriter;
 import org.apache.geode.internal.logging.LocalLogWriter;
-import org.apache.geode.internal.util.StopWatch;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 
-@Category({ClientServerTest.class})
+@Category(ClientServerTest.class)
 public class QueueManagerJUnitTest {
-
-  private static final String expectedRedundantErrorMsg =
-      "Could not find any server to create redundant client queue on.";
-  private static final String expectedPrimaryErrorMsg =
-      "Could not find any server to create primary client queue on.";
 
   private DummyPool pool;
   private LocalLogWriter logger;
@@ -78,23 +74,23 @@ public class QueueManagerJUnitTest {
 
   @Before
   public void setUp() {
-    this.logger = new LocalLogWriter(InternalLogWriter.FINEST_LEVEL, System.out);
+    logger = new LocalLogWriter(FINEST.intLevel(), System.out);
+
     Properties properties = new Properties();
-    properties.put(MCAST_PORT, "0");
-    properties.put(LOCATORS, "");
+    properties.setProperty(MCAST_PORT, "0");
+    properties.setProperty(LOCATORS, "");
+
     ds = DistributedSystem.connect(properties);
+
     stats = new PoolStats(ds, "QueueManagerJUnitTest");
     pool = new DummyPool();
     endpoints = new EndpointManagerImpl("pool", ds, ds.getCancelCriterion(), pool.getStats());
     source = new DummySource();
     factory = new DummyFactory();
     background = Executors.newSingleThreadScheduledExecutor();
-    final String addExpectedPEM =
-        "<ExpectedException action=add>" + expectedPrimaryErrorMsg + "</ExpectedException>";
-    final String addExpectedREM =
-        "<ExpectedException action=add>" + expectedRedundantErrorMsg + "</ExpectedException>";
-    ds.getLogWriter().info(addExpectedPEM);
-    ds.getLogWriter().info(addExpectedREM);
+
+    addIgnoredException("Could not find any server to host primary client queue.");
+    addIgnoredException("Could not find any server to host redundant client queue.");
   }
 
   @After
@@ -102,43 +98,38 @@ public class QueueManagerJUnitTest {
     background.shutdownNow();
     manager.close(false);
     endpoints.close();
-    final String removeExpectedPEM =
-        "<ExpectedException action=remove>" + expectedPrimaryErrorMsg + "</ExpectedException>";
-    final String removeExpectedREM =
-        "<ExpectedException action=remove>" + expectedRedundantErrorMsg + "</ExpectedException>";
-
-    ds.getLogWriter().info(removeExpectedPEM);
-    ds.getLogWriter().info(removeExpectedREM);
 
     ds.disconnect();
   }
 
   @Test
-  public void testBasic() throws Exception {
+  public void testBasic() {
     factory.addConnection(0, 0, 1);
     factory.addConnection(0, 0, 2);
     factory.addConnection(0, 0, 3);
     manager = new QueueManagerImpl(pool, endpoints, source, factory, 2, 2000, logger,
         ClientProxyMembershipID.getNewProxyMembership(ds));
     manager.start(background);
+
     assertPortEquals(1, manager.getAllConnections().getPrimary());
     assertPortEquals(new int[] {2, 3}, manager.getAllConnections().getBackups());
   }
 
   @Test
-  public void testUseBestRedundant() throws Exception {
+  public void testUseBestRedundant() {
     factory.addConnection(0, 0, 1);
     factory.addConnection(1, 23, 2);
     factory.addConnection(1, 11, 3);
     manager = new QueueManagerImpl(pool, endpoints, source, factory, 2, 2000, logger,
         ClientProxyMembershipID.getNewProxyMembership(ds));
     manager.start(background);
+
     assertPortEquals(2, manager.getAllConnections().getPrimary());
     assertPortEquals(new int[] {3, 1}, manager.getAllConnections().getBackups());
   }
 
   @Test
-  public void testHandleErrorsOnInit() throws Exception {
+  public void testHandleErrorsOnInit() {
     factory.addError();
     factory.addConnection(0, 0, 1);
     factory.addError();
@@ -152,25 +143,14 @@ public class QueueManagerJUnitTest {
     manager.start(background);
 
     // The primary queue can be set before we try to fill in for all of the failed backup servers,
-    // so we need to wait for the intitialization to finish rather than counting on the
-    // manager.getAllConnections()
-    // to wait for a primary
-    boolean done = false;
-    try {
-      for (StopWatch time = new StopWatch(true); !done && time.elapsedTimeMillis() < 30 * 1000;) {
-        Thread.sleep(200);
-        try {
-          assertPortEquals(2, manager.getAllConnections().getPrimary());
-          assertPortEquals(new int[] {1, 3}, manager.getAllConnections().getBackups());
-          manager.close(false);
-          done = true;
-        } catch (AssertionError e) {
-        }
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-    assertTrue(done);
+    // so we need to wait for the initialization to finish rather than counting on the
+    // manager.getAllConnections() to wait for a primary
+    await().untilAsserted(() -> {
+      assertPortEquals(2, manager.getAllConnections().getPrimary());
+      assertPortEquals(new int[] {1, 3}, manager.getAllConnections().getBackups());
+    });
+
+    manager.close(false);
 
     factory.addError();
     factory.addError();
@@ -185,25 +165,14 @@ public class QueueManagerJUnitTest {
     manager.start(background);
 
     // wait for backups to come online.
-    done = false;
-    try {
-      for (StopWatch time = new StopWatch(true); !done && time.elapsedTimeMillis() < 30 * 1000;) {
-        Thread.sleep(200);
-        try {
-          assertPortEquals(1, manager.getAllConnections().getPrimary());
-          assertPortEquals(new int[] {2, 3}, manager.getAllConnections().getBackups());
-          done = true;
-        } catch (AssertionError e) {
-        }
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-    assertTrue(done);
+    await().untilAsserted(() -> {
+      assertPortEquals(1, manager.getAllConnections().getPrimary());
+      assertPortEquals(new int[] {2, 3}, manager.getAllConnections().getBackups());
+    });
   }
 
   @Test
-  public void testMakeNewPrimary() throws Exception {
+  public void testMakeNewPrimary() {
     factory.addConnection(0, 0, 1);
     factory.addConnection(0, 0, 2);
     factory.addConnection(0, 0, 3);
@@ -212,98 +181,93 @@ public class QueueManagerJUnitTest {
     manager = new QueueManagerImpl(pool, endpoints, source, factory, 3, 2000, logger,
         ClientProxyMembershipID.getNewProxyMembership(ds));
     manager.start(background);
+
     assertPortEquals(1, manager.getAllConnections().getPrimary());
     assertPortEquals(new int[] {2, 3, 4}, manager.getAllConnections().getBackups());
+
     manager.getAllConnections().getPrimary().destroy();
 
     assertPortEquals(2, manager.getAllConnections().getPrimary());
 
-    // TODO - use a listener
-    Thread.sleep(100);
-    assertPortEquals(new int[] {3, 4, 5}, manager.getAllConnections().getBackups());
+    await().untilAsserted(() -> {
+      assertPortEquals(new int[] {3, 4, 5}, manager.getAllConnections().getBackups());
+    });
   }
 
   @Test
-  public void testWatchForNewRedundant() throws Exception {
+  public void testWatchForNewRedundant() {
     factory.addConnection(0, 0, 1);
     factory.addConnection(0, 0, 2);
     manager = new QueueManagerImpl(pool, endpoints, source, factory, 2, 20, logger,
         ClientProxyMembershipID.getNewProxyMembership(ds));
     manager.start(background);
+
     assertPortEquals(1, manager.getAllConnections().getPrimary());
     assertPortEquals(new int[] {2}, manager.getAllConnections().getBackups());
+
     factory.addConnection(0, 0, 3);
     factory.addConnection(0, 0, 4);
 
     assertPortEquals(1, manager.getAllConnections().getPrimary());
-    // TODO - use a listener
-    Thread.sleep(100);
-    assertPortEquals(new int[] {2, 3}, manager.getAllConnections().getBackups());
 
-    Connection backup1 = (Connection) manager.getAllConnections().getBackups().get(0);
-    backup1.destroy();
+    await().untilAsserted(() -> {
+      assertPortEquals(new int[] {2, 3}, manager.getAllConnections().getBackups());
+    });
+
+    Connection backup = manager.getAllConnections().getBackups().get(0);
+    backup.destroy();
 
     assertPortEquals(1, manager.getAllConnections().getPrimary());
-    // TODO - use a listener
-    Thread.sleep(100);
-    assertPortEquals(new int[] {3, 4}, manager.getAllConnections().getBackups());
+
+    await().untilAsserted(() -> {
+      assertPortEquals(new int[] {3, 4}, manager.getAllConnections().getBackups());
+    });
   }
 
   @Test
-  public void testWaitForPrimary() throws Exception {
+  public void testWaitForPrimary() {
     factory.addConnection(0, 0, 1);
     manager = new QueueManagerImpl(pool, endpoints, source, factory, 2, 20, logger,
         ClientProxyMembershipID.getNewProxyMembership(ds));
     manager.start(background);
     manager.getAllConnections().getPrimary().destroy();
 
-    try {
+    Throwable thrown = catchThrowable(() -> {
       manager.getAllConnections().getPrimary();
-      fail("Should have received NoQueueServersAvailableException");
-    } catch (NoSubscriptionServersAvailableException expected) {
-      // do thing
-    }
+    });
+    assertThat(thrown).isInstanceOf(NoSubscriptionServersAvailableException.class);
+
     factory.addConnection(0, 0, 2);
     factory.addConnection(0, 0, 3);
 
-    boolean done = false;
-    try {
-      for (StopWatch time = new StopWatch(true); !done && time.elapsedTimeMillis() < 11 * 1000;) {
-        Thread.sleep(200);
-        try {
-          manager.getAllConnections();
-          done = true;
-        } catch (NoSubscriptionServersAvailableException e) {
-          // done = false;
-        }
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-    assertTrue("getAllConnections still throwing NoSubscriptionServersAvailableException", done);
+    await().untilAsserted(() -> {
+      assertThatCode(() -> manager.getAllConnections()).doesNotThrowAnyException();
+    });
 
     assertPortEquals(2, manager.getAllConnections().getPrimary());
   }
 
   private static void assertPortEquals(int expected, Connection actual) {
-    assertEquals(expected, actual.getServer().getPort());
+    assertThat(actual.getServer().getPort()).isEqualTo(expected);
   }
 
-  private static void assertPortEquals(int[] expected, List actual) {
-    ArrayList expectedPorts = new ArrayList();
-    for (int i = 0; i < expected.length; i++) {
-      expectedPorts.add(new Integer(expected[i]));
-    }
-    ArrayList actualPorts = new ArrayList();
-    for (Iterator itr = actual.iterator(); itr.hasNext();) {
-      actualPorts.add(new Integer(((Connection) itr.next()).getServer().getPort()));
+  private static void assertPortEquals(int[] expected, Iterable<Connection> actual) {
+    Collection<Integer> expectedPorts = new ArrayList<>();
+    for (int value : expected) {
+      expectedPorts.add(value);
     }
 
-    assertEquals(expectedPorts, actualPorts);
+    List<Integer> actualPorts = new ArrayList<>();
+    for (Connection connection : actual) {
+      actualPorts.add(connection.getServer().getPort());
+    }
+
+    assertThat(actualPorts).isEqualTo(expectedPorts);
   }
 
   private class DummyPool implements InternalPool {
 
+    @Override
     public String getPoolOrCacheCancelInProgress() {
       return null;
     }
@@ -313,187 +277,248 @@ public class QueueManagerJUnitTest {
       return false;
     }
 
+    @Override
+    public int getPrimaryPort() {
+      return 0;
+    }
+
+    @Override
+    public int getConnectionCount() {
+      return 0;
+    }
+
+    @Override
     public Object execute(Op op, int retryAttempts) {
       return null;
     }
 
+    @Override
     public Object execute(Op op) {
       return null;
     }
 
+    @Override
     public EndpointManager getEndpointManager() {
       return null;
     }
 
+    @Override
     public Object executeOn(Connection con, Op op) {
       return null;
     }
 
+    @Override
     public Object executeOn(Connection con, Op op, boolean timeoutFatal) {
       return null;
     }
 
+    @Override
     public Object executeOn(ServerLocation server, Op op) {
       return null;
     }
 
+    @Override
     public Object executeOn(ServerLocation server, Op op, boolean accessed,
         boolean onlyUseExistingCnx) {
       return null;
     }
 
+    @Override
     public void executeOnAllQueueServers(Op op)
         throws NoSubscriptionServersAvailableException, SubscriptionNotEnabledException {}
 
+    @Override
     public Object executeOnQueuesAndReturnPrimaryResult(Op op) {
       return null;
     }
 
+    @Override
     public Object executeOnPrimary(Op op) {
       return null;
     }
 
+    @Override
     public boolean isDurableClient() {
       return true;
     }
 
+    @Override
     public RegisterInterestTracker getRITracker() {
       return new RegisterInterestTracker();
     }
 
-    public void releaseThreadLocalConnection() {}
+    @Override
+    public void destroy() {
+      // nothing
+    }
 
-    public void destroy() {}
+    @Override
+    public void destroy(boolean keepAlive) {
+      // nothing
+    }
 
-    public void destroy(boolean keepAlive) {}
-
+    @Override
     public int getSocketConnectTimeout() {
       return 0;
     }
 
+    @Override
     public int getFreeConnectionTimeout() {
       return 0;
     }
 
+    @Override
+    public int getServerConnectionTimeout() {
+      return 0;
+    }
+
+    @Override
     public int getLoadConditioningInterval() {
       return 0;
     }
 
+    @Override
     public long getIdleTimeout() {
       return 0;
     }
 
-    public List getLocators() {
+    @Override
+    public List<InetSocketAddress> getLocators() {
       return null;
     }
 
-    public List getOnlineLocators() {
-      return new ArrayList();
+    @Override
+    public List<InetSocketAddress> getOnlineLocators() {
+      return new ArrayList<>();
     }
 
+    @Override
     public int getMaxConnections() {
       return 0;
     }
 
+    @Override
     public int getMinConnections() {
       return 0;
     }
 
+    @Override
     public String getName() {
       return null;
     }
 
+    @Override
     public long getPingInterval() {
       return 0;
     }
 
+    @Override
     public int getStatisticInterval() {
       return -1;
     }
 
+    @Override
     public int getSubscriptionAckInterval() {
       return 5000;
     }
 
+    @Override
     public boolean getSubscriptionEnabled() {
       return false;
     }
 
+    @Override
     public boolean getPRSingleHopEnabled() {
       return false;
     }
 
+    @Override
     public int getSubscriptionMessageTrackingTimeout() {
       return 0;
     }
 
+    @Override
     public int getSubscriptionRedundancy() {
       return 0;
     }
 
+    @Override
     public int getReadTimeout() {
       return 0;
     }
 
+    @Override
     public int getRetryAttempts() {
       return 0;
     }
 
+    @Override
     public String getServerGroup() {
       return null;
     }
 
+    @Override
     public boolean getMultiuserAuthentication() {
       return false;
     }
 
-    public List getServers() {
+    @Override
+    public List<InetSocketAddress> getServers() {
       return null;
     }
 
+    @Override
     public int getSocketBufferSize() {
       return 0;
     }
 
-    public boolean getThreadLocalConnections() {
-      return false;
-    }
-
+    @Override
     public boolean isDestroyed() {
       return false;
     }
 
+    @Override
     public ScheduledExecutorService getBackgroundProcessor() {
       return null;
     }
 
+    @Override
     public CancelCriterion getCancelCriterion() {
       return new CancelCriterion() {
 
+        @Override
         public String cancelInProgress() {
           return null;
         }
 
+        @Override
         public RuntimeException generateCancelledException(Throwable e) {
           return null;
         }
       };
     }
 
+    @Override
     public Map getEndpointMap() {
       return null;
     }
 
+    @Override
     public PoolStats getStats() {
       return stats;
     }
 
-    public void detach() {}
+    @Override
+    public void detach() {
+      // nothing
+    }
 
+    @Override
     public QueryService getQueryService() {
       return null;
     }
 
+    @Override
     public int getPendingEventCount() {
       return 0;
     }
@@ -503,20 +528,30 @@ public class QueueManagerJUnitTest {
       return 0;
     }
 
-    public RegionService createAuthenticatedCacheView(Properties properties) {
+    @Override
+    public SocketFactory getSocketFactory() {
       return null;
     }
 
-    public void setupServerAffinity(boolean allowFailover) {}
+    @Override
+    public void setupServerAffinity(boolean allowFailover) {
+      // nothing
+    }
 
-    public void releaseServerAffinity() {}
+    @Override
+    public void releaseServerAffinity() {
+      // nothing
+    }
 
+    @Override
     public ServerLocation getServerAffinityLocation() {
       return null;
     }
 
-    public void setServerAffinityLocation(ServerLocation serverLocation) {}
-
+    @Override
+    public void setServerAffinityLocation(ServerLocation serverLocation) {
+      // nothing
+    }
   }
 
   /**
@@ -527,41 +562,48 @@ public class QueueManagerJUnitTest {
    */
   private class DummyFactory implements ConnectionFactory {
 
-    protected LinkedList nextConnections = new LinkedList();
+    private final LinkedList<DummyConnection> nextConnections = new LinkedList<>();
 
-    public void addError() {
+    private void addError() {
       nextConnections.add(null);
     }
 
-    public void addConnection(int endpointType, int queueSize, int port)
-        throws UnknownHostException {
+    private void addConnection(int endpointType, int queueSize, int port) {
       nextConnections.add(new DummyConnection(endpointType, queueSize, port));
     }
 
+    @Override
     public ServerLocation findBestServer(ServerLocation currentServer, Set excludedServers) {
       return null;
     }
 
+    @Override
     public Connection createClientToServerConnection(Set excludedServers) {
       return null;
     }
 
+    @Override
     public ServerDenyList getDenyList() {
       return new ServerDenyList(1);
     }
 
+    @Override
     public Connection createClientToServerConnection(ServerLocation location, boolean forQueue) {
-      if (nextConnections == null || nextConnections.isEmpty()) {
+      if (nextConnections.isEmpty()) {
         return null;
       }
-      return (DummyConnection) nextConnections.removeFirst();
+      return nextConnections.removeFirst();
     }
 
+    @Override
     public ClientUpdater createServerToClientConnection(Endpoint endpoint,
         QueueManager queueManager, boolean isPrimary, ClientUpdater failedUpdater) {
       return new ClientUpdater() {
+
         @Override
-        public void close() {}
+        public void close() {
+          // nothing
+        }
 
         @Override
         public boolean isAlive() {
@@ -569,10 +611,14 @@ public class QueueManagerJUnitTest {
         }
 
         @Override
-        public void join(long wait) throws InterruptedException {}
+        public void join(long wait) {
+          // nothing
+        }
 
         @Override
-        public void setFailedUpdater(ClientUpdater failedUpdater) {}
+        public void setFailedUpdater(ClientUpdater failedUpdater) {
+          // nothing
+        }
 
         @Override
         public boolean isProcessing() {
@@ -588,25 +634,27 @@ public class QueueManagerJUnitTest {
   }
 
   private class DummySource implements ConnectionSource {
-    int nextPort = 0;
+
+    private final AtomicInteger nextPort = new AtomicInteger();
 
     @Override
-    public ServerLocation findServer(Set excludedServers) {
-      return new ServerLocation("localhost", nextPort++);
+    public ServerLocation findServer(Set<ServerLocation> excludedServers) {
+      return new ServerLocation("localhost", nextPort.incrementAndGet());
     }
 
     @Override
     public ServerLocation findReplacementServer(ServerLocation currentServer,
-        Set/* <ServerLocation> */ excludedServers) {
-      return new ServerLocation("localhost", nextPort++);
+        Set<ServerLocation> excludedServers) {
+      return new ServerLocation("localhost", nextPort.incrementAndGet());
     }
 
     @Override
-    public List findServersForQueue(Set excludedServers, int numServers,
+    public List<ServerLocation> findServersForQueue(Set excludedServers, int numServers,
         ClientProxyMembershipID proxyId, boolean findDurableQueue) {
-      numServers =
-          numServers > factory.nextConnections.size() ? factory.nextConnections.size() : numServers;
-      ArrayList locations = new ArrayList(numServers);
+      numServers = numServers > factory.nextConnections.size()
+          ? factory.nextConnections.size()
+          : numServers;
+      List<ServerLocation> locations = new ArrayList<>(numServers);
       for (int i = 0; i < numServers; i++) {
         locations.add(findServer(null));
       }
@@ -614,10 +662,14 @@ public class QueueManagerJUnitTest {
     }
 
     @Override
-    public void start(InternalPool poolImpl) {}
+    public void start(InternalPool poolImpl) {
+      // nothing
+    }
 
     @Override
-    public void stop() {}
+    public void stop() {
+      // nothing
+    }
 
     @Override
     public boolean isBalanced() {
@@ -626,37 +678,40 @@ public class QueueManagerJUnitTest {
 
     @Override
     public List<ServerLocation> getAllServers() {
-      return Collections.emptyList();
+      return emptyList();
     }
 
     @Override
     public List<InetSocketAddress> getOnlineLocators() {
-      return Collections.emptyList();
+      return emptyList();
     }
   }
 
   private class DummyConnection implements Connection {
 
-    private ServerQueueStatus status;
-    private ServerLocation location;
-    private Endpoint endpoint;
+    private final ServerQueueStatus status;
+    private final ServerLocation location;
+    private final Endpoint endpoint;
 
-    public DummyConnection(int endpointType, int queueSize, int port) throws UnknownHostException {
+    private DummyConnection(int endpointType, int queueSize, int port) {
       InternalDistributedMember member = new InternalDistributedMember("localhost", 555);
-      ServerQueueStatus status = new ServerQueueStatus((byte) endpointType, queueSize, member, 0);
-      this.status = status;
-      this.location = new ServerLocation("localhost", port);
-      this.endpoint = endpoints.referenceEndpoint(location, member);
+      status = new ServerQueueStatus((byte) endpointType, queueSize, member, 0);
+      location = new ServerLocation("localhost", port);
+      endpoint = endpoints.referenceEndpoint(location, member);
     }
 
     @Override
-    public void close(boolean keepAlive) throws Exception {}
+    public void close(boolean keepAlive) {
+      // nothing
+    }
 
     @Override
-    public void destroy() {}
+    public void destroy() {
+      // nothing
+    }
 
     @Override
-    public Object execute(Op op) throws Exception {
+    public Object execute(Op op) {
       return null;
     }
 
@@ -691,8 +746,23 @@ public class QueueManagerJUnitTest {
     }
 
     @Override
+    public long getBirthDate() {
+      return 0;
+    }
+
+    @Override
+    public void setBirthDate(long ts) {
+
+    }
+
+    @Override
     public ConnectionStats getStats() {
       return null;
+    }
+
+    @Override
+    public boolean isActive() {
+      return false;
     }
 
     @Override
@@ -701,7 +771,9 @@ public class QueueManagerJUnitTest {
     }
 
     @Override
-    public void emergencyClose() {}
+    public void emergencyClose() {
+      // nothing
+    }
 
     @Override
     public short getWanSiteVersion() {
@@ -709,7 +781,9 @@ public class QueueManagerJUnitTest {
     }
 
     @Override
-    public void setWanSiteVersion(short wanSiteVersion) {}
+    public void setWanSiteVersion(short wanSiteVersion) {
+      // nothing
+    }
 
     @Override
     public OutputStream getOutputStream() {
@@ -722,12 +796,13 @@ public class QueueManagerJUnitTest {
     }
 
     @Override
-    public void setConnectionID(long id) {}
+    public void setConnectionID(long id) {
+      // nothing
+    }
 
     @Override
     public long getConnectionID() {
       return 0;
     }
   }
-
 }

@@ -14,18 +14,18 @@
  */
 package org.apache.geode.management.internal.cli.commands;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.NAME;
 import static org.apache.geode.distributed.ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.junit.rules.GfshCommandRule.PortType.jmxManager;
 import static org.assertj.core.api.Java6Assertions.assertThat;
 
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,11 +38,10 @@ import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.management.DistributedRegionMXBean;
 import org.apache.geode.management.ManagementService;
-import org.apache.geode.management.internal.cli.CliUtil;
+import org.apache.geode.management.internal.util.ManagementUtils;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -52,24 +51,28 @@ public class RegionMembershipMBeanDUnitTestBase {
   private static final String DATA_REGION_NAME = "GemfireDataCommandsTestRegion";
   private static final String DATA_REGION_NAME_VM1 = "GemfireDataCommandsTestRegion_Vm1";
   private static final String DATA_REGION_NAME_VM2 = "GemfireDataCommandsTestRegion_Vm2";
-  private static final String DATA_REGION_NAME_PATH = "/GemfireDataCommandsTestRegion";
-  private static final String DATA_REGION_NAME_VM1_PATH = "/GemfireDataCommandsTestRegion_Vm1";
-  private static final String DATA_REGION_NAME_VM2_PATH = "/GemfireDataCommandsTestRegion_Vm2";
+  private static final String DATA_REGION_NAME_PATH = SEPARATOR + "GemfireDataCommandsTestRegion";
+  private static final String DATA_REGION_NAME_VM1_PATH =
+      SEPARATOR + "GemfireDataCommandsTestRegion_Vm1";
+  private static final String DATA_REGION_NAME_VM2_PATH =
+      SEPARATOR + "GemfireDataCommandsTestRegion_Vm2";
 
   private static final String DATA_PAR_REGION_NAME = "GemfireDataCommandsTestParRegion";
   private static final String DATA_PAR_REGION_NAME_VM1 = "GemfireDataCommandsTestParRegion_Vm1";
   private static final String DATA_PAR_REGION_NAME_VM2 = "GemfireDataCommandsTestParRegion_Vm2";
-  private static final String DATA_PAR_REGION_NAME_PATH = "/GemfireDataCommandsTestParRegion";
+  private static final String DATA_PAR_REGION_NAME_PATH =
+      SEPARATOR + "GemfireDataCommandsTestParRegion";
   private static final String DATA_PAR_REGION_NAME_VM1_PATH =
-      "/GemfireDataCommandsTestParRegion_Vm1";
+      SEPARATOR + "GemfireDataCommandsTestParRegion_Vm1";
   private static final String DATA_PAR_REGION_NAME_VM2_PATH =
-      "/GemfireDataCommandsTestParRegion_Vm2";
+      SEPARATOR + "GemfireDataCommandsTestParRegion_Vm2";
   private static final String DATA_REGION_NAME_CHILD_1 = "ChildRegionRegion1";
   private static final String DATA_REGION_NAME_CHILD_1_PATH =
-      "/GemfireDataCommandsTestRegion/ChildRegionRegion1";
+      SEPARATOR + "GemfireDataCommandsTestRegion" + SEPARATOR + "ChildRegionRegion1";
   private static final String DATA_REGION_NAME_CHILD_1_2 = "ChildRegionRegion12";
   private static final String DATA_REGION_NAME_CHILD_1_2_PATH =
-      "/GemfireDataCommandsTestRegion/ChildRegionRegion1/ChildRegionRegion12";
+      SEPARATOR + "GemfireDataCommandsTestRegion" + SEPARATOR + "ChildRegionRegion1" + SEPARATOR
+          + "ChildRegionRegion12";
 
   private static final String SERIALIZATION_FILTER =
       "org.apache.geode.management.internal.cli.**";
@@ -349,7 +352,7 @@ public class RegionMembershipMBeanDUnitTestBase {
     return locator.invoke(() -> {
       InternalCache cache = ClusterStartupRule.getCache();
       Set<DistributedMember> distributedMembers =
-          CliUtil.getRegionAssociatedMembers(regionName, cache, true);
+          ManagementUtils.getRegionAssociatedMembers(regionName, cache, true);
 
       return distributedMembers.size();
     });
@@ -359,7 +362,7 @@ public class RegionMembershipMBeanDUnitTestBase {
     return locator.invoke(() -> {
       Cache cache = ClusterStartupRule.getCache();
 
-      Awaitility.waitAtMost(20, TimeUnit.SECONDS).untilAsserted(() -> {
+      await().untilAsserted(() -> {
         DistributedRegionMXBean bean = ManagementService.getManagementService(cache)
             .getDistributedRegionMXBean(regionPath);
         assertThat(bean).isNotNull();
@@ -373,12 +376,10 @@ public class RegionMembershipMBeanDUnitTestBase {
   }
 
   private Properties locatorProperties() {
-    int jmxPort = AvailablePortHelper.getRandomAvailableTCPPort();
     Properties props = new Properties();
     props.setProperty(MCAST_PORT, "0");
     props.setProperty(LOG_LEVEL, "fine");
     props.setProperty(ConfigurationProperties.JMX_MANAGER_HOSTNAME_FOR_CLIENTS, "localhost");
-    props.setProperty(ConfigurationProperties.JMX_MANAGER_PORT, "" + jmxPort);
 
     return props;
   }

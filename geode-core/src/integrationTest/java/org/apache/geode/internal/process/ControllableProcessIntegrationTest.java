@@ -14,10 +14,9 @@
  */
 package org.apache.geode.internal.process;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.geode.internal.process.ProcessUtils.identifyPid;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -71,7 +70,7 @@ public class ControllableProcessIntegrationTest {
     localProcessLauncher = new LocalProcessLauncher(pidFile, false);
 
     // act
-    ControllableProcess controllable = new ControllableProcess(directory, processType,
+    ControllableProcess controllable = new FileControllableProcess(directory, processType,
         localProcessLauncher, stopRequestFileWatchdog, statusRequestFileWatchdog);
 
     // assert
@@ -85,7 +84,8 @@ public class ControllableProcessIntegrationTest {
     File file = new EmptyFileWriter(statusRequestFile).createNewFile();
 
     // act
-    new ControllableProcess(directory, processType, localProcessLauncher, stopRequestFileWatchdog,
+    new FileControllableProcess(directory, processType, localProcessLauncher,
+        stopRequestFileWatchdog,
         statusRequestFileWatchdog);
 
     // assert
@@ -99,7 +99,8 @@ public class ControllableProcessIntegrationTest {
     File file = new EmptyFileWriter(statusFile).createNewFile();
 
     // act
-    new ControllableProcess(directory, processType, localProcessLauncher, stopRequestFileWatchdog,
+    new FileControllableProcess(directory, processType, localProcessLauncher,
+        stopRequestFileWatchdog,
         statusRequestFileWatchdog);
 
     // assert
@@ -113,7 +114,8 @@ public class ControllableProcessIntegrationTest {
     File file = new EmptyFileWriter(stopRequestFile).createNewFile();
 
     // act
-    new ControllableProcess(directory, processType, localProcessLauncher, stopRequestFileWatchdog,
+    new FileControllableProcess(directory, processType, localProcessLauncher,
+        stopRequestFileWatchdog,
         statusRequestFileWatchdog);
 
     // assert
@@ -126,7 +128,7 @@ public class ControllableProcessIntegrationTest {
     localProcessLauncher = new LocalProcessLauncher(pidFile, false);
 
     // act
-    ControllableProcess controllable = new ControllableProcess(directory, processType,
+    ControllableProcess controllable = new FileControllableProcess(directory, processType,
         localProcessLauncher, stopRequestFileWatchdog, statusRequestFileWatchdog);
 
     // assert
@@ -139,7 +141,7 @@ public class ControllableProcessIntegrationTest {
     localProcessLauncher = new LocalProcessLauncher(pidFile, false);
 
     // act
-    ControllableProcess controllable = new ControllableProcess(directory, processType,
+    ControllableProcess controllable = new FileControllableProcess(directory, processType,
         localProcessLauncher, stopRequestFileWatchdog, statusRequestFileWatchdog);
 
     // assert
@@ -159,7 +161,7 @@ public class ControllableProcessIntegrationTest {
 
     localProcessLauncher = new LocalProcessLauncher(pidFile, false);
 
-    ControllableProcess controllable = new ControllableProcess(directory, processType,
+    ControllableProcess controllable = new FileControllableProcess(directory, processType,
         localProcessLauncher, stopRequestFileWatchdog, statusRequestFileWatchdog);
 
     // act
@@ -180,14 +182,14 @@ public class ControllableProcessIntegrationTest {
     when(mockServiceState.toJson()).thenReturn("json");
     ControlNotificationHandler mockHandler = mock(ControlNotificationHandler.class);
     when(mockHandler.handleStatus()).thenReturn(mockServiceState);
-    new ControllableProcess(mockHandler, directory, processType, false);
+    new FileControllableProcess(mockHandler, directory, processType, false);
 
     // act
     boolean created = statusRequestFile.createNewFile();
 
     // assert
     assertThat(created).isTrue();
-    await().atMost(2, MINUTES).untilAsserted(() -> assertThat(statusRequestFile).doesNotExist());
+    await().untilAsserted(() -> assertThat(statusRequestFile).doesNotExist());
     assertThat(statusFile).exists();
   }
 }

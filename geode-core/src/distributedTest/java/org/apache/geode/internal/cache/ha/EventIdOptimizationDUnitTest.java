@@ -14,10 +14,10 @@
  */
 package org.apache.geode.internal.cache.ha;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
-import static org.awaitility.Awaitility.await;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -246,21 +246,25 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
     factory.setScope(Scope.DISTRIBUTED_ACK);
 
     factory.addCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterCreate(EntryEvent event) {
         String key = (String) event.getKey();
         validateEventsAtReceivingClientListener(key);
       }
 
+      @Override
       public void afterDestroy(EntryEvent event) {
         String key = (String) event.getKey();
         validateEventsAtReceivingClientListener(key);
       }
 
+      @Override
       public void afterRegionDestroy(RegionEvent event) {
 
         validateEventsAtReceivingClientListener(" <destroyRegion Event> ");
       }
 
+      @Override
       public void afterRegionClear(RegionEvent event) {
 
         validateEventsAtReceivingClientListener(" <clearRegion Event> ");
@@ -286,7 +290,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void generateEventsByPutOperation() throws Exception {
     Connection connection = pool.acquireConnection();
-    String regionName = Region.SEPARATOR + REGION_NAME;
+    String regionName = SEPARATOR + REGION_NAME;
     ServerRegionProxy srp = new ServerRegionProxy(regionName, pool);
 
     for (int i = 0; i < eventIds.length; i++) {
@@ -303,7 +307,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void generateEventsByDestroyEntryOperation() throws Exception {
     Connection connection = pool.acquireConnection();
-    String regionName = Region.SEPARATOR + REGION_NAME;
+    String regionName = SEPARATOR + REGION_NAME;
     ServerRegionProxy srp = new ServerRegionProxy(regionName, pool);
 
     for (int i = 0; i < eventIds.length; i++) {
@@ -325,7 +329,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void generateEventsByDestroyRegionOperation() throws Exception {
     Connection connection = pool.acquireConnection();
-    String regionName = Region.SEPARATOR + REGION_NAME;
+    String regionName = SEPARATOR + REGION_NAME;
 
     for (int i = 0; i < 1; i++) {
       ServerRegionProxy srp = new ServerRegionProxy(regionName + i, pool);
@@ -345,7 +349,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void generateEventsByClearRegionOperation() throws Exception {
     Connection connection = pool.acquireConnection();
-    String regionName = Region.SEPARATOR + REGION_NAME;
+    String regionName = SEPARATOR + REGION_NAME;
     ServerRegionProxy srp = new ServerRegionProxy(regionName, pool);
 
     for (int i = 0; i < eventIds.length; i++) {
@@ -409,7 +413,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
    * Waits for the listener to receive all events and validates that no exception occurred in client
    */
   public static void verifyEventIdsOnClient2() {
-    await("Waiting for proceedForValidation to be true").atMost(2, MINUTES)
+    await("Waiting for proceedForValidation to be true")
         .until(() -> proceedForValidation);
 
     LogWriterUtils.getLogWriter().info("Starting validation on client2");
@@ -421,7 +425,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
     LogWriterUtils.getLogWriter()
         .info("Validation complete on client2, goin to unregister listeners");
 
-    Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region region = cache.getRegion(SEPARATOR + REGION_NAME);
     if (region != null && !region.isDestroyed()) {
       try {
         AttributesMutator mutator = region.getAttributesMutator();
@@ -431,7 +435,7 @@ public class EventIdOptimizationDUnitTest extends JUnit4DistributedTestCase {
     }
 
     for (int i = 0; i < eventIds.length; i++) {
-      region = cache.getRegion(Region.SEPARATOR + REGION_NAME + i);
+      region = cache.getRegion(SEPARATOR + REGION_NAME + i);
       if (region != null && !region.isDestroyed()) {
         try {
           AttributesMutator mutator = region.getAttributesMutator();

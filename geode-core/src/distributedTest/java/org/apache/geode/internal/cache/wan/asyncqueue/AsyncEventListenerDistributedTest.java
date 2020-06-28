@@ -16,17 +16,18 @@ package org.apache.geode.internal.cache.wan.asyncqueue;
 
 import static org.apache.geode.cache.RegionShortcut.PARTITION;
 import static org.apache.geode.cache.RegionShortcut.REPLICATE;
+import static org.apache.geode.cache.asyncqueue.internal.AsyncEventQueueFactoryImpl.DEFAULT_BATCH_TIME_INTERVAL;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.VM.getCurrentVMNum;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-import static org.awaitility.Duration.TWO_MINUTES;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +59,7 @@ import org.apache.geode.cache.asyncqueue.AsyncEventQueue;
 import org.apache.geode.cache.asyncqueue.AsyncEventQueueFactory;
 import org.apache.geode.cache.asyncqueue.internal.InternalAsyncEventQueue;
 import org.apache.geode.cache.util.CacheListenerAdapter;
+import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.RegionQueue;
 import org.apache.geode.internal.cache.wan.InternalGatewaySender;
@@ -128,9 +130,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
   @Test // serial, ReplicateRegion
   public void testSerialAsyncEventQueueSize() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false,
         100, dispatcherThreadCount, 100));
@@ -147,9 +149,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     vm1.invoke(() -> getInternalGatewaySender().pause());
     vm2.invoke(() -> getInternalGatewaySender().pause());
 
-    vm0.invoke(() -> waitForDispatcherToPause());
-    vm1.invoke(() -> waitForDispatcherToPause());
-    vm2.invoke(() -> waitForDispatcherToPause());
+    vm0.invoke(this::waitForDispatcherToPause);
+    vm1.invoke(this::waitForDispatcherToPause);
+    vm2.invoke(this::waitForDispatcherToPause);
 
     vm0.invoke(() -> doPuts(replicateRegionName, 1000));
 
@@ -159,10 +161,35 @@ public class AsyncEventListenerDistributedTest implements Serializable {
   }
 
   @Test // serial, ReplicateRegion
+  public void testSerialAsyncEventQueueStopStart() {
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+
+    vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false,
+        100, dispatcherThreadCount, 100));
+    vm1.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false,
+        100, dispatcherThreadCount, 100));
+
+    vm0.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
+    vm1.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
+
+    vm0.invoke(() -> getInternalGatewaySender().stop());
+    vm1.invoke(() -> getInternalGatewaySender().stop());
+
+    vm0.invoke(() -> doPuts(replicateRegionName, 10));
+
+    vm0.invoke(() -> getInternalGatewaySender().start());
+    vm1.invoke(() -> getInternalGatewaySender().start());
+
+    assertThat(vm0.invoke(() -> getAsyncEventQueue().size())).isEqualTo(0);
+    assertThat(vm1.invoke(() -> getAsyncEventQueue().size())).isEqualTo(0);
+  }
+
+  @Test // serial, ReplicateRegion
   public void testReplicatedSerialAsyncEventQueue() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false,
         100, dispatcherThreadCount, 100));
@@ -187,9 +214,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
   @Test // serial, conflation, ReplicateRegion
   public void testReplicatedSerialAsyncEventQueueWithConflationEnabled() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), true,
         100, dispatcherThreadCount, 100));
@@ -206,9 +233,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     vm1.invoke(() -> getInternalGatewaySender().pause());
     vm2.invoke(() -> getInternalGatewaySender().pause());
 
-    vm0.invoke(() -> waitForDispatcherToPause());
-    vm1.invoke(() -> waitForDispatcherToPause());
-    vm2.invoke(() -> waitForDispatcherToPause());
+    vm0.invoke(this::waitForDispatcherToPause);
+    vm1.invoke(this::waitForDispatcherToPause);
+    vm2.invoke(this::waitForDispatcherToPause);
 
     Map<Integer, Integer> keyValues = new HashMap<>();
     for (int i = 0; i < 1000; i++) {
@@ -253,16 +280,19 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
   @Test // serial, persistent, conflation, ReplicateRegion
   public void testReplicatedSerialAsyncEventQueueWithPersistenceEnabled() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm1.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm2.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        true, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
 
     vm0.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
     vm1.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
@@ -284,12 +314,15 @@ public class AsyncEventListenerDistributedTest implements Serializable {
       createCache();
 
       createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false, 100,
-          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100);
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+          DEFAULT_BATCH_TIME_INTERVAL);
 
       createReplicateRegion(replicateRegionName, asyncEventQueueId);
 
       // pause async channel and then do the puts
       getInternalGatewaySender().pause();
+      waitForDispatcherToPause();
+
       doPuts(replicateRegionName, 1000);
 
       // kill vm0 and rebuild
@@ -297,7 +330,8 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
       createCache();
       createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false, 100,
-          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100);
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+          DEFAULT_BATCH_TIME_INTERVAL);
       createReplicateRegion(replicateRegionName, asyncEventQueueId);
 
       // primary sender
@@ -314,16 +348,19 @@ public class AsyncEventListenerDistributedTest implements Serializable {
   @Ignore("TODO: Disabled for 52351")
   @Test // serial, persistent, ReplicateRegion
   public void testReplicatedSerialAsyncEventQueueWithPersistenceEnabled_Restart2() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm1.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm2.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
 
     vm0.invoke(() -> {
       createReplicateRegion(replicateRegionName, asyncEventQueueId);
@@ -333,11 +370,11 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     vm1.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
     vm2.invoke(() -> createReplicateRegion(replicateRegionName, asyncEventQueueId));
 
-    vm1.invoke(() -> waitForSenderToBecomePrimary());
+    vm1.invoke(this::waitForSenderToBecomePrimary);
     vm1.invoke(() -> doPuts(replicateRegionName, 2000));
 
-    vm1.invoke(() -> waitForRegionQueuesToEmpty());
-    vm2.invoke(() -> waitForRegionQueuesToEmpty());
+    vm1.invoke(this::waitForRegionQueuesToEmpty);
+    vm2.invoke(this::waitForRegionQueuesToEmpty);
 
     int vm1size = vm1.invoke(() -> ((Map<?, ?>) getSpyAsyncEventListener().getEventsMap()).size());
     int vm2size = vm2.invoke(() -> ((Map<?, ?>) getSpyAsyncEventListener().getEventsMap()).size());
@@ -346,11 +383,65 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     assertThat(vm1size + vm2size).isGreaterThanOrEqualTo(2000);
   }
 
+  @Test
+  // See GEODE-7079: a NullPointerException was thrown whenever the queue was recovered from disk
+  // and the processor started dispatching events before the actual region was available.
+  public void replicatedRegionWithPersistentSerialAsyncEventQueueAndConflationEnabledShouldNotLooseEventsNorThrowNullPointerExceptionsWhenMemberIsRestartedWhileEventsAreStillOnTheQueue()
+      throws IOException {
+    // Custom Log File to manually search for exceptions.
+    File customLogFile = temporaryFolder.newFile("memberLog.log");
+    Properties dsProperties = getDistributedSystemProperties();
+    dsProperties.setProperty(ConfigurationProperties.LOG_FILE, customLogFile.getAbsolutePath());
+
+    // Create Region, AsyncEventQueue and Insert Some Entries.
+    vm0.invoke(() -> {
+      createCache();
+      // Large batch time interval and low batch size so no events are processed before the restart.
+      createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), true, 10,
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100, 120000);
+      createReplicateRegion(replicateRegionName, asyncEventQueueId);
+      doPuts(replicateRegionName, 5);
+      waitForAsyncEventQueueSize(5);
+    });
+
+    vm0.invoke(() -> {
+      // Restart the cache.
+      getCache().close();
+      cacheRule.createCache(dsProperties);
+
+      // Recover the queue from disk, reduce thresholds so processing starts right away.
+      SpyAsyncEventListener spyAsyncEventListener = new SpyAsyncEventListener();
+      createPersistentAsyncEventQueue(asyncEventQueueId, spyAsyncEventListener, true, 5,
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+          DEFAULT_BATCH_TIME_INTERVAL);
+      waitForSenderToBecomePrimary();
+
+      // Wait for the processors to start.
+      await().until(() -> {
+        Set<Thread> threads = Thread.getAllStackTraces().keySet();
+        return threads
+            .stream()
+            .filter(t -> t.getName().contains("Processor for GatewaySender_AsyncEventQueue"))
+            .allMatch(Thread::isAlive);
+      });
+
+      // Create the region, processing will continue and no NPE should be thrown anymore.
+      createReplicateRegion(replicateRegionName, asyncEventQueueId);
+      waitForRegionQueuesToEmpty();
+      assertThat(spyAsyncEventListener.getEventsMap().size()).isEqualTo(5);
+    });
+
+    Files.lines(customLogFile.toPath()).forEach((line) -> assertThat(line)
+        .as("Dispatcher shouldn't have thrown any errors while processing batches")
+        .doesNotContain("An Exception occurred. The dispatcher will continue.")
+        .doesNotContain("java.lang.NullPointerException"));
+  }
+
   @Test // serial, PartitionedRegion
   public void testPartitionedSerialAsyncEventQueue() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false,
         100, dispatcherThreadCount, 100));
@@ -376,9 +467,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
   @Test // serial, conflation, PartitionedRegion
   public void testPartitionedSerialAsyncEventQueueWithConflationEnabled() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), true,
         100, dispatcherThreadCount, 100));
@@ -395,9 +486,9 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     vm1.invoke(() -> getInternalGatewaySender().pause());
     vm2.invoke(() -> getInternalGatewaySender().pause());
 
-    vm0.invoke(() -> waitForDispatcherToPause());
-    vm1.invoke(() -> waitForDispatcherToPause());
-    vm2.invoke(() -> waitForDispatcherToPause());
+    vm0.invoke(this::waitForDispatcherToPause);
+    vm1.invoke(this::waitForDispatcherToPause);
+    vm2.invoke(this::waitForDispatcherToPause);
 
     Map<Integer, Integer> keyValues = new HashMap<>();
     for (int i = 0; i < 1000; i++) {
@@ -450,16 +541,19 @@ public class AsyncEventListenerDistributedTest implements Serializable {
    */
   @Test // persistent, PartitionedRegion
   public void testPartitionedSerialAsyncEventQueueWithPersistenceEnabled() {
-    vm0.invoke(() -> createCache());
-    vm1.invoke(() -> createCache());
-    vm2.invoke(() -> createCache());
+    vm0.invoke(this::createCache);
+    vm1.invoke(this::createCache);
+    vm2.invoke(this::createCache);
 
     vm0.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm1.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
     vm2.invoke(() -> createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(),
-        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100));
+        false, 100, createDiskStoreName(asyncEventQueueId), false, dispatcherThreadCount, 100,
+        DEFAULT_BATCH_TIME_INTERVAL));
 
     vm0.invoke(() -> createPartitionedRegion(partitionedRegionName, asyncEventQueueId, 0, 16));
     vm1.invoke(() -> createPartitionedRegion(partitionedRegionName, asyncEventQueueId, 0, 16));
@@ -482,7 +576,8 @@ public class AsyncEventListenerDistributedTest implements Serializable {
       createCache();
 
       createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false, 100,
-          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100);
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+          DEFAULT_BATCH_TIME_INTERVAL);
 
       createPartitionedRegion(partitionedRegionName, asyncEventQueueId, 0, 16);
 
@@ -496,7 +591,8 @@ public class AsyncEventListenerDistributedTest implements Serializable {
 
       createCache();
       createPersistentAsyncEventQueue(asyncEventQueueId, new SpyAsyncEventListener(), false, 100,
-          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100);
+          createDiskStoreName(asyncEventQueueId), true, dispatcherThreadCount, 100,
+          DEFAULT_BATCH_TIME_INTERVAL);
       createPartitionedRegion(partitionedRegionName, asyncEventQueueId, 0, 16);
 
       // primary sender
@@ -599,11 +695,12 @@ public class AsyncEventListenerDistributedTest implements Serializable {
       String diskStoreName,
       boolean isDiskSynchronous,
       int dispatcherThreads,
-      int maximumQueueMemory) {
+      int maximumQueueMemory,
+      int batchTimeInterval) {
+
     assertThat(asyncEventQueueId).isNotEmpty();
     assertThat(asyncEventListener).isNotNull();
     assertThat(diskStoreName).isNotEmpty();
-
     createDiskStore(diskStoreName, asyncEventQueueId);
 
     AsyncEventQueueFactory asyncEventQueueFactory = getCache().createAsyncEventQueueFactory();
@@ -613,6 +710,7 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     asyncEventQueueFactory.setDiskSynchronous(isDiskSynchronous);
     asyncEventQueueFactory.setDispatcherThreads(dispatcherThreads);
     asyncEventQueueFactory.setMaximumQueueMemory(maximumQueueMemory);
+    asyncEventQueueFactory.setBatchTimeInterval(batchTimeInterval);
     asyncEventQueueFactory.setParallel(false);
     asyncEventQueueFactory.setPersistent(true);
 
@@ -622,17 +720,18 @@ public class AsyncEventListenerDistributedTest implements Serializable {
   private void addClosingCacheListener(String regionName, int closeAfterCreateKey) {
     assertThat(regionName).isNotEmpty();
 
-    Region region = getCache().getRegion(regionName);
+    Region<Integer, Integer> region = getCache().getRegion(regionName);
     assertNotNull(region);
 
-    CacheListenerAdapter cacheListener = new CacheListenerAdapter() {
-      @Override
-      public void afterCreate(EntryEvent event) {
-        if ((Integer) event.getKey() == closeAfterCreateKey) {
-          getCache().close();
-        }
-      }
-    };
+    CacheListenerAdapter<Integer, Integer> cacheListener =
+        new CacheListenerAdapter<Integer, Integer>() {
+          @Override
+          public void afterCreate(EntryEvent event) {
+            if ((Integer) event.getKey() == closeAfterCreateKey) {
+              getCache().close();
+            }
+          }
+        };
 
     region.getAttributesMutator().addCacheListener(cacheListener);
   }
@@ -675,13 +774,14 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     return totalSize;
   }
 
+  @SuppressWarnings("unchecked")
   private void waitForAsyncEventListenerWithEventsMapSize(int expectedSize) {
-    await().atMost(TWO_MINUTES).untilAsserted(
+    await().untilAsserted(
         () -> assertThat(getSpyAsyncEventListener().getEventsMap()).hasSize(expectedSize));
   }
 
   private void waitForAsyncEventQueueSize(int expectedRegionQueueSize) {
-    await().atMost(TWO_MINUTES).untilAsserted(
+    await().untilAsserted(
         () -> assertThat(getTotalRegionQueueSize()).isEqualTo(expectedRegionQueueSize));
   }
 
@@ -690,13 +790,13 @@ public class AsyncEventListenerDistributedTest implements Serializable {
   }
 
   private void waitForRegionQueuesToEmpty() {
-    await().atMost(TWO_MINUTES)
+    await()
         .untilAsserted(() -> assertRegionQueuesAreEmpty(getInternalGatewaySender()));
   }
 
   private void waitForSenderToBecomePrimary() {
     InternalGatewaySender gatewaySender = getInternalGatewaySender();
-    await().atMost(TWO_MINUTES).untilAsserted(
+    await().untilAsserted(
         () -> assertThat(gatewaySender.isPrimary()).as("gatewaySender: " + gatewaySender).isTrue());
   }
 
@@ -744,6 +844,7 @@ public class AsyncEventListenerDistributedTest implements Serializable {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public boolean processEvents(List<AsyncEvent> events) {
       for (AsyncEvent<K, V> event : events) {
         eventsMap.put(event.getKey(), event.getDeserializedValue());

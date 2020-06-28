@@ -14,11 +14,9 @@
  */
 package org.apache.geode.cache.lucene;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.RegionShortcut;
@@ -50,7 +48,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
     int[] locatorPorts = new int[] {ports[0]};
     int[] csPorts = new int[] {ports[1], ports[2]};
 
-    DistributedTestUtils.deleteLocatorStateFile(locatorPorts);
+    locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPorts));
 
     String hostName = NetworkUtils.getServerHostName(host);
     String[] hostNames = new String[] {hostName};
@@ -62,7 +60,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       locator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -72,7 +70,8 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       invokeRunnableInVMs(invokeStartCacheServer(csPorts[1]), server3);
 
       invokeRunnableInVMs(
-          invokeCreateClientCache(getClientSystemProperties(), hostNames, locatorPorts, false),
+          invokeCreateClientCache(getClientSystemProperties(), hostNames, locatorPorts, false,
+              singleHopEnabled),
           client);
       server2.invoke(() -> createLuceneIndex(cache, regionName, INDEX_NAME));
       server3.invoke(() -> createLuceneIndex(cache, regionName, INDEX_NAME));
@@ -89,7 +88,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
           locatorString);
 
       server3 = rollServerToCurrentCreateLuceneIndexAndCreateRegion(server3, regionType, null,
-          shortcut.name(), regionName, locatorPorts);
+          shortcut.name(), regionName, locatorPorts, reindex);
       invokeRunnableInVMs(invokeStartCacheServer(csPorts[1]), server3);
       expectedRegionSize += 10;
       putSerializableObjectAndVerifyLuceneQueryResult(client, regionName, expectedRegionSize, 20,
@@ -99,7 +98,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
           40, server2);
 
       server2 = rollServerToCurrentCreateLuceneIndexAndCreateRegion(server2, regionType, null,
-          shortcut.name(), regionName, locatorPorts);
+          shortcut.name(), regionName, locatorPorts, reindex);
       invokeRunnableInVMs(invokeStartCacheServer(csPorts[0]), server2);
       expectedRegionSize += 10;
       putSerializableObjectAndVerifyLuceneQueryResult(client, regionName, expectedRegionSize, 40,
@@ -109,7 +108,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
           60, server3);
 
       client = rollClientToCurrentAndCreateRegion(client, ClientRegionShortcut.PROXY, regionName,
-          hostNames, locatorPorts, false);
+          hostNames, locatorPorts, false, singleHopEnabled);
       expectedRegionSize += 10;
       putSerializableObjectAndVerifyLuceneQueryResult(client, regionName, expectedRegionSize, 60,
           70, server2, server3);

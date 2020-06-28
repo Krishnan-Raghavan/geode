@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Set;
 
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
@@ -29,26 +30,48 @@ import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 
 import org.apache.geode.cache.configuration.CacheConfig;
 import org.apache.geode.cache.configuration.CacheElement;
+import org.apache.geode.cache.configuration.GatewayReceiverConfig;
 import org.apache.geode.cache.configuration.RegionConfig;
-
+import org.apache.geode.internal.lang.SystemPropertyHelper;
+import org.apache.geode.management.configuration.RegionType;
 
 public class JAXBServiceTest {
 
   private String xml;
   private CacheConfig unmarshalled;
-  private JAXBService service, service2;
+  private JAXBService service;
+  private JAXBService service2;
+
+  @Rule
+  public RestoreSystemProperties restore = new RestoreSystemProperties();
 
   @Before
-  public void setUp() throws Exception {
+  public void setUp() {
     service = new JAXBService(CacheConfig.class, ElementOne.class, ElementTwo.class);
     service.validateWithLocalCacheXSD();
 
     service2 = new JAXBService(CacheConfig.class);
     service2.validateWithLocalCacheXSD();
+  }
+
+  @Test
+  public void getPackagesToScanWithoutSystemProperty() {
+    Set<String> packages = JAXBService.getPackagesToScan();
+    assertThat(packages).containsExactly("*");
+  }
+
+  @Test
+  public void getPackagesToScanWithSystemProperty() {
+    System.setProperty("geode." + SystemPropertyHelper.PACKAGES_TO_SCAN,
+        "org.apache.geode,io.pivotal");
+    Set<String> packages = JAXBService.getPackagesToScan();
+    assertThat(packages).containsExactly("org.apache.geode", "io.pivotal");
   }
 
   @Test
@@ -69,7 +92,7 @@ public class JAXBServiceTest {
   }
 
   @Test
-  public void invalidXmlShouldFail() throws Exception {
+  public void invalidXmlShouldFail() {
     CacheConfig cacheConfig = new CacheConfig();
     // missing version attribute
     assertThatThrownBy(() -> service.marshall(cacheConfig))
@@ -77,7 +100,7 @@ public class JAXBServiceTest {
   }
 
   @Test
-  public void testCacheOneMarshall() throws Exception {
+  public void testCacheOneMarshall() {
     CacheConfig cache = new CacheConfig();
     setBasicValues(cache);
     cache.getCustomCacheElements().add(new ElementOne("test"));
@@ -90,7 +113,7 @@ public class JAXBServiceTest {
   }
 
   @Test
-  public void testMixMarshall() throws Exception {
+  public void testMixMarshall() {
     CacheConfig cache = new CacheConfig();
     setBasicValues(cache);
     cache.getCustomCacheElements().add(new ElementOne("testOne"));
@@ -137,6 +160,28 @@ public class JAXBServiceTest {
   }
 
   @Test
+  public void unmarshallPartialElement() {
+    String xml = "<region name=\"one\">\n"
+        + "        <region-attributes scope=\"distributed-ack\" data-policy=\"replicate\"/>\n"
+        + "    </region>";
+
+    RegionConfig config = service2.unMarshall(xml, RegionConfig.class);
+    assertThat(config.getName()).isEqualTo("one");
+  }
+
+  @Test
+  public void unmarshallAnyElement() {
+    String xml = "<region name=\"one\">\n"
+        + "        <region-attributes scope=\"distributed-ack\" data-policy=\"replicate\"/>\n"
+        + "        <custom:any xmlns:custom=\"http://geode.apache.org/schema/custom\" id=\"any\"/>"
+        + "    </region>";
+
+    RegionConfig config = service2.unMarshall(xml, RegionConfig.class);
+    assertThat(config.getName()).isEqualTo("one");
+    assertThat(config.getCustomRegionElements()).hasSize(1);
+  }
+
+  @Test
   public void unmarshallIgnoresUnknownProperties() {
     // say xml has a type attribute that is removed in the new version
     String existingXML = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -153,32 +198,66 @@ public class JAXBServiceTest {
     assertThat(elements.get(0)).isInstanceOf(ElementOne.class);
   }
 
-  public static void setBasicValues(CacheConfig cache) {
-    cache.setCopyOnRead(true);
-    CacheConfig.GatewayReceiver receiver = new CacheConfig.GatewayReceiver();
+  @Test
+  public void marshalOlderNameSpace() {
+    String xml =
+        "<cache xsi:schemaLocation=\"http://schema.pivotal.io/gemfire/cache http://schema.pivotal.io/gemfire/cache/cache-8.1.xsd\"\n"
+            +
+            "       version=\"8.1\"\n" +
+            "       xmlns=\"http://schema.pivotal.io/gemfire/cache\"\n" +
+            "       xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n" +
+            "    <region name=\"one\">\n" +
+            "        <region-attributes scope=\"distributed-ack\" data-policy=\"replicate\"/>\n" +
+            "    </region>\n" +
+            "</cache>";
+
+    CacheConfig cacheConfig = service2.unMarshall(xml);
+    assertThat(cacheConfig.getRegions()).hasSize(1);
+    assertThat(cacheConfig.getRegions().get(0).getName()).isEqualTo("one");
+  }
+
+  @Test
+  public void marshallNoNameSpace() {
+    String xml = "<cache version=\"1.0\">\n" +
+        "    <region name=\"one\">\n" +
+        "        <region-attributes scope=\"distributed-ack\" data-policy=\"replicate\"/>\n" +
+        "    </region>\n" +
+        "</cache>";
+
+    CacheConfig cacheConfig = service2.unMarshall(xml);
+    assertThat(cacheConfig.getRegions()).hasSize(1);
+    assertThat(cacheConfig.getRegions().get(0).getName()).isEqualTo("one");
+  }
+
+  private void setBasicValues(CacheConfig cache) {
+    GatewayReceiverConfig receiver = new GatewayReceiverConfig();
     receiver.setBindAddress("localhost");
     receiver.setEndPort("8080");
     receiver.setManualStart(false);
     receiver.setStartPort("6000");
-    cache.setGatewayReceiver(receiver);
-    cache.setVersion("1.0");
 
     RegionConfig region = new RegionConfig();
     region.setName("testRegion");
-    region.setRefid("REPLICATE");
+    region.setType(RegionType.REPLICATE);
+
+    cache.setCopyOnRead(true);
+    cache.setGatewayReceiver(receiver);
+    cache.setVersion("1.0");
     cache.getRegions().add(region);
   }
 
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"id", "value"})
   @XmlRootElement(name = "custom-one", namespace = "http://geode.apache.org/schema/CustomOne")
-  public static class ElementOne implements CacheElement {
+  public static class ElementOne extends CacheElement {
     @XmlElement(name = "id", namespace = "http://geode.apache.org/schema/CustomOne")
     private String id;
     @XmlElement(name = "value", namespace = "http://geode.apache.org/schema/CustomOne")
     private String value;
 
-    public ElementOne() {}
+    public ElementOne() {
+      // nothing
+    }
 
     public String getValue() {
       return value;
@@ -192,25 +271,28 @@ public class JAXBServiceTest {
       this.id = id;
     }
 
+    @Override
     public String getId() {
       return id;
     }
 
     public void setId(String value) {
-      this.id = value;
+      id = value;
     }
   }
 
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"id", "value"})
   @XmlRootElement(name = "custom-two", namespace = "http://geode.apache.org/schema/CustomTwo")
-  public static class ElementTwo implements CacheElement {
+  public static class ElementTwo extends CacheElement {
     @XmlElement(name = "id", namespace = "http://geode.apache.org/schema/CustomTwo")
     private String id;
     @XmlElement(name = "value", namespace = "http://geode.apache.org/schema/CustomTwo")
     private String value;
 
-    public ElementTwo() {}
+    public ElementTwo() {
+      // nothing
+    }
 
     public String getValue() {
       return value;
@@ -224,12 +306,13 @@ public class JAXBServiceTest {
       this.id = id;
     }
 
+    @Override
     public String getId() {
       return id;
     }
 
     public void setId(String value) {
-      this.id = value;
+      id = value;
     }
   }
 

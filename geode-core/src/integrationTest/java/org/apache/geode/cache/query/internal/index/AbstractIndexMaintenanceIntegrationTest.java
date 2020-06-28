@@ -15,6 +15,7 @@
 package org.apache.geode.cache.query.internal.index;
 
 import static junit.framework.TestCase.assertFalse;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.internal.Assert.assertTrue;
 
 import org.junit.After;
@@ -22,6 +23,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.Cache;
+import org.apache.geode.cache.EvictionAttributes;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.query.CacheUtils;
 import org.apache.geode.cache.query.IndexExistsException;
@@ -52,7 +54,7 @@ public abstract class AbstractIndexMaintenanceIntegrationTest {
         (LocalRegion) cache.createRegionFactory(RegionShortcut.REPLICATE).create("portfolios");
     QueryService qs = cache.getQueryService();
     AbstractIndex statusIndex =
-        createIndex(qs, "statusIndex", "value.status", "/portfolios.entrySet()");
+        createIndex(qs, "statusIndex", "value.status", SEPARATOR + "portfolios.entrySet()");
 
     statusIndex.setPdxStringFlag("StringKey");
     assertTrue(statusIndex.isIndexedPdxKeysFlagSet);
@@ -71,7 +73,7 @@ public abstract class AbstractIndexMaintenanceIntegrationTest {
         (LocalRegion) cache.createRegionFactory(RegionShortcut.REPLICATE).create("portfolios");
     QueryService qs = cache.getQueryService();
     AbstractIndex statusIndex =
-        createIndex(qs, "statusIndex", "value.status", "/portfolios.entrySet()");
+        createIndex(qs, "statusIndex", "value.status", SEPARATOR + "portfolios.entrySet()");
 
     statusIndex.setPdxStringFlag(new PdxString("PdxString Key"));
     assertTrue(statusIndex.isIndexedPdxKeysFlagSet);
@@ -90,7 +92,7 @@ public abstract class AbstractIndexMaintenanceIntegrationTest {
         .create("portfolios");
     QueryService qs = cache.getQueryService();
     AbstractIndex statusIndex =
-        createIndex(qs, "statusIndex", "value.status", "/portfolios.entrySet()");
+        createIndex(qs, "statusIndex", "value.status", SEPARATOR + "portfolios.entrySet()");
 
     statusIndex.setPdxStringFlag(new PdxString("PdxString Key"));
     assertTrue(statusIndex.isIndexedPdxKeysFlagSet);
@@ -106,7 +108,7 @@ public abstract class AbstractIndexMaintenanceIntegrationTest {
         (LocalRegion) cache.createRegionFactory(RegionShortcut.REPLICATE).create("portfolios");
     QueryService qs = cache.getQueryService();
     AbstractIndex statusIndex =
-        createIndex(qs, "statusIndex", "value.status", "/portfolios.entrySet()");
+        createIndex(qs, "statusIndex", "value.status", SEPARATOR + "portfolios.entrySet()");
 
     PortfolioPdx p = new PortfolioPdx(1);
     region.put("KEY-1", p);
@@ -115,6 +117,23 @@ public abstract class AbstractIndexMaintenanceIntegrationTest {
 
     statusIndex.removeIndexMapping(entry, IndexProtocol.OTHER_OP);
   }
+
+  @Test
+  public void indexKeysShouldBeStringIfRegionHasEvictionEnabled() throws Exception {
+    CacheUtils.startCache();
+    Cache cache = CacheUtils.getCache();
+    LocalRegion region =
+        (LocalRegion) cache.createRegionFactory(RegionShortcut.REPLICATE)
+            .setEvictionAttributes(EvictionAttributes.createLRUEntryAttributes())
+            .create("portfolios");
+    QueryService qs = cache.getQueryService();
+    AbstractIndex statusIndex =
+        createIndex(qs, "statusIndex", "value.status", SEPARATOR + "portfolios.entrySet()");
+
+    statusIndex.setPdxStringFlag(new PdxString("IndexKey"));
+    assertFalse(statusIndex.isIndexOnPdxKeys());
+  }
+
 
   protected abstract AbstractIndex createIndex(final QueryService qs, String name,
       String indexExpression, String regionPath)

@@ -16,6 +16,7 @@ package org.apache.geode.session.tests;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.function.IntSupplier;
 
 /**
  * Container install for a generic app server
@@ -32,7 +33,7 @@ import java.io.IOException;
  * specific code outside of the {@link GenericAppServerVersion}.
  */
 public class GenericAppServerInstall extends ContainerInstall {
-  private static final String JETTY_VERSION = "9.4.8.v20171121";
+  private static final String JETTY_VERSION = "9.4.21.v20190926";
 
   /**
    * Get the version number, download URL, and container name of a generic app server using
@@ -41,8 +42,7 @@ public class GenericAppServerInstall extends ContainerInstall {
    * Currently the only supported keyword instance is JETTY9.
    */
   public enum GenericAppServerVersion {
-    JETTY9(9, "http://central.maven.org/maven2/org/eclipse/jetty/jetty-distribution/"
-        + JETTY_VERSION + "/jetty-distribution-" + JETTY_VERSION + ".zip", "jetty");
+    JETTY9(9, "jetty-distribution-" + JETTY_VERSION + ".zip", "jetty");
 
     private final int version;
     private final String downloadURL;
@@ -69,28 +69,9 @@ public class GenericAppServerInstall extends ContainerInstall {
 
   private GenericAppServerVersion version;
 
-  public GenericAppServerInstall(GenericAppServerVersion version)
-      throws IOException, InterruptedException {
-    this(version, ConnectionType.PEER_TO_PEER, DEFAULT_INSTALL_DIR);
-  }
-
-  public GenericAppServerInstall(GenericAppServerVersion version, String installDir)
-      throws IOException, InterruptedException {
-    this(version, ConnectionType.PEER_TO_PEER, installDir);
-  }
-
-  public GenericAppServerInstall(GenericAppServerVersion version, ConnectionType cacheType)
-      throws IOException, InterruptedException {
-    this(version, cacheType, DEFAULT_INSTALL_DIR);
-  }
-
-  /**
-   * Download and setup container installation of a generic appserver using the
-   * {@link ContainerInstall} constructor and some hardcoded module values
-   */
-  public GenericAppServerInstall(GenericAppServerVersion version, ConnectionType connType,
-      String installDir) throws IOException, InterruptedException {
-    super(installDir, version.getDownloadURL(), connType, "appserver");
+  public GenericAppServerInstall(String name, GenericAppServerVersion version,
+      ConnectionType connType, IntSupplier portSupplier) throws IOException, InterruptedException {
+    super(name, version.getDownloadURL(), connType, "appserver", portSupplier);
 
     this.version = version;
   }
@@ -106,7 +87,8 @@ public class GenericAppServerInstall extends ContainerInstall {
   @Override
   public GenericAppServerContainer generateContainer(File containerConfigHome,
       String containerDescriptors) throws IOException {
-    return new GenericAppServerContainer(this, containerConfigHome, containerDescriptors);
+    return new GenericAppServerContainer(this, containerConfigHome, containerDescriptors,
+        portSupplier());
   }
 
   /**

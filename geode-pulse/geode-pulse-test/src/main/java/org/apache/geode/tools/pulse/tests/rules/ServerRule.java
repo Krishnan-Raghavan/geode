@@ -14,17 +14,20 @@
  */
 package org.apache.geode.tools.pulse.tests.rules;
 
+
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.rules.ExternalResource;
 
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.admin.SSLConfig;
-import org.apache.geode.management.internal.JettyHelper;
+import org.apache.geode.internal.cache.InternalHttpService;
 import org.apache.geode.tools.pulse.internal.data.PulseConstants;
 import org.apache.geode.tools.pulse.tests.Server;
 
@@ -32,7 +35,7 @@ public class ServerRule extends ExternalResource {
   private static final String LOCALHOST = "localhost";
   private static final String PULSE_CONTEXT = "/pulse/";
 
-  private org.eclipse.jetty.server.Server jetty;
+  private InternalHttpService jetty;
   private Server server;
   private String pulseURL;
   private String jsonAuthFile;
@@ -49,7 +52,6 @@ public class ServerRule extends ExternalResource {
   protected void before() throws Throwable {
     startServer();
     startJetty();
-    Awaitility.waitAtMost(60, TimeUnit.SECONDS).until(() -> jetty.isStarted());
   }
 
   @Override
@@ -72,17 +74,15 @@ public class ServerRule extends ExternalResource {
   }
 
   private void startJetty() throws Exception {
-
     System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_HOST, LOCALHOST);
     System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_EMBEDDED,
         String.valueOf(Boolean.TRUE));
 
     int httpPort = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    jetty = JettyHelper.initJetty(LOCALHOST, httpPort, new SSLConfig());
-    JettyHelper.addWebApplication(jetty, PULSE_CONTEXT, getPulseWarPath(), null, null);
+    jetty = new InternalHttpService();
+    jetty.createJettyServer(LOCALHOST, httpPort, new SSLConfig.Builder().build());
+    jetty.addWebApplication(PULSE_CONTEXT, getPulseWarPath(), new HashMap<>());
     pulseURL = "http://" + LOCALHOST + ":" + httpPort + PULSE_CONTEXT;
-    System.out.println("Pulse started at " + pulseURL);
-    jetty.start();
   }
 
   private void stopServer() throws Exception {
@@ -90,10 +90,10 @@ public class ServerRule extends ExternalResource {
   }
 
   private void stopJetty() throws Exception {
-    jetty.stop();
+    jetty.close();
   }
 
-  private String getPulseWarPath() throws IOException {
+  private Path getPulseWarPath() throws IOException {
     String warPath;
     ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
     InputStream inputStream = classLoader.getResourceAsStream("GemFireVersion.properties");
@@ -104,7 +104,7 @@ public class ServerRule extends ExternalResource {
     String propFilePath = classLoader.getResource("GemFireVersion.properties").getPath();
     warPath =
         propFilePath.substring(0, propFilePath.indexOf("generated-resources")) + "libs/" + warPath;
-    return warPath;
+    return Paths.get(warPath);
   }
 
 }

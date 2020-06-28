@@ -14,6 +14,9 @@
  */
 package org.apache.geode.security.generator;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
+
 import java.security.Principal;
 import java.util.HashSet;
 import java.util.Properties;
@@ -22,7 +25,6 @@ import java.util.Set;
 import org.apache.geode.cache.operations.OperationContext.OperationCode;
 import org.apache.geode.security.templates.UsernamePrincipal;
 import org.apache.geode.security.templates.XmlAuthorization;
-import org.apache.geode.util.test.TestUtil;
 
 public class XmlAuthzCredentialGenerator extends AuthzCredentialGenerator {
 
@@ -31,7 +33,8 @@ public class XmlAuthzCredentialGenerator extends AuthzCredentialGenerator {
   private static final String pkcsXml = "authz-pkcs.xml";
   private static final String sslXml = "authz-ssl.xml";
 
-  private static final String[] QUERY_REGIONS = {"/Portfolios", "/Positions", "/AuthRegion"};
+  private static final String[] QUERY_REGIONS =
+      {SEPARATOR + "Portfolios", SEPARATOR + "Positions", SEPARATOR + "AuthRegion"};
 
   public static OperationCode[] READER_OPS =
       {OperationCode.GET, OperationCode.REGISTER_INTEREST, OperationCode.UNREGISTER_INTEREST,
@@ -82,12 +85,14 @@ public class XmlAuthzCredentialGenerator extends AuthzCredentialGenerator {
 
     if (this.generator.classCode().isDummy()) {
       final String xmlFilename =
-          TestUtil.getResourcePath(XmlAuthzCredentialGenerator.class, dirName + dummyXml);
+          createTempFileFromResource(XmlAuthzCredentialGenerator.class, dirName + dummyXml)
+              .getAbsolutePath();
       sysProps.setProperty(XmlAuthorization.DOC_URI_PROP_NAME, xmlFilename);
 
     } else if (this.generator.classCode().isLDAP()) {
       final String xmlFilename =
-          TestUtil.getResourcePath(XmlAuthzCredentialGenerator.class, dirName + ldapXml);
+          createTempFileFromResource(XmlAuthzCredentialGenerator.class, dirName + ldapXml)
+              .getAbsolutePath();
       sysProps.setProperty(XmlAuthorization.DOC_URI_PROP_NAME, xmlFilename);
 
       // } else if (this.generator.classCode().isPKCS()) {

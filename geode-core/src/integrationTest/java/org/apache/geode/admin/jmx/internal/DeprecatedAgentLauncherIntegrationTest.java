@@ -14,6 +14,7 @@
  */
 package org.apache.geode.admin.jmx.internal;
 
+import static java.lang.System.lineSeparator;
 import static org.apache.geode.admin.jmx.AgentConfig.DEFAULT_PROPERTY_FILE;
 import static org.apache.geode.admin.jmx.internal.AgentConfigImpl.AGENT_PROPSFILE_PROPERTY_NAME;
 import static org.apache.geode.admin.jmx.internal.AgentLauncher.AGENT_PROPS;
@@ -23,12 +24,13 @@ import static org.apache.geode.admin.jmx.internal.AgentLauncher.RUNNING;
 import static org.apache.geode.admin.jmx.internal.AgentLauncher.SHUTDOWN;
 import static org.apache.geode.admin.jmx.internal.AgentLauncher.STARTING;
 import static org.apache.geode.admin.jmx.internal.AgentLauncher.VMARGS;
-import static org.apache.geode.internal.i18n.LocalizedStrings.AgentLauncher_0_IS_NOT_RUNNING_IN_SPECIFIED_WORKING_DIRECTORY_1;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.getTimeout;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assume.assumeFalse;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -45,6 +47,8 @@ import org.apache.geode.internal.lang.SystemUtils;
 import org.apache.geode.test.process.ProcessWrapper;
 
 public class DeprecatedAgentLauncherIntegrationTest {
+
+  private static final long TIMEOUT = getTimeout().toMillis();
 
   private String classpath;
 
@@ -183,8 +187,9 @@ public class DeprecatedAgentLauncherIntegrationTest {
     final Status status = launcher.getStatus();
 
     assertAgentLauncherStatus(status, "Agent", SHUTDOWN, 0);
-    assertThat(status.msg).isEqualTo(AgentLauncher_0_IS_NOT_RUNNING_IN_SPECIFIED_WORKING_DIRECTORY_1
-        .toLocalizedString("Agent", null));
+    assertThat(status.msg)
+        .isEqualTo(String.format("%s is not running in the specified working directory: (%s).",
+            "Agent", null));
     assertThat(status.exception).isNull();
   }
 
@@ -294,7 +299,11 @@ public class DeprecatedAgentLauncherIntegrationTest {
     if (processOutputPattern != null) {
       agentProcess.waitForOutputToMatch(processOutputPattern);
     }
-    agentProcess.waitFor();
+    assertThat(agentProcess.waitFor(TIMEOUT)).as("Expecting process started with:" + lineSeparator()
+        + " " + Arrays.asList(args) + lineSeparator() + "with output:" + lineSeparator() + " "
+        + agentProcess.getOutput(true) + lineSeparator() + "to terminate with exit code: 0"
+        + lineSeparator() + "but waitFor is still waiting after timeout: " + TIMEOUT + " seconds.")
+        .isEqualTo(0);
   }
 
 }

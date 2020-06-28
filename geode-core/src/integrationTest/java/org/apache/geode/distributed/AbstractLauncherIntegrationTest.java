@@ -17,7 +17,7 @@ package org.apache.geode.distributed;
 import static org.apache.geode.distributed.AbstractLauncher.loadGemFireProperties;
 import static org.apache.geode.distributed.ConfigurationProperties.GROUPS;
 import static org.apache.geode.distributed.ConfigurationProperties.NAME;
-import static org.apache.geode.distributed.internal.DistributionConfig.GEMFIRE_PREFIX;
+import static org.apache.geode.util.internal.GeodeGlossary.GEMFIRE_PREFIX;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
@@ -30,7 +30,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.rules.TestName;
 
-
 /**
  * Integration tests for {@link AbstractLauncher} that require file system I/O.
  */
@@ -40,10 +39,10 @@ public class AbstractLauncherIntegrationTest {
   private Properties expectedProperties;
 
   @Rule
-  public final TemporaryFolder temporaryFolder = new TemporaryFolder();
+  public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
   @Rule
-  public final TestName testName = new TestName();
+  public TestName testName = new TestName();
 
   @Before
   public void setUp() throws Exception {

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.rest.internal.web.controllers;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.HTTP_SERVICE_BIND_ADDRESS;
 import static org.apache.geode.distributed.ConfigurationProperties.HTTP_SERVICE_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.JMX_MANAGER;
@@ -51,27 +52,21 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
-import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientCacheFactory;
 import org.apache.geode.cache.client.ClientRegionFactory;
 import org.apache.geode.cache.client.ClientRegionShortcut;
-import org.apache.geode.cache.client.internal.LocatorTestBase;
 import org.apache.geode.cache.server.CacheServer;
-import org.apache.geode.cache.server.ServerLoadProbe;
-import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.internal.cache.xmlcache.RegionAttributesCreation;
 import org.apache.geode.pdx.PdxInstance;
-import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.categories.RestAPITest;
@@ -82,19 +77,23 @@ import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactor
  *
  * @since GemFire 8.0
  */
+@SuppressWarnings("deprecation")
 @Category({RestAPITest.class})
 @RunWith(Parameterized.class)
 @Parameterized.UseParametersRunnerFactory(CategoryWithParameterizedRunnerFactory.class)
-public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
+public class RestAPIsAndInterOpsDUnitTest
+    extends org.apache.geode.cache.client.internal.LocatorTestBase {
 
   private static final String PEOPLE_REGION_NAME = "People";
 
   private static final String findAllPeopleQuery =
-      "/queries?id=findAllPeople&q=SELECT%20*%20FROM%20/People";
+      "/queries?id=findAllPeople&q=SELECT%20*%20FROM%20" + SEPARATOR + "People";
   private static final String findPeopleByGenderQuery =
-      "/queries?id=filterByGender&q=SELECT%20*%20from%20/People%20where%20gender=$1";
+      "/queries?id=filterByGender&q=SELECT%20*%20from%20" + SEPARATOR
+          + "People%20where%20gender=$1";
   private static final String findPeopleByLastNameQuery =
-      "/queries?id=filterByLastName&q=SELECT%20*%20from%20/People%20where%20lastName=$1";
+      "/queries?id=filterByLastName&q=SELECT%20*%20from%20" + SEPARATOR
+          + "People%20where%20lastName=$1";
 
   private static final String[] PARAM_QUERY_IDS_ARRAY =
       {"findAllPeople", "filterByGender", "filterByLastName"};
@@ -149,52 +148,69 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
     return Arrays.asList("/geode", "/gemfire-api");
   }
 
-  private String startBridgeServerWithRestService(final String hostName, final String[] groups,
-      final String locators, final String[] regions, final ServerLoadProbe probe)
+  @SuppressWarnings("unchecked")
+  private CacheServer createRegionAndStartCacheServer(String[] regions, Cache cache)
       throws IOException {
-    final int serverPort = AvailablePortHelper.getRandomAvailableTCPPort();
+    RegionAttributesCreation regionAttributes = new RegionAttributesCreation();
+    regionAttributes.setEnableBridgeConflation(true);
+    regionAttributes.setDataPolicy(DataPolicy.REPLICATE);
 
-    // create Cache of given VM and start HTTP service with REST APIs service
-    startBridgeServer(hostName, serverPort, groups, locators, regions, probe);
+    for (String region : regions) {
+      cache.createRegionFactory(regionAttributes).create(region);
+    }
 
-    return "http://" + hostName + ":" + serverPort + this.urlContext + "/v1";
+    CacheServer server = cache.addCacheServer();
+    server.setPort(0);
+    server.setLoadProbe(CacheServer.DEFAULT_LOAD_PROBE);
+    server.start();
+
+    return server;
   }
 
-  private int startBridgeServer(String hostName, int restServicerPort, final String[] groups,
-      final String locators, final String[] regions, final ServerLoadProbe probe)
-      throws IOException {
+  private int startManager(final String locators, final String[] regions) throws IOException {
+    Properties props = new Properties();
+    props.setProperty(MCAST_PORT, String.valueOf(0));
+    props.setProperty(LOCATORS, locators);
 
+    props.setProperty(JMX_MANAGER, "true");
+    props.setProperty(JMX_MANAGER_START, "true");
+    props.setProperty(JMX_MANAGER_PORT, "0");
+
+    final int httpPort = AvailablePortHelper.getRandomAvailableTCPPort();
+    // Set REST service related configuration
+    props.setProperty(START_DEV_REST_API, "true");
+    props.setProperty(HTTP_SERVICE_BIND_ADDRESS, "localhost");
+    props.setProperty(HTTP_SERVICE_PORT, String.valueOf(httpPort));
+
+    Cache cache = new CacheFactory(props).create();
+    CacheServer server = createRegionAndStartCacheServer(regions, cache);
+
+    return server.getPort();
+  }
+
+  private String startBridgeServerWithRestService(final String hostName, final String locators,
+      final String[] regions) throws IOException {
+    final int serverPort = AvailablePortHelper.getRandomAvailableTCPPort();
+    // create Cache of given VM and start HTTP service with REST APIs service
     Properties props = new Properties();
     props.setProperty(MCAST_PORT, String.valueOf(0));
     props.setProperty(LOCATORS, locators);
     props.setProperty(START_DEV_REST_API, "true");
     props.setProperty(HTTP_SERVICE_BIND_ADDRESS, hostName);
-    props.setProperty(HTTP_SERVICE_PORT, String.valueOf(restServicerPort));
+    props.setProperty(HTTP_SERVICE_PORT, String.valueOf(serverPort));
 
-    DistributedSystem ds = getSystem(props);
-    InternalCache cache = (InternalCache) CacheFactory.create(ds);
-    cache.setReadSerializedForTest(true);
-    AttributesFactory factory = new AttributesFactory();
-
-    factory.setEnableBridgeConflation(true);
-    factory.setDataPolicy(DataPolicy.REPLICATE);
-    RegionAttributes attrs = factory.create();
-    for (int i = 0; i < regions.length; i++) {
-      cache.createRegion(regions[i], attrs);
-    }
-
-    CacheServer server = cache.addCacheServer();
-    server.setPort(0);
-    server.setGroups(groups);
-    server.setLoadProbe(probe);
-    server.start();
+    InternalCache cache =
+        (InternalCache) new CacheFactory(props).setPdxReadSerialized(true).create();
+    CacheServer server = createRegionAndStartCacheServer(regions, cache);
 
     remoteObjects.put(CACHE_KEY, cache);
-    return server.getPort();
+    server.getPort();
+
+    return "http://" + hostName + ":" + serverPort + urlContext + "/v1";
   }
 
   private void doPutsInClientCache() {
-    ClientCache cache = GemFireCacheImpl.getInstance();
+    ClientCache cache = ClientCacheFactory.getAnyInstance();
     assertThat(cache).isNotNull();
     Region<String, Object> region = cache.getRegion(PEOPLE_REGION_NAME);
 
@@ -230,7 +246,7 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
     final Person person11 = new Person(104L, "Murali", "Manohar", "Joshi",
         DateTimeUtils.createDate(1923, Calendar.APRIL, 25), Gender.MALE);
     final Person person12 = new Person(104L, "Lalkrishna", "Parmhansh", "Advani",
-        DateTimeUtils.createDate(1910, Calendar.JANUARY, 01), Gender.MALE);
+        DateTimeUtils.createDate(1910, Calendar.JANUARY, 1), Gender.MALE);
     final Person person13 = new Person(104L, "Shushma", "kumari", "Swaraj",
         DateTimeUtils.createDate(1943, Calendar.AUGUST, 10), Gender.FEMALE);
     final Person person14 = new Person(104L, "Arun", "raman", "jetly",
@@ -240,7 +256,7 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
     final Person person16 = new Person(104L, "Shila", "kumari", "Dixit",
         DateTimeUtils.createDate(1927, Calendar.FEBRUARY, 15), Gender.FEMALE);
 
-    Map<String, Object> userMap = new HashMap<String, Object>();
+    Map<String, Object> userMap = new HashMap<>();
     userMap.put("6", person6);
     userMap.put("7", person7);
     userMap.put("8", person8);
@@ -330,7 +346,7 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
   }
 
   private void verifyUpdatesInClientCache() {
-    ClientCache cache = GemFireCacheImpl.getInstance();
+    ClientCache cache = ClientCacheFactory.getAnyInstance();
     assertThat(cache).isNotNull();
     Region<String, Object> region = cache.getRegion(PEOPLE_REGION_NAME);
 
@@ -589,73 +605,19 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
   }
 
   private void createRegionInClientCache() {
-    ClientCache cache = GemFireCacheImpl.getInstance();
+    ClientCache cache = ClientCacheFactory.getAnyInstance();
     assertThat(cache).isNotNull();
     ClientRegionFactory<String, Object> crf =
         cache.createClientRegionFactory(ClientRegionShortcut.PROXY);
-    Region<String, Object> region = crf.create(PEOPLE_REGION_NAME);
+    crf.create(PEOPLE_REGION_NAME);
   }
 
   private void createRegion() {
-    Cache cache = GemFireCacheImpl.getInstance();
+    Cache cache = CacheFactory.getAnyInstance();
     assertThat(cache).isNotNull();
 
     RegionFactory<String, Object> rf = cache.createRegionFactory(RegionShortcut.REPLICATE);
-    Region<String, Object> region = rf.create(PEOPLE_REGION_NAME);
-  }
-
-  /**
-   * InterOps Test between REST-client, Peer Cache Client and Client Cache
-   */
-  @Test
-  public void testInterOpsWithReplicatedRegion() throws Exception {
-    final Host host = Host.getHost(0);
-    VM locator = host.getVM(0);
-    VM manager = host.getVM(1);
-    VM server = host.getVM(2);
-    VM client = host.getVM(3);
-
-    // start locator
-    final String hostName = NetworkUtils.getServerHostName();
-    int locatorPort = locator.invoke(() -> startLocator(hostName, ""));
-
-    // find locators
-    String locators = hostName + "[" + locatorPort + "]";
-
-    // start manager (peer cache)
-    manager.invoke(() -> startManager(/* groups */null, locators, new String[] {REGION_NAME},
-        CacheServer.DEFAULT_LOAD_PROBE));
-
-    // start startCacheServer With RestService enabled
-    final String serverHostName = server.getHost().getHostName();
-    String restEndpoint =
-        (String) server.invoke(() -> startBridgeServerWithRestService(serverHostName, null,
-            locators, new String[] {REGION_NAME}, CacheServer.DEFAULT_LOAD_PROBE));
-
-    // create a client cache
-    client.invoke(() -> createClientCache(hostName, locatorPort));
-
-    // create region in Manager, peer cache and Client cache nodes
-    manager.invoke(() -> createRegion());
-    server.invoke(() -> createRegion());
-    client.invoke(() -> createRegionInClientCache());
-
-    // do some person puts from clientcache
-    client.invoke(() -> doPutsInClientCache());
-
-    // TEST: fetch all available REST endpoints
-    fetchRestServerEndpoints(restEndpoint);
-
-    // Controller VM - config REST Client and make HTTP calls
-    doGetsUsingRestApis(restEndpoint);
-
-    // update Data using REST APIs
-    doUpdatesUsingRestApis(restEndpoint);
-
-    client.invoke(() -> verifyUpdatesInClientCache());
-
-    // Querying
-    doQueryOpsUsingRestApis(restEndpoint);
+    rf.create(PEOPLE_REGION_NAME);
   }
 
   private void createClientCache(final String host, final int port) {
@@ -666,38 +628,54 @@ public class RestAPIsAndInterOpsDUnitTest extends LocatorTestBase {
     clientCache.createClientRegionFactory(ClientRegionShortcut.PROXY).create(REGION_NAME);
   }
 
-  private int startManager(final String[] groups, final String locators, final String[] regions,
-      final ServerLoadProbe probe) throws IOException {
-    Properties props = new Properties();
-    props.setProperty(MCAST_PORT, String.valueOf(0));
-    props.setProperty(LOCATORS, locators);
+  /**
+   * InterOps Test between REST-client, Peer Cache Client and Client Cache
+   */
+  @Test
+  public void testInterOpsWithReplicatedRegion() throws Exception {
+    VM locator = VM.getVM(0);
+    VM manager = VM.getVM(1);
+    VM server = VM.getVM(2);
+    VM client = VM.getVM(3);
 
-    props.setProperty(JMX_MANAGER, "true");
-    props.setProperty(JMX_MANAGER_START, "true");
-    props.setProperty(JMX_MANAGER_PORT, "0");
+    // start locator
+    final String hostName = NetworkUtils.getServerHostName();
+    int locatorPort = locator.invoke(() -> startLocator(hostName, ""));
 
-    final int httpPort = AvailablePortHelper.getRandomAvailableTCPPort();
-    // Set REST service related configuration
-    props.setProperty(START_DEV_REST_API, "true");
-    props.setProperty(HTTP_SERVICE_BIND_ADDRESS, "localhost");
-    props.setProperty(HTTP_SERVICE_PORT, String.valueOf(httpPort));
+    // find locators
+    String locators = hostName + "[" + locatorPort + "]";
 
-    DistributedSystem ds = getSystem(props);
-    Cache cache = CacheFactory.create(ds);
-    AttributesFactory factory = new AttributesFactory();
+    // start manager (peer cache)
+    manager.invoke(() -> startManager(locators, new String[] {REGION_NAME}));
 
-    factory.setEnableBridgeConflation(true);
-    factory.setDataPolicy(DataPolicy.REPLICATE);
-    RegionAttributes attrs = factory.create();
-    for (int i = 0; i < regions.length; i++) {
-      cache.createRegion(regions[i], attrs);
-    }
-    CacheServer server = cache.addCacheServer();
-    server.setPort(0);
-    server.setGroups(groups);
-    server.setLoadProbe(probe);
-    server.start();
+    // start startCacheServer With RestService enabled
+    final String serverHostName = server.getHost().getHostName();
+    String restEndpoint = server.invoke(() -> startBridgeServerWithRestService(serverHostName,
+        locators, new String[] {REGION_NAME}));
 
-    return server.getPort();
+    // create a client cache
+    client.invoke(() -> createClientCache(hostName, locatorPort));
+
+    // create region in Manager, peer cache and Client cache nodes
+    manager.invoke(this::createRegion);
+    server.invoke(this::createRegion);
+    client.invoke(this::createRegionInClientCache);
+
+    // do some person puts from clientcache
+    client.invoke(this::doPutsInClientCache);
+
+    // TEST: fetch all available REST endpoints
+    fetchRestServerEndpoints(restEndpoint);
+
+    // Controller VM - config REST Client and make HTTP calls
+    doGetsUsingRestApis(restEndpoint);
+
+    // update Data using REST APIs
+    doUpdatesUsingRestApis(restEndpoint);
+
+    client.invoke(this::verifyUpdatesInClientCache);
+
+    // Querying
+    doQueryOpsUsingRestApis(restEndpoint);
   }
 }

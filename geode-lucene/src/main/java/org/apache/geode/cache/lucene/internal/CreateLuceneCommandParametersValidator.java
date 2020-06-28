@@ -14,18 +14,19 @@
  */
 package org.apache.geode.cache.lucene.internal;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 public class CreateLuceneCommandParametersValidator {
   public static void validateRegionName(String name) {
     validateNameNotEmptyOrNull(name);
     String msg =
         "Region names may only be alphanumeric, must not begin with double-underscores, but can contain hyphens, underscores, or forward slashes: ";
-    Matcher matcher = Pattern.compile("[aA-zZ0-9-_./]+").matcher(name);
-    if (name.startsWith("__") || name.startsWith("/__") || !matcher.matches()) {
+    Matcher matcher = Pattern.compile("[aA-zZ0-9-_." + SEPARATOR + "]+").matcher(name);
+    if (name.startsWith("__") || name.startsWith(SEPARATOR + "__") || !matcher.matches()) {
       throw new IllegalArgumentException(msg + name);
     }
   }
@@ -43,11 +44,11 @@ public class CreateLuceneCommandParametersValidator {
   private static void validateNameNotEmptyOrNull(String nameProvided) {
     if (nameProvided == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.LocalRegion_NAME_CANNOT_BE_NULL.toLocalizedString());
+          "name cannot be null");
     }
     if (nameProvided.isEmpty()) {
       throw new IllegalArgumentException(
-          LocalizedStrings.LocalRegion_NAME_CANNOT_BE_EMPTY.toLocalizedString());
+          "name cannot be empty");
     }
   }
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -48,12 +47,11 @@ fi
 SANITIZED_GRADLE_TASK=${GRADLE_TASK##*:}
 TMPDIR=${DEST_DIR}/tmp
 GEODE_BUILD=${DEST_DIR}/geode
-GEODE_BUILD_VERSION_NUMBER=$(grep "versionNumber *=" ${GEODE_BUILD}/gradle.properties | awk -F "=" '{print $2}' | tr -d ' ')
 BUILD_TIMESTAMP=$(date +%s)
 
-GEODE_PULL_REQUEST_ID_FILE=${GEODE_BUILD}/.git/id
+GEODE_PULL_REQUEST_ID_FILE=${BUILDROOT}/geode/.git/resource/version.json
 if [ -e "${GEODE_PULL_REQUEST_ID_FILE}" ]; then
-  GEODE_PULL_REQUEST_ID=$(cat ${GEODE_PULL_REQUEST_ID_FILE})
+  GEODE_PULL_REQUEST_ID=$(cat ${GEODE_PULL_REQUEST_ID_FILE} | jq --raw-output '.["pr"]')
 fi
 
 
@@ -68,20 +66,15 @@ if [ -z ${MAINTENANCE_VERSION+x} ]; then
   exit 1
 fi
 
-if [ -z "${GEODE_PULL_REQUEST_ID}" ]; then
-  CONCOURSE_VERSION=$(cat ${GEODE_BUILD_VERSION_FILE})
-  CONCOURSE_PRODUCT_VERSION=${CONCOURSE_VERSION%%-*}
-  GEODE_PRODUCT_VERSION=${GEODE_BUILD_VERSION_NUMBER}
-  CONCOURSE_BUILD_SLUG=${CONCOURSE_VERSION##*-}
-  BUILD_ID=${CONCOURSE_VERSION##*.}
-  FULL_PRODUCT_VERSION=${GEODE_PRODUCT_VERSION}-${CONCOURSE_BUILD_SLUG}
-
-  echo "Concourse VERSION is ${CONCOURSE_VERSION}"
-  echo "Geode product VERSION is ${GEODE_PRODUCT_VERSION}"
-  echo "Build ID is ${BUILD_ID}"
-else
+if [ -e "${GEODE_PULL_REQUEST_ID_FILE}" ]; then
   FULL_PRODUCT_VERSION="geode-pr-${GEODE_PULL_REQUEST_ID}"
+else
+  CONCOURSE_VERSION=$(cat ${GEODE_BUILD_VERSION_FILE})
+  echo "Concourse VERSION is ${CONCOURSE_VERSION}"
+  # Rebuild version, zero-padded
+  FULL_PRODUCT_VERSION=$(get-full-version ${CONCOURSE_VERSION})
 fi
+
 
 directories_file=${DEST_DIR}/artifact_directories
 mkdir -p ${TMPDIR}
@@ -100,7 +93,13 @@ pushd ${GEODE_BUILD}
   tar zcf ${DEST_DIR}/${FILENAME} -T ${directories_file}
 popd
 
-ARTIFACTS_DESTINATION="${PUBLIC_BUCKET}/builds/${FULL_PRODUCT_VERSION}"
+if [[ "${ARTIFACT_BUCKET}" =~ \. ]]; then
+  ARTIFACT_SCHEME="http"
+else
+  ARTIFACT_SCHEME="gs"
+fi
+
+ARTIFACTS_DESTINATION="${ARTIFACT_BUCKET}/builds/${BUILD_PIPELINE_NAME}/${FULL_PRODUCT_VERSION}"
 TEST_RESULTS_DESTINATION="${ARTIFACTS_DESTINATION}/test-results/${SANITIZED_GRADLE_TASK}/${BUILD_TIMESTAMP}/"
 TEST_ARTIFACTS_DESTINATION="${ARTIFACTS_DESTINATION}/test-artifacts/${BUILD_TIMESTAMP}/"
 
@@ -124,23 +123,34 @@ pushd ${GEODE_BUILD}/build/reports/combined
   gsutil -q -m cp -r * gs://${TEST_RESULTS_DESTINATION}
 popd
 
+API_CHECK_REPORT=$(ls ${GEODE_BUILD}/geode-assembly/build/reports/rich-report-japi*.html)
+if [ -n "${API_CHECK_REPORT}" ]; then
+  gsutil -q cp ${API_CHECK_REPORT} gs://${TEST_RESULTS_DESTINATION}api_check_report.html
+fi
+
 gsutil cp ${DEST_DIR}/${FILENAME} gs://${TEST_ARTIFACTS_DESTINATION}
 
 set +x
 
 
 echo ""
-printf "\033[92m=-=-=-=-=-=-=-=-=-=-=-=-=-=  Test Results Website =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\033[0m\n"
-printf "\033[92mhttp://${TEST_RESULTS_DESTINATION}\033[0m\n"
+printf "\033[92m=-=-=-=-=-=-=-=-=-=-=-=-=-=-=  Test Results URI =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\033[0m\n"
+printf "\033[92m${ARTIFACT_SCHEME}://${TEST_RESULTS_DESTINATION}\033[0m\n"
 printf "\033[92m=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\033[0m\n"
 printf "\n"
 
+if [ -n "${API_CHECK_REPORT}" ]; then
+  printf "\033[92m=-=-=-=-=-=-=-=-=-=-=-=-=-=  API Check Results URI -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\033[0m\n"
+  printf "\033[92m${ARTIFACT_SCHEME}://${TEST_RESULTS_DESTINATION}api_check_report.html\033[0m\n"
+  printf "\033[92m=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\033[0m\n"
+fi
+
 printf "\033[92mTest report artifacts from this job are available at:\033[0m\n"
 printf "\n"
-printf "\033[92mhttp://${TEST_ARTIFACTS_DESTINATION}${FILENAME}\033[0m\n"
+printf "\033[92m${ARTIFACT_SCHEME}://${TEST_ARTIFACTS_DESTINATION}${FILENAME}\033[0m\n"
 
 if [ -n "${TAR_GEODE_BUILD_ARTIFACTS}" ] ; then
   printf "\033[92mBuild artifacts from this job are available at:\033[0m\n"
   printf "\n"
-  printf "\033[92mhttp://${BUILD_ARTIFACTS_DESTINATION}\033[0m\n"
+  printf "\033[92m${ARTIFACT_SCHEME}://${BUILD_ARTIFACTS_DESTINATION}\033[0m\n"
 fi

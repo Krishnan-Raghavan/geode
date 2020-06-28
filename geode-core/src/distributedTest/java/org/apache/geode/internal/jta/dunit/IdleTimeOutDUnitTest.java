@@ -15,6 +15,7 @@
 package org.apache.geode.internal.jta.dunit;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
@@ -39,8 +40,8 @@ import org.junit.Test;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.jta.CacheUtils;
+import org.apache.geode.logging.internal.OSProcess;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -48,8 +49,6 @@ import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.util.test.TestUtil;
-
 
 public class IdleTimeOutDUnitTest extends JUnit4DistributedTestCase {
 
@@ -79,6 +78,7 @@ public class IdleTimeOutDUnitTest extends JUnit4DistributedTestCase {
   }
 
   private static String modifyFile(String str) throws IOException {
+    System.out.println("DEBUG input=" + str);
     String search = "<jndi-binding type=\"XAPooledDataSource\"";
     String last_search = "</jndi-binding>";
     String newDB = "newDB_" + OSProcess.getId();
@@ -131,7 +131,9 @@ public class IdleTimeOutDUnitTest extends JUnit4DistributedTestCase {
     path = File.createTempFile("dunit-cachejta_", ".xml").getAbsolutePath();
     LogWriterUtils.getLogWriter().fine("PATH " + path);
     /** * Return file as string and then modify the string accordingly ** */
-    String file_as_str = readFile(TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml"));
+    String file_as_str = readFile(
+        createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+            .getAbsolutePath());
     file_as_str = file_as_str.replaceAll("newDB", "newDB_" + pid);
     String modified_file_str = modifyFile(file_as_str);
     FileOutputStream fos = new FileOutputStream(path);

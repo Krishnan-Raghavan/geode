@@ -14,8 +14,6 @@
  */
 package org.apache.geode.internal.cache.wan;
 
-import static org.apache.geode.management.internal.cli.functions.GatewayReceiverCreateFunction.A_GATEWAY_RECEIVER_ALREADY_EXISTS_ON_THIS_MEMBER;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +27,6 @@ import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.xmlcache.CacheCreation;
 import org.apache.geode.internal.cache.xmlcache.GatewayReceiverCreation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * @since GemFire 7.0
@@ -130,9 +127,9 @@ public class GatewayReceiverFactoryImpl implements GatewayReceiverFactory {
 
     GatewayReceiver recv = null;
     if (this.cache instanceof GemFireCacheImpl) {
-      recv = new GatewayReceiverImpl(this.cache, this.startPort, this.endPort, this.timeBetPings,
-          this.socketBuffSize, this.bindAdd, this.filters, this.hostnameForSenders,
-          this.manualStart);
+      recv = new GatewayReceiverImpl(cache, this.startPort, this.endPort,
+          this.timeBetPings, this.socketBuffSize, this.bindAdd, this.filters,
+          this.hostnameForSenders, this.manualStart);
       this.cache.addGatewayReceiver(recv);
       InternalDistributedSystem system =
           (InternalDistributedSystem) this.cache.getDistributedSystem();
@@ -142,8 +139,7 @@ public class GatewayReceiverFactoryImpl implements GatewayReceiverFactory {
           recv.start();
         } catch (IOException ioe) {
           throw new GatewayReceiverException(
-              LocalizedStrings.GatewayReceiver_EXCEPTION_WHILE_STARTING_GATEWAY_RECEIVER
-                  .toLocalizedString(),
+              "Exception occurred while starting gateway receiver",
               ioe);
         }
       }

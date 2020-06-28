@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertFalse;
@@ -48,7 +49,6 @@ import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.compression.Compressor;
 import org.apache.geode.compression.SnappyCompressor;
-import org.apache.geode.i18n.LogWriterI18n;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.pdx.PdxReader;
 import org.apache.geode.pdx.PdxSerializable;
@@ -61,14 +61,14 @@ import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 
 public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
 
-  /** The port on which the bridge server was started in this VM */
+  /** The port on which the cache server was started in this VM */
   private static int bridgeServerPort;
   protected static final Compressor compressor = SnappyCompressor.getDefaultInstance();
   protected final String rootRegionName = "root";
   protected final String regionName = "PdxTest";
   protected final String regionName2 = "PdxTest2";
-  protected final String regName = "/" + rootRegionName + "/" + regionName;
-  protected final String regName2 = "/" + rootRegionName + "/" + regionName2;
+  protected final String regName = SEPARATOR + rootRegionName + SEPARATOR + regionName;
+  protected final String regName2 = SEPARATOR + rootRegionName + SEPARATOR + regionName2;
   protected final String[] queryString = new String[] {"SELECT DISTINCT id FROM " + regName, // 0
       "SELECT * FROM " + regName, // 1
       "SELECT ticker FROM " + regName, // 2
@@ -93,7 +93,8 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
     final Host host = Host.getHost(0);
     for (int i = 0; i < 4; i++) {
       VM vm = host.getVM(i);
-      vm.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+      vm.invoke(new CacheSerializableRunnable("Create cache server") {
+        @Override
         public void run2() throws CacheException {
           TestObject.numInstance = 0;
           PortfolioPdx.numInstance = 0;
@@ -122,6 +123,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
   public void createPool(VM vm, final String poolName, final String[] servers, final int[] ports,
       final boolean subscriptionEnabled, final int redundancy) {
     vm.invoke(new CacheSerializableRunnable("createPool :" + poolName) {
+      @Override
       public void run2() throws CacheException {
         // Create Cache.
         Properties props = new Properties();
@@ -144,6 +146,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
 
   public void executeClientQueries(VM vm, final String poolName, final String queryStr) {
     vm.invoke(new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         SelectResults results = null;
         Comparator comparator = null;
@@ -187,7 +190,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
   public void printResults(SelectResults results, String message) {
     Object r;
     Struct s;
-    LogWriterI18n logger = GemFireCacheImpl.getInstance().getLoggerI18n();
+    LogWriter logger = GemFireCacheImpl.getInstance().getLogger();
     logger.fine(message);
     int row = 0;
     for (Iterator iter = results.iterator(); iter.hasNext();) {
@@ -271,7 +274,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    */
   protected void startBridgeServer(int port, boolean notifyBySubscription) throws IOException {
@@ -285,7 +288,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    */
   protected void stopBridgeServer(Cache cache) {
     CacheServer bridge = (CacheServer) cache.getCacheServers().iterator().next();
@@ -295,6 +298,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
 
   public void closeClient(VM client) {
     SerializableRunnable closeCache = new CacheSerializableRunnable("Close Client") {
+      @Override
       public void run2() throws CacheException {
         org.apache.geode.test.dunit.LogWriterUtils.getLogWriter().info("### Close Client. ###");
         try {
@@ -327,10 +331,12 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
       return this._id;
     }
 
+    @Override
     public void toData(PdxWriter out) {
       out.writeInt("id", this._id);
     }
 
+    @Override
     public void fromData(PdxReader in) {
       this._id = in.readInt("id");
     }
@@ -339,7 +345,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
     public boolean equals(Object o) {
       org.apache.geode.test.dunit.LogWriterUtils.getLogWriter()
           .info("In TestObject2.equals() this: " + this + " other :" + o);
-      GemFireCacheImpl.getInstance().getLoggerI18n()
+      GemFireCacheImpl.getInstance().getLogger()
           .fine("In TestObject2.equals() this: " + this + " other :" + o);
       TestObject2 other = (TestObject2) o;
       if (_id == other._id) {
@@ -352,7 +358,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
 
     @Override
     public int hashCode() {
-      GemFireCacheImpl.getInstance().getLoggerI18n()
+      GemFireCacheImpl.getInstance().getLogger()
           .fine("In TestObject2.hashCode() : " + this._id);
       return this._id;
     }
@@ -376,7 +382,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
         log.info("TestObject ctor stack trace", new Exception());
       }
       numInstance++;
-      // GemFireCacheImpl.getInstance().getLoggerI18n().fine(new Exception("DEBUG"));
+      // GemFireCacheImpl.getInstance().getLogger().fine(new Exception("DEBUG"));
     }
 
     public TestObject(int id, String ticker) {
@@ -389,7 +395,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
       this.important = id;
       this.selection = id;
       this.select = id;
-      // GemFireCacheImpl.getInstance().getLoggerI18n().fine(new Exception("DEBUG"));
+      // GemFireCacheImpl.getInstance().getLogger().fine(new Exception("DEBUG"));
       numInstance++;
       idTickers.put(id + "", ticker);
       this.test = new TestObject2(id);
@@ -422,6 +428,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
       return (id % 2 == 0) ? "active" : "inactive";
     }
 
+    @Override
     public void toData(PdxWriter out) {
       // System.out.println("Is serializing in WAN: " + GatewayEventImpl.isSerializingValue());
       out.writeInt("id", this.id);
@@ -432,6 +439,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
       out.writeObject("test", this.test);
     }
 
+    @Override
     public void fromData(PdxReader in) {
       // System.out.println("Is deserializing in WAN: " + GatewayEventImpl.isDeserializingValue());
       this.id = in.readInt("id");
@@ -452,7 +460,7 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
     @Override
     public boolean equals(Object o) {
       // getLogWriter().info("In TestObject.equals() this: " + this + " other :" + o);
-      // GemFireCacheImpl.getInstance().getLoggerI18n().fine("In TestObject.equals() this: " + this
+      // GemFireCacheImpl.getInstance().getLogger().fine("In TestObject.equals() this: " + this
       // + " other :" + o);
       TestObject other = (TestObject) o;
       if ((id == other.id) && (_ticker.equals(other._ticker))) {
@@ -465,14 +473,14 @@ public abstract class PdxQueryCQTestBase extends JUnit4CacheTestCase {
 
     @Override
     public int hashCode() {
-      GemFireCacheImpl.getInstance().getLoggerI18n().fine("In TestObject.hashCode() : " + this.id);
+      GemFireCacheImpl.getInstance().getLogger().fine("In TestObject.hashCode() : " + this.id);
       return this.id;
     }
 
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    */
   protected void startCacheServer(int port, boolean notifyBySubscription) throws IOException {

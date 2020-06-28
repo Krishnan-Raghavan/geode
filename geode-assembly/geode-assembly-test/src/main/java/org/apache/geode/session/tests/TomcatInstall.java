@@ -20,7 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.function.IntSupplier;
 import java.util.regex.Pattern;
+
 
 /**
  * Tomcat specific container installation class
@@ -31,9 +33,6 @@ import java.util.regex.Pattern;
  * the geode docs</a>.
  */
 public class TomcatInstall extends ContainerInstall {
-
-  public static final String GEODE_BUILD_HOME_LIB = GEODE_BUILD_HOME + "/lib/";
-
   /**
    * Version of tomcat that this class will install
    *
@@ -41,20 +40,13 @@ public class TomcatInstall extends ContainerInstall {
    * version, and other properties or XML attributes needed to setup tomcat containers within Cargo
    */
   public enum TomcatVersion {
-    TOMCAT6(6,
-        "http://archive.apache.org/dist/tomcat/tomcat-6/v6.0.37/bin/apache-tomcat-6.0.37.zip"),
-    TOMCAT7(7,
-        "http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.73/bin/apache-tomcat-7.0.73.zip"),
-    TOMCAT755(7,
-        "http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.55/bin/apache-tomcat-7.0.55.zip"),
-    TOMCAT779(7,
-        "http://archive.apache.org/dist/tomcat/tomcat-7/v7.0.79/bin/apache-tomcat-7.0.79.zip"),
-    TOMCAT8(8,
-        "http://archive.apache.org/dist/tomcat/tomcat-8/v8.5.15/bin/apache-tomcat-8.5.15.zip"),
-    TOMCAT9(9,
-        "http://archive.apache.org/dist/tomcat/tomcat-9/v9.0.0.M21/bin/apache-tomcat-9.0.0.M21.zip");
+    TOMCAT6(6, "tomcat-6.0.37.zip"),
+    TOMCAT7(7, "tomcat-7.0.99.zip"),
+    TOMCAT8(8, "tomcat-8.5.50.zip"),
+    TOMCAT9(9, "tomcat-9.0.33.zip");
 
     private final int version;
+
     private final String downloadURL;
 
     TomcatVersion(int version, String downloadURL) {
@@ -64,22 +56,9 @@ public class TomcatInstall extends ContainerInstall {
 
     /**
      * Converts the version to an integer
-     *
-     * This differs from {@link #getVersion()} in that this does not always return the version
-     * number. For Tomcat 9, there is no DeltaSession manager, so it must use the session manager
-     * from Tomcat 8. Thus, this function returns 8 when asked for the Tomcat 9 version number.
      */
     public int toInteger() {
-      switch (this) {
-        case TOMCAT6:
-        case TOMCAT7:
-        case TOMCAT8:
-          return getVersion();
-        case TOMCAT9:
-          return 8;
-        default:
-          return getVersion();
-      }
+      return getVersion();
     }
 
     public int getVersion() {
@@ -99,8 +78,6 @@ public class TomcatInstall extends ContainerInstall {
         case TOMCAT6:
           return null;
         case TOMCAT7:
-        case TOMCAT755:
-        case TOMCAT779:
           return "tomcat.util.scan.DefaultJarScanner.jarsToSkip";
         case TOMCAT8:
         case TOMCAT9:
@@ -111,20 +88,26 @@ public class TomcatInstall extends ContainerInstall {
     }
   }
 
+  /**
+   * If you update this list method to return different dependencies, please also update the Tomcat
+   * module documentation! The documentation can be found here:
+   * geode-docs/tools_modules/http_session_mgmt/tomcat_installing_the_module.html.md.erb
+   */
   private static final String[] tomcatRequiredJars =
-      {"antlr", "commons-lang", "fastutil", "geode-core", "javax.transaction-api", "jgroups",
-          "log4j-api", "log4j-core", "log4j-jul", "shiro-core", "commons-validator"};
+      {"antlr", "commons-io", "commons-lang", "commons-validator", "fastutil", "geode-common",
+          "geode-core", "geode-log4j", "geode-logging", "geode-membership", "geode-management",
+          "geode-serialization",
+          "geode-tcp-server", "javax.transaction-api", "jgroups", "log4j-api", "log4j-core",
+          "log4j-jul", "micrometer", "shiro-core", "jetty-server", "jetty-util", "jetty-http",
+          "jetty-io"};
 
   private final TomcatVersion version;
 
-  public TomcatInstall(TomcatVersion version, String installDir) throws Exception {
-    this(version, ConnectionType.PEER_TO_PEER, installDir, DEFAULT_MODULE_LOCATION,
-        GEODE_BUILD_HOME_LIB);
-  }
-
-  public TomcatInstall(TomcatVersion version, ConnectionType connType, String installDir)
+  public TomcatInstall(String name, TomcatVersion version, ConnectionType connectionType,
+      IntSupplier portSupplier)
       throws Exception {
-    this(version, connType, installDir, DEFAULT_MODULE_LOCATION, GEODE_BUILD_HOME_LIB);
+    this(name, version, connectionType, DEFAULT_MODULE_LOCATION, GEODE_BUILD_HOME_LIB,
+        portSupplier);
   }
 
   /**
@@ -136,10 +119,11 @@ public class TomcatInstall extends ContainerInstall {
    * files within the installation's 'conf' folder, and {@link #updateProperties()} to set the jar
    * skipping properties needed to speedup container startup.
    */
-  public TomcatInstall(TomcatVersion version, ConnectionType connType, String installDir,
-      String modulesJarLocation, String extraJarsPath) throws Exception {
+  public TomcatInstall(String name, TomcatVersion version, ConnectionType connType,
+      String modulesJarLocation, String extraJarsPath, IntSupplier portSupplier)
+      throws Exception {
     // Does download and install from URL
-    super(installDir, version.getDownloadURL(), connType, "tomcat", modulesJarLocation);
+    super(name, version.getDownloadURL(), connType, "tomcat", modulesJarLocation, portSupplier);
 
     this.version = version;
     modulesJarLocation = getModulePath() + "/lib/";
@@ -177,8 +161,8 @@ public class TomcatInstall extends ContainerInstall {
   /**
    * Get the server life cycle class that should be used
    *
-   * Generates the class based on whether the installation's connection type
-   * {@link ContainerInstall#connType} is client server or peer to peer.
+   * Generates the class based on whether the installation's connection type {@link
+   * ContainerInstall#connType} is client server or peer to peer.
    */
   public String getServerLifeCycleListenerClass() {
     String className = "org.apache.geode.modules.session.catalina.";
@@ -187,6 +171,7 @@ public class TomcatInstall extends ContainerInstall {
         className += "PeerToPeer";
         break;
       case CLIENT_SERVER:
+      case CACHING_CLIENT_SERVER:
         className += "ClientServer";
         break;
       default:
@@ -235,7 +220,7 @@ public class TomcatInstall extends ContainerInstall {
   @Override
   public TomcatContainer generateContainer(File containerConfigHome, String containerDescriptors)
       throws IOException {
-    return new TomcatContainer(this, containerConfigHome, containerDescriptors);
+    return new TomcatContainer(this, containerConfigHome, containerDescriptors, portSupplier());
   }
 
   /**
@@ -272,8 +257,9 @@ public class TomcatInstall extends ContainerInstall {
     // List of required jars and form version regexps from them
     String versionRegex = "-?[0-9]*.*\\.jar";
     ArrayList<Pattern> patterns = new ArrayList<>(tomcatRequiredJars.length);
-    for (String jar : tomcatRequiredJars)
+    for (String jar : tomcatRequiredJars) {
       patterns.add(Pattern.compile(jar + versionRegex));
+    }
 
     // Don't need to copy any jars already in the tomcat install
     File tomcatLib = new File(tomcatLibPath);
@@ -321,8 +307,9 @@ public class TomcatInstall extends ContainerInstall {
   private void updateProperties() throws Exception {
     String jarsToSkip = "";
     // Adds all the required jars as jars to skip when starting Tomcat
-    for (String jarName : tomcatRequiredJars)
+    for (String jarName : tomcatRequiredJars) {
       jarsToSkip += "," + jarName + "*.jar";
+    }
 
     // Add the jars to skip to the catalina property file
     editPropertyFile(getHome() + "/conf/catalina.properties", version.jarSkipPropertyName(),

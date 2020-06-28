@@ -14,12 +14,10 @@
  */
 package org.apache.geode.internal.cache.rollingupgrade;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.distributed.internal.InternalLocator;
@@ -28,7 +26,7 @@ import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.version.VersionManager;
 
 public class RollingUpgradeHARegionNameOnDifferentServerVersions
     extends RollingUpgrade2DUnitTestBase {
@@ -45,7 +43,7 @@ public class RollingUpgradeHARegionNameOnDifferentServerVersions
     int[] locatorPorts = new int[] {ports[0]};
     int[] csPorts = new int[] {ports[1], ports[2]};
 
-    DistributedTestUtils.deleteLocatorStateFile(locatorPorts);
+    locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPorts));
 
     String hostName = NetworkUtils.getServerHostName();
     String[] hostNames = new String[] {hostName};
@@ -57,7 +55,7 @@ public class RollingUpgradeHARegionNameOnDifferentServerVersions
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       locator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));

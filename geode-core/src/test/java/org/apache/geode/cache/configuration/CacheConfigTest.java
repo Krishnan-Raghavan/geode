@@ -17,6 +17,7 @@
 
 package org.apache.geode.cache.configuration;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.After;
@@ -24,6 +25,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.geode.internal.config.JAXBService;
+import org.apache.geode.management.configuration.RegionType;
 
 
 public class CacheConfigTest {
@@ -48,7 +50,7 @@ public class CacheConfigTest {
     service.validateWithLocalCacheXSD();
     regionConfig = new RegionConfig();
     regionConfig.setName("regionA");
-    regionConfig.setRefid("REPLICATE");
+    regionConfig.setType(RegionType.REPLICATE);
     regionXml = "<region name=\"regionA\" refid=\"REPLICATE\">";
 
     classNameTypeXml = "<class-name>my.className</class-name>";
@@ -81,7 +83,7 @@ public class CacheConfigTest {
     assertThat(index.isKeyIndex()).isTrue();
     assertThat(index.getName()).isEqualTo("indexName");
     assertThat(index.getExpression()).isEqualTo("expression");
-    assertThat(index.getType()).isEqualTo("range");
+    assertThat(index.getType()).isEqualTo("key");
   }
 
 
@@ -163,7 +165,88 @@ public class CacheConfigTest {
     assertThat(regionAttributes.getCompressor().toString()).isEqualTo("my.className");
     assertThat(regionAttributes.getCacheLoader()).isEqualTo(declarableWithString);
     assertThat(regionAttributes.getCacheWriter()).isEqualTo(declarableWithString);
-    assertThat(regionAttributes.getRegionTimeToLive().getExpirationAttributes().getCustomExpiry())
+    assertThat(regionAttributes.getRegionTimeToLive().getCustomExpiry())
         .isEqualTo(declarableWithString);
+  }
+
+  @Test
+  public void regionConfig() {
+    cacheConfig = new CacheConfig("1.0");
+    RegionConfig regionConfig = new RegionConfig();
+    regionConfig.setName("test");
+    regionConfig.setType(RegionType.REPLICATE);
+    RegionAttributesType attributes = new RegionAttributesType();
+    attributes.setCacheLoader(new DeclarableType("abc.Foo"));
+    regionConfig.setRegionAttributes(attributes);
+    cacheConfig.getRegions().add(regionConfig);
+
+    // make sure the xml marshed by this config can be validated with xsd
+    String xml = service.marshall(cacheConfig);
+
+    CacheConfig newCache = service.unMarshall(xml);
+    assertThat(cacheConfig).isEqualToComparingFieldByFieldRecursively(newCache);
+  }
+
+  @Test
+  public void regionAttributeType() throws Exception {
+    String xml = "<region name=\"test\">\n"
+        + "        <region-attributes>\n"
+        + "            <region-time-to-live>\n"
+        + "                <expiration-attributes action=\"invalidate\" timeout=\"20\">\n"
+        + "                    <custom-expiry>\n"
+        + "                        <class-name>bar</class-name>\n"
+        + "                    </custom-expiry>\n"
+        + "                </expiration-attributes>\n"
+        + "            </region-time-to-live>\n"
+        + "            <entry-time-to-live>\n"
+        + "                <expiration-attributes action=\"destroy\" timeout=\"10\">\n"
+        + "                    <custom-expiry>\n"
+        + "                        <class-name>foo</class-name>\n"
+        + "                    </custom-expiry>\n"
+        + "                </expiration-attributes>\n"
+        + "            </entry-time-to-live>\n"
+        + "        </region-attributes>\n"
+        + "    </region>";
+
+    RegionConfig regionConfig = service.unMarshall(xml, RegionConfig.class);
+    RegionAttributesType.ExpirationAttributesType entryTimeToLive =
+        regionConfig.getRegionAttributes().getEntryTimeToLive();
+    assertThat(entryTimeToLive.getTimeout()).isEqualTo("10");
+    assertThat(entryTimeToLive.getAction()).isEqualTo("destroy");
+    assertThat(entryTimeToLive.getCustomExpiry().getClassName()).isEqualTo("foo");
+    RegionAttributesType.ExpirationAttributesType regionTimeToLive =
+        regionConfig.getRegionAttributes().getRegionTimeToLive();
+    assertThat(regionTimeToLive.getTimeout()).isEqualTo("20");
+    assertThat(regionTimeToLive.getAction()).isEqualTo("invalidate");
+    assertThat(regionTimeToLive.getCustomExpiry().getClassName()).isEqualTo("bar");
+
+    cacheConfig.getRegions().add(regionConfig);
+  }
+
+  @Test
+  public void findRegionConfiguration() throws Exception {
+    CacheConfig config = new CacheConfig();
+    assertThat(config.findRegionConfiguration(SEPARATOR + "test")).isNull();
+    assertThat(config.findRegionConfiguration("test")).isNull();
+    assertThat(config.findRegionConfiguration("test" + SEPARATOR + "test1")).isNull();
+
+    RegionConfig testRegion = new RegionConfig();
+    testRegion.setName("test");
+    config.getRegions().add(testRegion);
+
+    assertThat(config.findRegionConfiguration(SEPARATOR + "test")).isNotNull();
+    assertThat(config.findRegionConfiguration("test")).isNotNull();
+    assertThat(config.findRegionConfiguration("test" + SEPARATOR + "test1")).isNull();
+
+    RegionConfig test1Region = new RegionConfig();
+    test1Region.setName("test1");
+    testRegion.getRegions().add(test1Region);
+
+    assertThat(config.findRegionConfiguration(SEPARATOR + "test")).isNotNull()
+        .extracting(RegionConfig::getName).isEqualTo("test");
+    assertThat(config.findRegionConfiguration("test")).isNotNull()
+        .extracting(RegionConfig::getName).isEqualTo("test");
+    assertThat(config.findRegionConfiguration("test" + SEPARATOR + "test1")).isNotNull()
+        .extracting(RegionConfig::getName).isEqualTo("test1");
   }
 }

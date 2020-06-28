@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache30;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -32,8 +33,8 @@ import org.apache.geode.cache.EvictionAction;
 import org.apache.geode.cache.EvictionAttributes;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.Scope;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.cache.xmlcache.CacheCreation;
+import org.apache.geode.logging.internal.OSProcess;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
@@ -84,6 +85,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
       // Asif destroy dynamic regions at the end of the test
       CacheSerializableRunnable destroyDynRegn =
           new CacheSerializableRunnable("Destroy Dynamic regions") {
+            @Override
             public void run2() throws CacheException {
               Region dr = getCache().getRegion("__DynamicRegions");
               if (dr != null) {
@@ -127,6 +129,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
   private void doParentCreateOtherVm(final Properties p, final boolean persist) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("create root") {
+      @Override
       public void run2() throws CacheException {
         File d = new File("DynamicRegionData" + OSProcess.getId());
         d.mkdirs();
@@ -141,6 +144,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
   private void recreateOtherVm() {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("recreate") {
+      @Override
       public void run2() throws CacheException {
         beginCacheXml();
         {
@@ -160,6 +164,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
   private void checkForRegionOtherVm(final String fullPath, final boolean shouldExist) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("checkForRegion") {
+      @Override
       public void run2() throws CacheException {
         Region r = getCache().getRegion(fullPath);
         if (shouldExist) {
@@ -181,6 +186,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
   private void checkForSubregionOtherVm(final String fullPath, final boolean shouldExist) {
     VM vm = getOtherVm();
     vm.invoke(new CacheSerializableRunnable("checkForRegion") {
+      @Override
       public void run2() throws CacheException {
         Region r = getCache().getRegion(fullPath);
         if (shouldExist) {
@@ -236,7 +242,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
     checkForRegionOtherVm(drFullPath, true);
 
     // spot check the subregions
-    checkForSubregionOtherVm(drFullPath + "/subregion7", true);
+    checkForSubregionOtherVm(drFullPath + SEPARATOR + "subregion7", true);
 
     // now see if OTHER can recreate which should fetch meta-info from controller
     recreateOtherVm();
@@ -252,7 +258,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
         .info("testPeerRegion - check #3 make sure dynamic region can be recovered from disk");
     checkForRegionOtherVm(drFullPath, true);
     for (int i = 0; i < 10; i++) {
-      checkForSubregionOtherVm(drFullPath + "/subregion" + i, true);
+      checkForSubregionOtherVm(drFullPath + SEPARATOR + "subregion" + i, true);
     }
 
     // now start our cache back up and see if we still have the dynamic regions
@@ -273,7 +279,7 @@ public class DynamicRegionDUnitTest extends JUnit4CacheTestCase {
 
       // now make sure we can destroy dynamic regions
       for (int i = 0; i < 10; i++) {
-        String regName = drFullPath + "/subregion" + i;
+        String regName = drFullPath + SEPARATOR + "subregion" + i;
         assertEquals(true, c.getRegion(regName) != null);
         DynamicRegionFactory.get().destroyDynamicRegion(regName);
         assertEquals(null, c.getRegion(regName));

@@ -28,6 +28,7 @@ import java.util.TreeSet;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.partition.PartitionMemberInfo;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
@@ -39,9 +40,7 @@ import org.apache.geode.internal.cache.partitioned.PRLoad;
 import org.apache.geode.internal.cache.partitioned.PartitionMemberInfoImpl;
 import org.apache.geode.internal.cache.partitioned.rebalance.BucketOperator;
 import org.apache.geode.internal.cache.persistence.PersistentMemberID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A model of the load on all of the members for a partitioned region. This model is used to find
@@ -68,12 +67,13 @@ import org.apache.geode.internal.logging.log4j.LocalizedMessage;
  */
 @SuppressWarnings("synthetic-access")
 public class PartitionedRegionLoadModel {
-  private static Logger logger = LogService.getLogger();
+  private static final Logger logger = LogService.getLogger();
 
   /**
    * A comparator that is used to sort buckets in the order that we should satisfy redundancy - most
    * needy buckets first.
    */
+  @Immutable
   private static final Comparator<Bucket> REDUNDANCY_COMPARATOR = (o1, o2) -> {
     // put the buckets with the lowest redundancy first
     int result = o1.getRedundancy() - o2.getRedundancy();
@@ -97,6 +97,7 @@ public class PartitionedRegionLoadModel {
    * A member to represent inconsistent data. For example, if two members think they are the primary
    * for a bucket, we will set the primary to invalid, so it won't be a candidate for rebalancing.
    */
+  @Immutable
   public static final MemberRollup INVALID_MEMBER = new MemberRollup(null, null, false, false);
 
   private final BucketRollup[] buckets;
@@ -286,10 +287,10 @@ public class PartitionedRegionLoadModel {
         }
         // This state should never happen
         if (!memberRollup.getBuckets().isEmpty()) {
-          logger.warn(LocalizedMessage.create(
-              LocalizedStrings.PartitionedRegionLoadModel_INCOMPLETE_COLOCATION,
+          logger.warn(
+              "PartitionedRegionLoadModel - member {} has incomplete colocation, but it has buckets for some regions. Should have colocated regions {} but had {} and contains buckets {}",
               new Object[] {memberRollup, this.allColocatedRegions,
-                  memberRollup.getColocatedMembers().keySet(), memberRollup.getBuckets()}));
+                  memberRollup.getColocatedMembers().keySet(), memberRollup.getBuckets()});
         }
         for (Bucket bucket : new HashSet<Bucket>(memberRollup.getBuckets())) {
           bucket.removeMember(memberRollup);
@@ -361,6 +362,9 @@ public class PartitionedRegionLoadModel {
    * to create a bucket on that node. Because the bucket operator is asynchronous, the bucket may
    * not be created immediately, but the model will be updated regardless. Invoke
    * {@link #waitForOperations()} to wait for those operations to actually complete
+   *
+   * @param bucket the bucket for which a redundant copy should be made
+   * @param targetMember the member on which a redundant copy of a bucket should be made
    */
   public void createRedundantBucket(final BucketRollup bucket, final Member targetMember) {
     Map<String, Long> colocatedRegionSizes = getColocatedRegionSizes(bucket);
@@ -752,8 +756,8 @@ public class PartitionedRegionLoadModel {
   /**
    * For testing only, calculate the total variance of the members
    */
-  public float getVarianceForTest() {
-    float variance = 0;
+  public double getVarianceForTest() {
+    double variance = 0;
 
     for (Member member : this.members.values()) {
       variance += variance(member.getTotalLoad(), member.getWeight(), getAverageLoad());
@@ -765,8 +769,8 @@ public class PartitionedRegionLoadModel {
   /**
    * For testing only, calculate the total variance of the members
    */
-  public float getPrimaryVarianceForTest() {
-    float variance = 0;
+  public double getPrimaryVarianceForTest() {
+    double variance = 0;
 
     for (Member member : this.members.values()) {
       variance += variance(member.getPrimaryLoad(), member.getWeight(), getPrimaryAverage());
@@ -821,7 +825,7 @@ public class PartitionedRegionLoadModel {
     }
 
     result.append(String.format("\n%" + longestMemberId + "s                            ",
-        "#offline", 0, 0, 0));
+        "#offline"));
     for (Bucket bucket : allBucketIds) {
       result.append(String.format("%4s", bucket.getOfflineMembers().size()));
     }

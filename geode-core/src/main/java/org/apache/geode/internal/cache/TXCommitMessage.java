@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.cache.LocalRegion.InitializationLevel.BEFORE_INITIAL_IMAGE;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
 
 import org.apache.logging.log4j.Logger;
@@ -32,6 +35,8 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.CancelException;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.CacheRuntimeException;
@@ -58,7 +63,7 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.cache.LocalRegion.InitializationLevel;
 import org.apache.geode.internal.cache.locks.TXLockId;
 import org.apache.geode.internal.cache.locks.TXLockIdImpl;
 import org.apache.geode.internal.cache.locks.TXLockService;
@@ -67,11 +72,13 @@ import org.apache.geode.internal.cache.persistence.PersistentMemberID;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.versions.VersionSource;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.LoggingThreadGroup;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.executors.LoggingThread;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * TXCommitMessage is the message that contains all the information that needs to be distributed, on
@@ -85,6 +92,7 @@ public class TXCommitMessage extends PooledDistributionMessage
   private static final Logger logger = LogService.getLogger();
 
   // Keep a 60 second history @ an estimated 1092 transactions/second ~= 16^4
+  @MakeNotStatic
   protected static final TXFarSideCMTracker txTracker = new TXFarSideCMTracker((60 * 1092));
 
   private ArrayList<RegionCommit> regions; // list of RegionCommit instances
@@ -92,7 +100,6 @@ public class TXCommitMessage extends PooledDistributionMessage
   protected int processorId; // 0 unless needsAck is true
   protected TXLockIdImpl lockId;
   protected HashSet farSiders;
-
   protected transient DistributionManager dm; // Used on the sending side of this message
   private transient int sequenceNum = 0;
 
@@ -111,9 +118,9 @@ public class TXCommitMessage extends PooledDistributionMessage
    * List of operations to do when processing this tx. Valid on farside only.
    */
   protected transient ArrayList farSideEntryOps;
-  private transient byte[] farsideBaseMembershipId; // only available on farside
-  private transient long farsideBaseThreadId; // only available on farside
-  private transient long farsideBaseSequenceId; // only available on farside
+  private byte[] farsideBaseMembershipId; // only available on farside
+  private long farsideBaseThreadId; // only available on farside
+  private long farsideBaseSequenceId; // only available on farside
 
   /**
    * (Nearside) true of any regions in this TX have required roles
@@ -121,11 +128,11 @@ public class TXCommitMessage extends PooledDistributionMessage
   private transient boolean hasReliableRegions = false;
 
   /**
-   * Set of all caching exceptions produced hile processing this tx
+   * Set of all caching exceptions produced while processing this tx
    */
   private transient Set processingExceptions = Collections.emptySet();
 
-  private transient ClientProxyMembershipID bridgeContext = null;
+  private ClientProxyMembershipID bridgeContext = null;
 
   /**
    * Version of the client that this TXCommitMessage is being sent to. Used for backwards
@@ -137,21 +144,25 @@ public class TXCommitMessage extends PooledDistributionMessage
    * A token to be put in TXManagerImpl#failoverMap to represent a CommitConflictException while
    * committing a transaction
    */
+  @Immutable
   public static final TXCommitMessage CMT_CONFLICT_MSG = new TXCommitMessage();
   /**
    * A token to be put in TXManagerImpl#failoverMap to represent a
    * TransactionDataNodeHasDepartedException
    * while committing a transaction
    */
+  @Immutable
   public static final TXCommitMessage REBALANCE_MSG = new TXCommitMessage();
   /**
    * A token to be put in TXManagerImpl#failoverMap to represent an exception while committing a
    * transaction
    */
+  @Immutable
   public static final TXCommitMessage EXCEPTION_MSG = new TXCommitMessage();
   /**
    * A token to be put in TXManagerImpl#failoverMap to represent a rolled back transaction
    */
+  @Immutable
   public static final TXCommitMessage ROLLBACK_MSG = new TXCommitMessage();
 
   public TXCommitMessage(TXId txIdent, DistributionManager dm, TXState txState) {
@@ -510,8 +521,9 @@ public class TXCommitMessage extends PooledDistributionMessage
 
     if (!regionDistributionExceptions.isEmpty()) {
       throw new CommitDistributionException(
-          LocalizedStrings.TXCommitMessage_THESE_REGIONS_EXPERIENCED_RELIABILITY_FAILURE_DURING_DISTRIBUTION_OF_THE_OPERATION_0
-              .toLocalizedString(failedRegionNames),
+          String.format(
+              "These regions experienced reliability failure during distribution of the operation: %s",
+              failedRegionNames),
           regionDistributionExceptions);
     }
   }
@@ -600,8 +612,8 @@ public class TXCommitMessage extends PooledDistributionMessage
     if (logger.isDebugEnabled()) {
       logger.debug("begin processing TXCommitMessage for {}", this.txIdent);
     }
-    final int oldLevel =
-        LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+    final InitializationLevel oldLevel =
+        LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
     boolean forceListener = false; // this gets flipped if we need to fire tx listener
     // it needs to default to false because we don't want to fire listeners on pr replicates
     try {
@@ -672,9 +684,7 @@ public class TXCommitMessage extends PooledDistributionMessage
               // error condition, so you also need to check to see if the JVM
               // is still usable:
               SystemFailure.checkFailure();
-              logger.error(
-                  LocalizedMessage.create(
-                      LocalizedStrings.TXCommitMessage_EXCEPTION_OCCURRED_IN_TRANSACTIONLISTENER),
+              logger.error("Exception occurred in TransactionListener",
                   t);
             }
           }
@@ -691,7 +701,7 @@ public class TXCommitMessage extends PooledDistributionMessage
       if (isAckRequired()) {
         ack();
       }
-      if (!dm.getExistingCache().isClient()) {
+      if (!dm.getExistingCache().isClient() && bridgeContext != null) {
         getTracker().saveTXForClientFailover(txIdent, this);
       }
       if (logger.isDebugEnabled()) {
@@ -718,24 +728,38 @@ public class TXCommitMessage extends PooledDistributionMessage
   }
 
   private void firePendingCallbacks(List<EntryEventImpl> callbacks) {
-    Iterator<EntryEventImpl> ci = callbacks.iterator();
-    while (ci.hasNext()) {
-      EntryEventImpl ee = ci.next();
+    boolean isConfigError = false;
+    EntryEventImpl lastTransactionEvent = null;
+    try {
+      lastTransactionEvent =
+          TXLastEventInTransactionUtils.getLastTransactionEvent(callbacks, dm.getCache());
+    } catch (ServiceConfigurationError ex) {
+      logger.error(ex.getMessage());
+      isConfigError = true;
+    }
+
+    for (EntryEventImpl ee : callbacks) {
+      boolean isLastTransactionEvent = isConfigError || ee.equals(lastTransactionEvent);
       try {
         if (ee.getOperation().isDestroy()) {
-          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_DESTROY, ee, true);
+          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_DESTROY, ee, true,
+              isLastTransactionEvent);
         } else if (ee.getOperation().isInvalidate()) {
-          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_INVALIDATE, ee, true);
+          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_INVALIDATE, ee, true,
+              isLastTransactionEvent);
         } else if (ee.getOperation().isCreate()) {
-          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_CREATE, ee, true);
+          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_CREATE, ee, true,
+              isLastTransactionEvent);
         } else {
-          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_UPDATE, ee, true);
+          ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_UPDATE, ee, true,
+              isLastTransactionEvent);
         }
       } finally {
         ee.release();
       }
     }
   }
+
 
   protected void processCacheRuntimeException(CacheRuntimeException problem) {
     if (problem instanceof RegionDestroyedException) { // catch RegionDestroyedException
@@ -745,9 +769,9 @@ public class TXCommitMessage extends PooledDistributionMessage
       throw problem;
     } else { // catch CacheRuntimeException
       addProcessingException(problem);
-      logger.error(LocalizedMessage.create(
-          LocalizedStrings.TXCommitMessage_TRANSACTION_MESSAGE_0_FROM_SENDER_1_FAILED_PROCESSING_UNKNOWN_TRANSACTION_STATE_2,
-          new Object[] {this, getSender(), problem}));
+      logger.error(
+          "Transaction message {} from sender {} failed processing, unknown transaction state: {}",
+          new Object[] {this, getSender(), problem});
     }
   }
 
@@ -756,14 +780,15 @@ public class TXCommitMessage extends PooledDistributionMessage
       CommitReplyException replyEx = null;
       if (!this.processingExceptions.isEmpty()) {
         replyEx = new CommitReplyException(
-            LocalizedStrings.TXCommitMessage_COMMIT_OPERATION_GENERATED_ONE_OR_MORE_EXCEPTIONS_FROM_0
-                .toLocalizedString(this.getSender()),
+            String.format("Commit operation generated one or more exceptions from %s",
+                this.getSender()),
             this.processingExceptions);
       }
       ReplyMessage.send(getSender(), this.processorId, replyEx, this.dm);
     }
   }
 
+  @Override
   public int getDSFID() {
     // on near side send old TX_COMMIT_MESSAGE if there is at least one 7.0
     // member in the system, otherwise send the new 7.0.1 message.
@@ -792,7 +817,8 @@ public class TXCommitMessage extends PooledDistributionMessage
    */
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     int pId = in.readInt();
 
     if (isAckRequired()) {
@@ -859,7 +885,8 @@ public class TXCommitMessage extends PooledDistributionMessage
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     out.writeInt(this.processorId);
     InternalDataSerializer.invokeToData(this.txIdent, out);
     {
@@ -908,7 +935,7 @@ public class TXCommitMessage extends PooledDistributionMessage
       if (regionsSize > 0) {
         for (int i = 0; i < this.regions.size(); i++) {
           RegionCommit rc = (RegionCommit) this.regions.get(i);
-          rc.toData(out, useShadowKey);
+          rc.toData(out, context, useShadowKey);
         }
       }
     }
@@ -919,15 +946,15 @@ public class TXCommitMessage extends PooledDistributionMessage
   }
 
   private boolean hasFlagsField(final DataOutput out) {
-    return hasFlagsField(InternalDataSerializer.getVersionForDataStream(out));
+    return hasFlagsField(StaticSerialization.getVersionForDataStream(out));
   }
 
   private boolean hasFlagsField(final DataInput in) {
-    return hasFlagsField(InternalDataSerializer.getVersionForDataStream(in));
+    return hasFlagsField(StaticSerialization.getVersionForDataStream(in));
   }
 
   private boolean hasFlagsField(final Version version) {
-    return version.compareTo(Version.GEODE_170) >= 0;
+    return version.isNotOlderThan(Version.GEODE_1_7_0);
   }
 
   private boolean useShadowKey() {
@@ -1070,6 +1097,7 @@ public class TXCommitMessage extends PooledDistributionMessage
   }
 
   public static class RegionCommit {
+    private final TxCallbackEventFactory txCallbackEventFactory = new TxCallbackEventFactoryImpl();
     /**
      * The region that this commit represents. Valid on both nearside and farside.
      */
@@ -1175,7 +1203,7 @@ public class TXCommitMessage extends PooledDistributionMessage
             logger.debug("Received unneeded commit data for region {}", this.regionPath);
           }
           this.msg.addProcessingException(new RegionDestroyedException(
-              LocalizedStrings.TXCommitMessage_REGION_NOT_FOUND.toLocalizedString(),
+              "Region not found",
               this.regionPath));
           this.internalRegion = null;
           return false;
@@ -1218,7 +1246,7 @@ public class TXCommitMessage extends PooledDistributionMessage
 
     LocalRegion getRegionByPath(DistributionManager dm, String regionPath) {
       InternalCache cache = dm.getCache();
-      return cache == null ? null : (LocalRegion) cache.getRegionByPath(regionPath);
+      return cache == null ? null : (LocalRegion) cache.getInternalRegionByPath(regionPath);
     }
 
     /**
@@ -1269,7 +1297,8 @@ public class TXCommitMessage extends PooledDistributionMessage
         // No need to release because it is added to pendingCallbacks and they will be released
         // later
         EntryEventImpl eei =
-            AbstractRegionMap.createCallbackEvent(this.internalRegion, entryOp.op, entryOp.key,
+            txCallbackEventFactory.createCallbackEvent(this.internalRegion, entryOp.op,
+                entryOp.key,
                 entryOp.value, this.msg.txIdent, txEvent, getEventId(entryOp), entryOp.callbackArg,
                 entryOp.filterRoutingInfo, this.msg.bridgeContext, null, entryOp.versionTag,
                 entryOp.tailKey);
@@ -1348,7 +1377,8 @@ public class TXCommitMessage extends PooledDistributionMessage
          */
         @Released
         EntryEventImpl eei =
-            AbstractRegionMap.createCallbackEvent(this.internalRegion, entryOp.op, entryOp.key,
+            txCallbackEventFactory.createCallbackEvent(this.internalRegion, entryOp.op,
+                entryOp.key,
                 entryOp.value, this.msg.txIdent, txEvent, getEventId(entryOp), entryOp.callbackArg,
                 entryOp.filterRoutingInfo, this.msg.bridgeContext, null, entryOp.versionTag,
                 entryOp.tailKey);
@@ -1442,7 +1472,9 @@ public class TXCommitMessage extends PooledDistributionMessage
       return result.toString();
     }
 
-    private void basicToData(DataOutput out, boolean useShadowKey) throws IOException {
+    private void basicToData(DataOutput out,
+        SerializationContext context,
+        boolean useShadowKey) throws IOException {
       if (this.internalRegion != null) {
         DataSerializer.writeString(this.internalRegion.getFullPath(), out);
         if (this.internalRegion instanceof BucketRegion) {
@@ -1487,7 +1519,7 @@ public class TXCommitMessage extends PooledDistributionMessage
           DataSerializer.writeObject(this.opKeys.get(i), out);
           if (this.msg.txState != null) {
             /* we are still on tx node and have the entry state */
-            ((TXEntryState) this.opEntries.get(i)).toFarSideData(out, largeModCount,
+            ((TXEntryState) this.opEntries.get(i)).toFarSideData(out, context, largeModCount,
                 sendVersionTags, useShadowKey);
           } else {
             ((FarSideEntryOp) this.opEntries.get(i)).toData(out, largeModCount, sendVersionTags,
@@ -1498,18 +1530,19 @@ public class TXCommitMessage extends PooledDistributionMessage
     }
 
 
-    public void toData(DataOutput out, boolean useShadowKey) throws IOException {
+    public void toData(DataOutput out, SerializationContext context, boolean useShadowKey)
+        throws IOException {
       if (this.preserializedBuffer != null) {
         this.preserializedBuffer.rewind();
         this.preserializedBuffer.sendTo(out);
       } else if (this.refCount > 1) {
-        Version v = InternalDataSerializer.getVersionForDataStream(out);
+        Version v = StaticSerialization.getVersionForDataStream(out);
         HeapDataOutputStream hdos = new HeapDataOutputStream(1024, v);
-        basicToData(hdos, useShadowKey);
+        basicToData(hdos, context, useShadowKey);
         this.preserializedBuffer = hdos;
         this.preserializedBuffer.sendTo(out);
       } else {
-        basicToData(out, useShadowKey);
+        basicToData(out, context, useShadowKey);
       }
     }
 
@@ -1634,6 +1667,7 @@ public class TXCommitMessage extends PooledDistributionMessage
         return this.modSerialNum;
       }
 
+      @Override
       public int compareTo(Object o) {
         FarSideEntryOp other = (FarSideEntryOp) o;
         return getSortValue() - other.getSortValue();
@@ -1641,7 +1675,7 @@ public class TXCommitMessage extends PooledDistributionMessage
 
       @Override
       public boolean equals(Object o) {
-        if (o == null || !(o instanceof FarSideEntryOp)) {
+        if (!(o instanceof FarSideEntryOp)) {
           return false;
         }
         return compareTo(o) == 0;
@@ -1718,17 +1752,20 @@ public class TXCommitMessage extends PooledDistributionMessage
       basicProcess(mess, dm);
     }
 
+    @Override
     public int getDSFID() {
       return COMMIT_PROCESS_FOR_LOCKID_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       InternalDataSerializer.invokeToData(this.lockId, out);
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       this.lockId = TXLockIdImpl.createFromData(in);
       Assert.assertTrue(this.lockId != null,
           "CommitProcessForLockIdMessage must have a non-null lockid!");
@@ -1770,17 +1807,20 @@ public class TXCommitMessage extends PooledDistributionMessage
       basicProcess(mess, dm);
     }
 
+    @Override
     public int getDSFID() {
       return COMMIT_PROCESS_FOR_TXID_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       InternalDataSerializer.invokeToData(this.txId, out);
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       this.txId = TXId.createFromData(in);
       Assert.assertTrue(this.txId != null,
           "CommitProcessMessageForTXId must have a non-null txid!");
@@ -1837,7 +1877,7 @@ public class TXCommitMessage extends PooledDistributionMessage
 
     @Override
     protected void process(ClusterDistributionManager dm) {
-      final boolean processMsgReceived = txTracker.commitProcessReceived(this.trackerKey, dm);
+      final boolean processMsgReceived = txTracker.commitProcessReceived(this.trackerKey);
       if (!processMsgReceived) {
         if (logger.isDebugEnabled()) {
           logger.debug("CommitProcessQuery did not find {} in the history", this.trackerKey);
@@ -1853,17 +1893,20 @@ public class TXCommitMessage extends PooledDistributionMessage
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       DataSerializer.writeObject(this.trackerKey, out);
       out.writeInt(this.processorId);
     }
 
+    @Override
     public int getDSFID() {
       return COMMIT_PROCESS_QUERY_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       this.trackerKey = DataSerializer.readObject(in);
       this.processorId = in.readInt();
     }
@@ -1901,14 +1944,16 @@ public class TXCommitMessage extends PooledDistributionMessage
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.wasReceived = in.readBoolean();
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.wasReceived);
     }
 
@@ -1972,6 +2017,16 @@ public class TXCommitMessage extends PooledDistributionMessage
     return departureNoticed;
   }
 
+  private void doOriginDepartedCommit() {
+    try {
+      // Set processor to zero to avoid the ack to the now departed origin
+      processorId = 0;
+      basicProcess();
+    } finally {
+      txTracker.processed(this);
+    }
+  }
+
   @Override
   public void memberDeparted(DistributionManager distributionManager,
       final InternalDistributedMember id, boolean crashed) {
@@ -1979,7 +2034,7 @@ public class TXCommitMessage extends PooledDistributionMessage
     if (!getSender().equals(id)) {
       return;
     }
-    this.dm.removeMembershipListener(this);
+    distributionManager.removeMembershipListener(this);
 
     synchronized (this) {
       if (isProcessing() || this.departureNoticed) {
@@ -1992,11 +2047,9 @@ public class TXCommitMessage extends PooledDistributionMessage
       this.departureNoticed = true;
     }
 
-    ThreadGroup group = LoggingThreadGroup.createThreadGroup("TXCommitMessage Threads", logger);
-
     // Send message to fellow FarSiders (aka recipients), if any, to
     // determine if any one of them have received a CommitProcessMessage
-    if (this.farSiders != null && !this.farSiders.isEmpty()) {
+    if (getFarSiders() != null && !getFarSiders().isEmpty()) {
       if (logger.isDebugEnabled()) {
         logger.debug(
             "Member departed: {} sending query for CommitProcess message to other recipients.", id);
@@ -2004,74 +2057,10 @@ public class TXCommitMessage extends PooledDistributionMessage
 
       // Create a new thread, send the CommitProcessQuery, wait for a response and potentially
       // process
-      Thread fellowFarSidersQuery = new Thread(group, "CommitProcessQuery Thread") {
-        // Should I use a thread pool?, Darrel suggests look in DM somewhere or introduce a zero
-        // sized thread pool
-        @Override
-        public void run() {
-          final TXCommitMessage mess = TXCommitMessage.this;
-          Object trackerKey = mess.getTrackerKey();
-          DistributedMember member = getMemberFromTrackerKey(trackerKey);
-          if (!mess.getSender().equals(member)) {
-            /*
-             * Do not send a CommitProcessQueryMessage when the sender of CommitMessage is not the
-             * member in the tracker key. (If this happens we are the redundant node for PR, and the
-             * primary just crashed).
-             */
-            txTracker.removeMessage(mess);
-            return;
-          }
-          CommitProcessQueryReplyProcessor replProc =
-              new CommitProcessQueryReplyProcessor(mess.dm, mess.farSiders);
-          CommitProcessQueryMessage query =
-              new CommitProcessQueryMessage(mess.getTrackerKey(), replProc.getProcessorId());
-          query.setRecipients(mess.farSiders);
-          mess.dm.putOutgoing(query);
-          // Wait for any one positive response or all negative responses.
-          // (while() loop removed for bug 36983 - you can't loop on waitForReplies()
-          TXCommitMessage.this.dm.getCancelCriterion().checkCancelInProgress(null);
-          try {
-            replProc.waitForRepliesUninterruptibly();
-          } catch (ReplyException e) {
-            e.handleCause();
-          }
-          if (replProc.receivedACommitProcessMessage()) {
-            if (logger.isDebugEnabled()) {
-              logger.debug(
-                  "Transaction associated with lockID: {} from orign {} is processing due to a received \"commit process\" message",
-                  mess.lockId, id);
-            }
-
-            try {
-              // Set processor to zero to avoid the ack to the now departed origin
-              mess.processorId = 0;
-              mess.basicProcess();
-            } finally {
-              txTracker.processed(mess);
-            }
-          } else {
-            if (logger.isDebugEnabled()) {
-              logger.debug(
-                  "Transaction associated with lockID: {} from origin {} ignored.  No other recipients received \"commit process\" message",
-                  mess.lockId, id);
-            }
-            txTracker.removeMessage(mess);
-          }
-
-        }
-
-        private DistributedMember getMemberFromTrackerKey(Object trackerKey) {
-          if (trackerKey instanceof TXId) {
-            TXId id1 = (TXId) trackerKey;
-            return id1.getMemberId();
-          } else if (trackerKey instanceof TXLockId) {
-            TXLockId id2 = (TXLockId) trackerKey;
-            return id2.getMemberId();
-          }
-          return null;
-        }
-      };
-      fellowFarSidersQuery.setDaemon(true);
+      // Should I use a thread pool?, Darrel suggests look in DM somewhere or introduce a zero
+      // sized thread pool
+      Thread fellowFarSidersQuery = new LoggingThread("CommitProcessQuery Thread",
+          () -> doCommitProcessQuery(id));
       fellowFarSidersQuery.start();
     } else {
       if (logger.isDebugEnabled()) {
@@ -2082,22 +2071,74 @@ public class TXCommitMessage extends PooledDistributionMessage
       // will never get the CommitProcess message, but it
       // doesn't matter since we can commit anyway.
       // Start a new thread to process the commit
-      Thread originDepartedCommit = new Thread(group, "Origin Departed Commit") {
-        @Override
-        public void run() {
-          final TXCommitMessage mess = TXCommitMessage.this;
-          try {
-            // Set processor to zero to avoid the ack to the now departed origin
-            mess.processorId = 0;
-            mess.basicProcess();
-          } finally {
-            txTracker.processed(mess);
-          }
-        }
-      };
-      originDepartedCommit.setDaemon(true);
+      Thread originDepartedCommit = new LoggingThread("Origin Departed Commit",
+          this::doOriginDepartedCommit);
       originDepartedCommit.start();
     }
+  }
+
+  HashSet getFarSiders() {
+    return farSiders;
+  }
+
+  DistributionManager getDistributionManager() {
+    return dm;
+  }
+
+  void doCommitProcessQuery(final InternalDistributedMember id) {
+    CommitProcessQueryReplyProcessor replyProcessor = createReplyProcessor();
+    CommitProcessQueryMessage queryMessage = createQueryMessage(replyProcessor);
+    queryMessage.setRecipients(this.farSiders);
+    getDistributionManager().putOutgoing(queryMessage);
+    // Wait for any one positive response or all negative responses.
+    // (while() loop removed for bug 36983 - you can't loop on waitForReplies()
+    getDistributionManager().getCancelCriterion().checkCancelInProgress(null);
+    try {
+      replyProcessor.waitForRepliesUninterruptibly();
+    } catch (ReplyException e) {
+      e.handleCause();
+    }
+    if (replyProcessor.receivedACommitProcessMessage()) {
+      if (logger.isDebugEnabled()) {
+        logger.debug(
+            "Transaction associated with lockID: {} from orign {} is processing due to a received \"commit process\" message",
+            lockId, id);
+      }
+
+      try {
+        // Set processor to zero to avoid the ack to the now departed origin
+        processorId = 0;
+        basicProcess();
+      } finally {
+        txTracker.processed(this);
+      }
+    } else {
+      if (logger.isDebugEnabled()) {
+        logger.debug(
+            "Transaction associated with lockID: {} from origin {} ignored.  No other recipients received \"commit process\" message",
+            lockId, id);
+      }
+      txTracker.removeMessage(this);
+    }
+  }
+
+  CommitProcessQueryReplyProcessor createReplyProcessor() {
+    return new CommitProcessQueryReplyProcessor(dm, farSiders);
+  }
+
+  CommitProcessQueryMessage createQueryMessage(CommitProcessQueryReplyProcessor replyProcessor) {
+    return new CommitProcessQueryMessage(getTrackerKey(), replyProcessor.getProcessorId());
+  }
+
+  private DistributedMember getMemberFromTrackerKey(Object trackerKey) {
+    if (trackerKey instanceof TXId) {
+      TXId id1 = (TXId) trackerKey;
+      return id1.getMemberId();
+    } else if (trackerKey instanceof TXLockId) {
+      TXLockId id2 = (TXLockId) trackerKey;
+      return id2.getMemberId();
+    }
+    return null;
   }
 
   void setUpdateLockMembers() {
@@ -2144,7 +2185,7 @@ public class TXCommitMessage extends PooledDistributionMessage
     }
 
     @Override
-    protected void processException(DistributionMessage msg, ReplyException ex) {
+    protected synchronized void processException(DistributionMessage msg, ReplyException ex) {
       if (msg instanceof ReplyMessage) {
         synchronized (this) {
           if (this.exception == null) {

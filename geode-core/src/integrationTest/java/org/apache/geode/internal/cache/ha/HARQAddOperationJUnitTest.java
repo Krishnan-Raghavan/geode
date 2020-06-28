@@ -15,6 +15,8 @@
 package org.apache.geode.internal.cache.ha;
 
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -26,10 +28,8 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -49,7 +49,7 @@ import org.apache.geode.internal.cache.Conflatable;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.ha.HARegionQueue.MapWrapper;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 
@@ -112,7 +112,7 @@ public class HARQAddOperationJUnitTest {
     factory.setDataPolicy(DataPolicy.REPLICATE);
     factory.setScope(Scope.DISTRIBUTED_ACK);
     HARegionQueue regionqueue = HARegionQueue.getHARegionQueueInstance(name, cache,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
     return regionqueue;
   }
 
@@ -122,7 +122,7 @@ public class HARQAddOperationJUnitTest {
   protected HARegionQueue createHARegionQueue(String name, HARegionQueueAttributes attrs)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
     HARegionQueue regionqueue = HARegionQueue.getHARegionQueueInstance(name, cache, attrs,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
     return regionqueue;
   }
 
@@ -294,7 +294,7 @@ public class HARQAddOperationJUnitTest {
       // After the expiry of the data , AvaialbleIds size should be 0,
       // entry
       // removed from Region, LastDispatchedWrapperSet should have size 0.
-      Awaitility.await().atMost(60, TimeUnit.SECONDS)
+      await()
           .untilAsserted(() -> assertEquals(0, regionqueue.getRegion().entrySet(false).size()));
       assertEquals(0, regionqueue.getAvailableIds().size());
       assertNull(regionqueue.getCurrentCounterSet(id1));
@@ -356,6 +356,7 @@ public class HARQAddOperationJUnitTest {
     final EventID id1 = new EventID(new byte[] {1}, 1, 1);
     final EventID id2 = new EventID(new byte[] {1}, 1, 2);
     Thread t1 = new Thread() {
+      @Override
       public void run() {
         try {
           regionqueue.put(new ConflatableObject(KEY1, VALUE1, id1, true, "region1"));
@@ -369,6 +370,7 @@ public class HARQAddOperationJUnitTest {
     t1.setPriority(Thread.MAX_PRIORITY);
 
     Thread t2 = new Thread() {
+      @Override
       public void run() {
         try {
           regionqueue.removeDispatchedEvents(id2);
@@ -406,6 +408,7 @@ public class HARQAddOperationJUnitTest {
     final EventID id2 = new EventID(new byte[] {1}, 1, 2);
 
     Thread t1 = new Thread() {
+      @Override
       public void run() {
         try {
           regionqueue.put(new ConflatableObject(KEY1, VALUE1, id1, true, "region1"));
@@ -418,6 +421,7 @@ public class HARQAddOperationJUnitTest {
     };
 
     Thread t2 = new Thread() {
+      @Override
       public void run() {
         try {
           regionqueue.removeDispatchedEvents(id2);
@@ -492,6 +496,7 @@ public class HARQAddOperationJUnitTest {
     for (int i = 0; i < numOfThreads; i++) {
       final long ids = i;
       threads[i] = new Thread() {
+        @Override
         public void run() {
           for (int j = 0; j < numOfPuts; j++) {
             EventID id = new EventID(new byte[] {(byte) ids}, ids, j);
@@ -568,6 +573,7 @@ public class HARQAddOperationJUnitTest {
     for (int i = 0; i < numOfThreads; i++) {
       final long ids = i;
       threads[i] = new Thread() {
+        @Override
         public void run() {
           for (int j = 0; j < numOfPuts; j++) {
             EventID id = new EventID(new byte[] {(byte) ids}, ids, j);
@@ -628,6 +634,7 @@ public class HARQAddOperationJUnitTest {
     for (int i = 0; i < numOfThreads; i++) {
       final long ids = i;
       threads[i] = new Thread() {
+        @Override
         public void run() {
           for (int j = 0; j < numOfPuts; j++) {
             EventID id = new EventID(new byte[] {(byte) ids}, ids, j);
@@ -692,6 +699,7 @@ public class HARQAddOperationJUnitTest {
     for (int i = 0; i < numOfThreads; i++) {
       final long ids = i;
       threads[i] = new Thread() {
+        @Override
         public void run() {
           for (int j = 0; j < numOfPuts; j++) {
             EventID id = new EventID(new byte[] {(byte) ids}, ids, j);
@@ -726,6 +734,7 @@ public class HARQAddOperationJUnitTest {
       final int peakBatchSize = i * 5;
       threads_peek_remove[i - 1] = new Thread() {
 
+        @Override
         public void run() {
           try {
             List peakObjects = regionqueue.peek(peakBatchSize);
@@ -793,6 +802,7 @@ public class HARQAddOperationJUnitTest {
     for (int i = 0; i < numOfThreads; i++) {
       final long ids = i;
       threads[i] = new Thread() {
+        @Override
         public void run() {
           for (int j = 0; j < numOfPuts; j++) {
             EventID id = new EventID(new byte[] {(byte) ids}, ids, j);
@@ -826,6 +836,7 @@ public class HARQAddOperationJUnitTest {
       final int peakBatchSize = i * 5;
       threads_peek_remove[i - 1] = new Thread() {
 
+        @Override
         public void run() {
           try {
             List peakObjects = regionqueue.peek(peakBatchSize);
@@ -881,9 +892,11 @@ public class HARQAddOperationJUnitTest {
       HARegionQueueAttributes attrs = new HARegionQueueAttributes();
       attrs.setExpiryTime(10);
       final HARegionQueue regionqueue =
-          new HARegionQueue.TestOnlyHARegionQueue("testing", cache, attrs) {
+          new TestOnlyHARegionQueue("testing", cache, attrs, disabledClock()) {
+            @Override
             CacheListener createCacheListenerForHARegion() {
               return new CacheListenerAdapter() {
+                @Override
                 public void afterInvalidate(EntryEvent event) {
                   try {
                     expireTheEventOrThreadIdentifier(event);

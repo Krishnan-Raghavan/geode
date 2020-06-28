@@ -14,9 +14,10 @@
  */
 package org.apache.geode.cache.client.internal;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+
 import java.io.IOException;
 import java.io.Serializable;
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -24,7 +25,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -44,12 +44,14 @@ import org.apache.geode.distributed.internal.DistributionConfigImpl;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.distributed.internal.ServerLocator;
+import org.apache.geode.distributed.internal.tcpserver.HostAndPort;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
+import org.apache.geode.distributed.internal.tcpserver.TcpSocketFactory;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.PoolFactoryImpl;
-import org.apache.geode.internal.logging.InternalLogWriter;
-import org.apache.geode.internal.logging.LocalLogWriter;
 import org.apache.geode.internal.net.SocketCreatorFactory;
+import org.apache.geode.internal.security.SecurableCommunicationChannel;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
@@ -61,8 +63,8 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
 
   /**
    * The number of connections that we can be off by in the balancing tests We need this little
-   * fudge factor, because the locator can receive an update from the bridge server after it has
-   * made incremented its counter for a client connection, but the client hasn't connected yet. This
+   * fudge factor, because the locator can receive an update from the cache server after it has made
+   * incremented its counter for a client connection, but the client hasn't connected yet. This
    * wipes out the estimation on the locator. This means that we may be slighly off in our balance.
    * <p>
    * TODO grid fix this hole in the locator.
@@ -75,8 +77,8 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
   }
 
   /**
-   * Test the locator discovers a bridge server and is initialized with the correct load for that
-   * bridge server.
+   * Test the locator discovers a cache server and is initialized with the correct load for that
+   * cache server.
    */
   @Test
   public void testDiscovery() {
@@ -133,31 +135,22 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
 
     SocketCreatorFactory.setDistributionConfig(new DistributionConfigImpl(new Properties()));
     ClientConnectionResponse response;
-    response =
-        (ClientConnectionResponse) new TcpClient().requestToServer(InetAddress.getByName(hostName),
-            locatorPort, new ClientConnectionRequest(Collections.EMPTY_SET, null), 10000);
+    response = issueClientConnectionRequest(hostName, locatorPort,
+        new ClientConnectionRequest(Collections.EMPTY_SET, null), true);
     Assert.assertEquals(expectedLocation, response.getServer());
 
-    response =
-        (ClientConnectionResponse) new TcpClient().requestToServer(InetAddress.getByName(hostName),
-            locatorPort, new ClientConnectionRequest(Collections.EMPTY_SET, null), 10000, true);
+    response = issueClientConnectionRequest(hostName, locatorPort,
+        new ClientConnectionRequest(Collections.EMPTY_SET, null), true);
     Assert.assertEquals(expectedLocation, response.getServer());
 
     // we expect that the connection load load will be 2 * the loadPerConnection
     vm0.invoke("check Locator Load", () -> checkLocatorLoad(expected));
 
     QueueConnectionResponse response2;
-    response2 =
-        (QueueConnectionResponse) new TcpClient().requestToServer(InetAddress.getByName(hostName),
-            locatorPort, new QueueConnectionRequest(null, 2, Collections.EMPTY_SET, null, false),
-            10000, true);
+    response2 = issueQueueConnectionRequest(hostName, locatorPort, 2);
     Assert.assertEquals(Collections.singletonList(expectedLocation), response2.getServers());
 
-    response2 =
-        (QueueConnectionResponse) new TcpClient().requestToServer(InetAddress.getByName(hostName),
-            locatorPort, new QueueConnectionRequest(null, 5, Collections.EMPTY_SET, null, false),
-            10000, true);
-
+    response2 = issueQueueConnectionRequest(hostName, locatorPort, 5);
     Assert.assertEquals(Collections.singletonList(expectedLocation), response2.getServers());
 
     // we expect that the queue load will increase by 2
@@ -165,10 +158,40 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
     vm0.invoke("check Locator Load", () -> checkLocatorLoad(expected));
   }
 
+  private ClientConnectionResponse issueClientConnectionRequest(final String hostName,
+      final int locatorPort,
+      final ClientConnectionRequest request,
+      final boolean replyExpected)
+      throws IOException, ClassNotFoundException {
+    return (ClientConnectionResponse) issueRequest(hostName, locatorPort, request, replyExpected);
+  }
+
+  private QueueConnectionResponse issueQueueConnectionRequest(final String hostName,
+      final int locatorPort,
+      final int redundantCopies)
+      throws IOException, ClassNotFoundException {
+    return (QueueConnectionResponse) issueRequest(hostName, locatorPort,
+        new QueueConnectionRequest(null, redundantCopies, Collections.EMPTY_SET, null, false),
+        true);
+  }
+
+  private Object issueRequest(final String hostName, final int locatorPort,
+      final Object request, final boolean replyExpected)
+      throws IOException, ClassNotFoundException {
+    return new TcpClient(SocketCreatorFactory
+        .getSocketCreatorForComponent(SecurableCommunicationChannel.LOCATOR),
+        InternalDataSerializer.getDSFIDSerializer().getObjectSerializer(),
+        InternalDataSerializer.getDSFIDSerializer().getObjectDeserializer(),
+        TcpSocketFactory.DEFAULT)
+            .requestToServer(new HostAndPort(hostName,
+                locatorPort),
+                request,
+                10000, replyExpected);
+  }
+
   /**
-   * Test to make sure the bridge servers communicate their updated load to the controller when the
-   * load on the bridge server changes.
-   *
+   * Test to make sure the cache servers communicate their updated load to the controller when the
+   * load on the cache server changes.
    */
   @Test
   public void testLoadMessaging() throws Exception {
@@ -217,7 +240,6 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
 
   /**
    * Test to make sure that the locator balancing load between two servers.
-   *
    */
   @Test
   public void testBalancing() throws Exception {
@@ -254,15 +276,14 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
   private void checkConnectionCount(final int count) {
     Cache cache = (Cache) remoteObjects.get(CACHE_KEY);
     final CacheServerImpl server = (CacheServerImpl) cache.getCacheServers().get(0);
-    Awaitility.await().pollDelay(100, TimeUnit.MILLISECONDS)
-        .pollInterval(100, TimeUnit.MILLISECONDS).timeout(300, TimeUnit.SECONDS).until(() -> {
-          int sz = server.getAcceptor().getStats().getCurrentClientConnections();
-          if (Math.abs(sz - count) <= ALLOWABLE_ERROR_IN_COUNT) {
-            return true;
-          }
-          System.out.println("Found " + sz + " connections, expected " + count);
-          return false;
-        });
+    await().timeout(300, TimeUnit.SECONDS).until(() -> {
+      int sz = server.getAcceptor().getStats().getCurrentClientConnections();
+      if (Math.abs(sz - count) <= ALLOWABLE_ERROR_IN_COUNT) {
+        return true;
+      }
+      System.out.println("Found " + sz + " connections, expected " + count);
+      return false;
+    });
   }
 
   private void waitForPrefilledConnections(final int count) throws Exception {
@@ -272,15 +293,13 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
   private void waitForPrefilledConnections(final int count, final String poolName)
       throws Exception {
     final PoolImpl pool = (PoolImpl) PoolManager.getAll().get(poolName);
-    Awaitility.await().pollDelay(100, TimeUnit.MILLISECONDS)
-        .pollInterval(100, TimeUnit.MILLISECONDS).timeout(300, TimeUnit.SECONDS)
+    await().timeout(300, TimeUnit.SECONDS)
         .until(() -> pool.getConnectionCount() >= count);
   }
 
   /**
    * Test that the locator balances load between three servers with intersecting server groups.
    * Server: 1 2 3 Groups: a a,b b
-   *
    */
   @Test
   public void testIntersectingServerGroups() throws Exception {
@@ -427,10 +446,8 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
     Assert.assertEquals(1, locators.size());
     InternalLocator locator = (InternalLocator) locators.get(0);
     final ServerLocator sl = locator.getServerLocatorAdvisee();
-    InternalLogWriter log = new LocalLogWriter(InternalLogWriter.FINEST_LEVEL, System.out);
     sl.getDistributionAdvisor().dumpProfiles("PROFILES= ");
-    Awaitility.await().pollDelay(100, TimeUnit.MILLISECONDS)
-        .pollInterval(100, TimeUnit.MILLISECONDS).timeout(300, TimeUnit.SECONDS)
+    await().timeout(300, TimeUnit.SECONDS)
         .until(() -> expected.equals(sl.getLoadMap()));
   }
 
@@ -448,6 +465,7 @@ public class LocatorLoadBalancingDUnitTest extends LocatorTestBase {
       this.load = load;
     }
 
+    @Override
     public ServerLoad getLoad(ServerMetrics metrics) {
       float connectionLoad =
           load.getConnectionLoad() + metrics.getConnectionCount() * load.getLoadPerConnection();

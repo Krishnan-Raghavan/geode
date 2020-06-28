@@ -14,8 +14,10 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
@@ -28,10 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -47,6 +47,7 @@ import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.Scope;
+import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.query.CqAttributes;
 import org.apache.geode.cache.query.CqAttributesFactory;
 import org.apache.geode.cache.query.CqAttributesMutator;
@@ -70,8 +71,7 @@ import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.DistributedTombstoneOperation;
 import org.apache.geode.internal.cache.EventID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
@@ -91,7 +91,7 @@ import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   private static final Logger logger = LogService.getLogger();
   /**
-   * The port on which the bridge server was started in this VM
+   * The port on which the cache server was started in this VM
    */
   private static int bridgeServerPort;
 
@@ -120,53 +120,61 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   public final String[] cqs = new String[] {
       // 0 - Test for ">"
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " p where p.ID > 0",
 
       // 1 - Test for "=" and "and".
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID = 2 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.ID = 2 and p.status='active'",
 
       // 2 - Test for "<" and "and".
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active'",
 
       // FOLLOWING CQS ARE NOT TESTED WITH VALUES; THEY ARE USED TO TEST PARSING LOGIC WITHIN CQ.
       // 3
-      "SELECT * FROM /root/" + regions[0] + " ;",
+      "SELECT * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " ;",
       // 4
-      "SELECT ALL * FROM /root/" + regions[0],
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0],
       // 5
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " TYPE Portfolio",
       // 6
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " p TYPE Portfolio",
       // 7
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active';",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active';",
       // 8
-      "SELECT ALL * FROM /root/" + regions[0] + "  ;",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + "  ;",
       // 9
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.description = NULL",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.description = NULL",
       // 10
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.ID > 0 and p.status='active'",
       // 11 test for region 0
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " p where p.ID > 0",
       // 12 test for region 1
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID > 0",};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1] + " p where p.ID > 0",};
 
   public final String[] prCqs = new String[] {
       // 0 - Test for ">"
-      "SELECT ALL * FROM /" + regions[0] + " p where p.ID > 0",
+      "SELECT ALL * FROM " + SEPARATOR + regions[0] + " p where p.ID > 0",
 
       // 1 - Test for "=" and "and".
-      "SELECT ALL * FROM /" + regions[0] + " p where p.ID = 2 and p.status='active'"};
+      "SELECT ALL * FROM " + SEPARATOR + regions[0] + " p where p.ID = 2 and p.status='active'"};
 
   private final String[] invalidCQs = new String[] {
       // Test for ">"
-      "SELECT ALL * FROM /root/invalidRegion p where p.ID > 0"};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + "invalidRegion p where p.ID > 0"};
 
 
   private final String[] shortTypeCQs = new String[] {
       // 11 - Test for "short" number type
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.shortID IN SET(1,2,3,4,5)"};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.shortID IN SET(1,2,3,4,5)"};
 
   @Override
   public final void postSetUp() throws Exception {
@@ -174,6 +182,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     // system before creating connection pools
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -237,6 +246,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   public void createPartitionRegion(final VM server, final String[] regionNames) {
     SerializableRunnable createRegion = new CacheSerializableRunnable("Create Region") {
 
+      @Override
       public void run2() throws CacheException {
         RegionFactory rf = getCache().createRegionFactory(RegionShortcut.PARTITION);
         for (String regionName : regionNames) {
@@ -251,6 +261,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   private void createReplicateRegionWithLocalDestroy(final VM server, final String[] regionNames) {
     SerializableRunnable createRegion = new CacheSerializableRunnable("Create Region") {
 
+      @Override
       public void run2() throws CacheException {
         RegionFactory rf =
             getCache().createRegionFactory(RegionShortcut.REPLICATE).setEvictionAttributes(
@@ -268,6 +279,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   /* Close Cache Server */
   public void closeServer(VM server) {
     server.invoke(new SerializableRunnable("Close CacheServer") {
+      @Override
       public void run() {
         logger.info("### Close CacheServer. ###");
         stopBridgeServer(getCache());
@@ -278,6 +290,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void crashServer(VM server) {
     server.invoke(new SerializableRunnable("Crash CacheServer") {
+      @Override
       public void run() {
         org.apache.geode.cache.client.internal.ConnectionImpl.setTEST_DURABLE_CLIENT_CRASH(true);
         logger.info("### Crashing CacheServer. ###");
@@ -289,6 +302,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void closeCrashServer(VM server) {
     server.invoke(new SerializableRunnable("Close CacheServer") {
+      @Override
       public void run() {
         org.apache.geode.cache.client.internal.ConnectionImpl.setTEST_DURABLE_CLIENT_CRASH(false);
         logger.info("### Crashing CacheServer. ###");
@@ -333,6 +347,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   public void createLocalRegion(VM client, final int[] serverPorts, final String serverHost,
       final String redundancyLevel, final String[] regionNames) {
     SerializableRunnable createQService = new CacheSerializableRunnable("Create Local Region") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Create Local Region. ###");
         AttributesFactory af = new AttributesFactory();
@@ -370,24 +385,30 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
       regionFactory0.setScope(Scope.LOCAL);
       regionFactory1.setScope(Scope.LOCAL);
       if (redundancyLevel != null) {
-        ClientServerTestCase.configureConnectionPoolWithName(regionFactory0, serverHost,
+        ClientServerTestCase.configureConnectionPoolWithNameAndFactory(regionFactory0, serverHost,
             serverPorts1, true,
-            Integer.parseInt(redundancyLevel), -1,
-            null, "testPoolA");
-        ClientServerTestCase.configureConnectionPoolWithName(regionFactory1, serverHost,
+            Integer.parseInt(redundancyLevel),
+            -1, (String) null, "testPoolA", PoolManager.createFactory(), -1, -1, -2,
+            -1);
+        ClientServerTestCase.configureConnectionPoolWithNameAndFactory(regionFactory1, serverHost,
             serverPorts2, true,
-            Integer.parseInt(redundancyLevel), -1,
-            null, "testPoolB");
+            Integer.parseInt(redundancyLevel),
+            -1, (String) null, "testPoolB", PoolManager.createFactory(), -1, -1, -2,
+            -1);
       } else {
-        ClientServerTestCase.configureConnectionPoolWithName(regionFactory0, serverHost,
-            serverPorts1, true, -1, -1, null,
-            "testPoolA");
-        ClientServerTestCase.configureConnectionPoolWithName(regionFactory1, serverHost,
-            serverPorts2, true, -1, -1, null,
-            "testPoolB");
+        ClientServerTestCase.configureConnectionPoolWithNameAndFactory(regionFactory0, serverHost,
+            serverPorts1, true,
+            -1,
+            -1, (String) null, "testPoolA", PoolManager.createFactory(), -1, -1, -2,
+            -1);
+        ClientServerTestCase.configureConnectionPoolWithNameAndFactory(regionFactory1, serverHost,
+            serverPorts2, true,
+            -1,
+            -1, (String) null, "testPoolB", PoolManager.createFactory(), -1, -1, -2,
+            -1);
       }
-      createRegion(regions[0], regionFactory0.createRegionAttributes());
-      createRegion(regions[1], regionFactory1.createRegionAttributes());
+      createRegion(regions[0], regionFactory0.create());
+      createRegion(regions[1], regionFactory1.create());
       logger.info("### Successfully Created Region on Client :" + regions[0]);
       logger.info("### Successfully Created Region on Client :" + regions[1]);
 
@@ -398,6 +419,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   /* Close Client */
   public void closeClient(VM client) {
     SerializableRunnable closeCQService = new CacheSerializableRunnable("Close Client") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Close Client. ###");
         try {
@@ -417,6 +439,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   /* Create/Init values */
   public void createValues(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -430,6 +453,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   /* Create/Init values */
   public void createValuesWithTime(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -444,6 +468,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void createValuesWithShort(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -458,6 +483,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void createValuesAsPrimitives(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -490,6 +516,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   public void updateValuesAsPrimitives(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -522,6 +549,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   public void createValuesAsPortfolios(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -535,6 +563,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   private void createIndex(VM vm, final String indexName, final String indexedExpression,
       final String regionPath) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         try {
           QueryService qs = getCache().getQueryService();
@@ -550,6 +579,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   /* delete values */
   public void deleteValues(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Delete values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -566,6 +596,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
    */
   public void invalidateValues(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -773,7 +804,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     vm.invoke(() -> {
       Region region = getRootRegion().getSubregion(regionName);
       region.getAttributesMutator()
-          .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+          .addCacheListener(new CertifiableTestCacheListener());
 
       List list = new ArrayList();
       for (int i = 1; i <= 10; i++) {
@@ -1071,8 +1102,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
       final CqStateImpl cqState = (CqStateImpl) cQuery.getState();
       // Wait max time, till the CQ state is as expected.
-      Awaitility.await("cqState never became " + state).atMost(MAX_TIME, TimeUnit.MILLISECONDS)
-          .pollInterval(200, TimeUnit.MILLISECONDS)
+      await("cqState never became " + state)
           .until(() -> cqState.getState(), Matchers.equalTo(state));
     });
   }
@@ -1189,8 +1219,9 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void performGC(VM server, final String regionName) {
     SerializableRunnable task = new CacheSerializableRunnable("perform GC") {
+      @Override
       public void run2() throws CacheException {
-        Region subregion = getCache().getRegion("root/" + regionName);
+        Region subregion = getCache().getRegion("root" + SEPARATOR + regionName);
         DistributedTombstoneOperation gc = DistributedTombstoneOperation
             .gc((DistributedRegion) subregion, new EventID(getCache().getDistributedSystem()));
         gc.distribute();
@@ -1201,6 +1232,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void ensureCQExists(VM server, final String regionName) {
     SerializableRunnable task = new CacheSerializableRunnable("check CQs") {
+      @Override
       public void run2() throws CacheException {
         CqQuery queries[] = getCache().getQueryService().getCqs();
         assertThat(queries.length > 0).describedAs("expected to find a CQ but found none").isTrue();
@@ -1301,6 +1333,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     // Validate InterestList.
     // CREATE
     client.invoke(new CacheSerializableRunnable("validate updates") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regions[0]);
         assertThat(region).isNotNull();
@@ -1328,6 +1361,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     }
 
     client.invoke(new CacheSerializableRunnable("validate updates") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regions[0]);
         assertThat(region).isNotNull();
@@ -1349,6 +1383,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // INVALIDATE
     server.invoke(new CacheSerializableRunnable("Invalidate values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = 1; i <= size; i++) {
@@ -1360,6 +1395,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     waitForInvalidated(client, "testInterestListAndCQs_0", KEY + 10);
 
     client.invoke(new CacheSerializableRunnable("validate invalidates") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regions[0]);
         assertThat(region).isNotNull();
@@ -1386,6 +1422,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     // DESTROY - this should not have any effect on CQ, as the events are
     // already destroyed from invalidate events.
     server.invoke(new CacheSerializableRunnable("Invalidate values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = 1; i <= size; i++) {
@@ -1396,6 +1433,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Wait for destroyed.
     client.invoke(new CacheSerializableRunnable("validate destroys") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regions[0]);
         assertThat(region).isNotNull();
@@ -1727,6 +1765,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     // Validate InterestList.
     // CREATE
     client.invoke(new CacheSerializableRunnable("validate updates") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regions[0]);
         assertThat(region).isNotNull();
@@ -1748,6 +1787,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Destroy Region.
     server.invoke(new CacheSerializableRunnable("Destroy Region") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         region1.destroyRegion();
@@ -1981,6 +2021,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Insert invalid Events.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = -1; i >= -5; i--) {
@@ -2006,7 +2047,8 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     VM server = VM.getVM(0);
     VM client = VM.getVM(1);
-    String mapQuery = "select * from /root/" + regions[0] + " er where er['field1'] > 'value2'";
+    String mapQuery = "select * from " + SEPARATOR + "root" + SEPARATOR + regions[0]
+        + " er where er['field1'] > 'value2'";
     int size = 10;
 
     createServer(server);
@@ -2039,7 +2081,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     closeCQ(client, "testCQEvents_0");
 
-    createIndex(server, "index1", "er[*]", "/root/" + regions[0] + " er");
+    createIndex(server, "index1", "er[*]", SEPARATOR + "root" + SEPARATOR + regions[0] + " er");
 
     // Create CQs.
     createCQ(client, "testCQEvents_0", mapQuery);
@@ -2049,7 +2091,8 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     closeCQ(client, "testCQEvents_0");
 
-    createIndex(server, "index2", "er['field1']", "/root/" + regions[0] + " er");
+    createIndex(server, "index2", "er['field1']",
+        SEPARATOR + "root" + SEPARATOR + regions[0] + " er");
 
     // Create CQs.
     createCQ(client, "testCQEvents_0", mapQuery);
@@ -2065,6 +2108,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void createMapValues(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create map values") {
+      @Override
       public void run2() throws CacheException {
         Region exampleRegion = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -2101,6 +2145,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     /* Test for disableCQ */
     client.invoke(new CacheSerializableRunnable("Client disableCQs()") {
+      @Override
       public void run2() throws CacheException {
         // Get CQ Service.
         QueryService cqService;
@@ -2126,6 +2171,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     /* Test for enable CQ */
     client.invoke(new CacheSerializableRunnable("Client enableCQs()") {
+      @Override
       public void run2() throws CacheException {
         // Get CQ Service.
         QueryService cqService;
@@ -2148,12 +2194,13 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     /* Test for disableCQ on Region */
     client.invoke(new CacheSerializableRunnable("Client disableCQs()") {
+      @Override
       public void run2() throws CacheException {
         // Get CQ Service.
         QueryService cqService;
         try {
           cqService = getCache().getQueryService();
-          cqService.stopCqs("/root/" + regions[0]);
+          cqService.stopCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
         } catch (Exception cqe) {
           cqe.printStackTrace();
           fail("Failed to getCQService.");
@@ -2171,12 +2218,13 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     /* Test for enable CQ on region */
     client.invoke(new CacheSerializableRunnable("Client enableCQs()") {
+      @Override
       public void run2() throws CacheException {
         // Get CQ Service.
         QueryService cqService;
         try {
           cqService = getCache().getQueryService();
-          cqService.executeCqs("/root/" + regions[0]);
+          cqService.executeCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
         } catch (Exception cqe) {
           cqe.printStackTrace();
           fail("Failed to getCQService.");
@@ -2427,6 +2475,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     final int thePort2 = server2.invoke(() -> CqQueryDUnitTest.getCacheServerPort());
 
     SerializableRunnable createConnectionPool = new CacheSerializableRunnable("Create region") {
+      @Override
       public void run2() throws CacheException {
         getCache();
 
@@ -2444,6 +2493,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(createConnectionPool);
 
     server1.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = 0; i < 20; i++) {
@@ -2454,6 +2504,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Put some values on the client.
     client.invoke(new CacheSerializableRunnable("Put values client") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
 
@@ -2505,33 +2556,40 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     executeCQ(client, "testQuery_8", true, null);
 
     client.invoke(new CacheSerializableRunnable("Client disableCQs()") {
+      @Override
       public void run2() throws CacheException {
         // Get CQ Service.
         QueryService cqService;
         try {
           cqService = getCache().getQueryService();
-          CqQuery[] cq = cqService.getCqs("/root/" + regions[0]);
+          CqQuery[] cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
           assertThat(cq)
               .describedAs(
-                  "CQService should not return null for cqs on this region : /root/" + regions[0])
+                  "CQService should not return null for cqs on this region : " + SEPARATOR + "root"
+                      + SEPARATOR + regions[0])
               .isNotNull();
-          getCache().getLogger().info("cqs for region: /root/" + regions[0] + " : " + cq.length);
+          getCache().getLogger().info(
+              "cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[0] + " : " + cq.length);
           // closing on of the cqs.
 
           cq[0].close();
-          cq = cqService.getCqs("/root/" + regions[0]);
+          cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
           assertThat(cq)
               .describedAs(
-                  "CQService should not return null for cqs on this region : /root/" + regions[0])
+                  "CQService should not return null for cqs on this region : " + SEPARATOR + "root"
+                      + SEPARATOR + regions[0])
               .isNotNull();
-          getCache().getLogger().info("cqs for region: /root/" + regions[0]
-              + " after closing one of the cqs : " + cq.length);
+          getCache().getLogger()
+              .info("cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[0]
+                  + " after closing one of the cqs : " + cq.length);
 
-          cq = cqService.getCqs("/root/" + regions[1]);
-          getCache().getLogger().info("cqs for region: /root/" + regions[1] + " : " + cq.length);
+          cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[1]);
+          getCache().getLogger().info(
+              "cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[1] + " : " + cq.length);
           assertThat(cq)
               .describedAs(
-                  "CQService should not return null for cqs on this region : /root/" + regions[1])
+                  "CQService should not return null for cqs on this region : " + SEPARATOR + "root"
+                      + SEPARATOR + regions[1])
               .isNotNull();
         } catch (Exception cqe) {
           fail("Failed to getCQService", cqe);
@@ -2563,10 +2621,10 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     createLocalRegion(client, new int[] {thePort}, host0, "-1", new String[] {regions[0]});
     // Create CQs.
-    createCQ(client, "testQuery_3", "select * from /" + regions[0]);
+    createCQ(client, "testQuery_3", "select * from " + SEPARATOR + regions[0]);
     String expectedError =
-        LocalizedStrings.CqQueryImpl_CQ_NOT_SUPPORTED_FOR_REPLICATE_WITH_LOCAL_DESTROY
-            .toLocalizedString("/" + regions[0], EvictionAction.LOCAL_DESTROY);
+        String.format("CQ is not supported for replicated region: %s with eviction action: %s",
+            SEPARATOR + regions[0], EvictionAction.LOCAL_DESTROY);
     try {
       executeCQ(client, "testQuery_3", false, expectedError);
     } catch (Exception e) {
@@ -2637,6 +2695,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create server with Global scope.
     SerializableRunnable createServer = new CacheSerializableRunnable("Create Cache Server") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Create Cache Server. ###");
 
@@ -2696,6 +2755,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
             + " The CQ supported scopes are DISTRIBUTED_ACK and GLOBAL.";
     final String expectedErr = "Cq not registered on primary";
     client.invoke(new CacheSerializableRunnable("Set expect") {
+      @Override
       public void run2() {
         getCache().getLogger()
             .info("<ExpectedException action=add>" + expectedErr + "</ExpectedException>");
@@ -2709,6 +2769,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
       // Expected.
     } finally {
       client.invoke(new CacheSerializableRunnable("Remove expect") {
+        @Override
         public void run2() {
           getCache().getLogger()
               .info("<ExpectedException action=remove>" + expectedErr + "</ExpectedException>");
@@ -2773,27 +2834,30 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     Wait.pause(500);
 
     // Create CQs.
-    createCQ(client, "equalsQuery1", "select * from /root/regionA p where p.equals('seeded')");
+    createCQ(client, "equalsQuery1",
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p.equals('seeded')");
 
     // Check resultSet Size.
     executeCQ(client, "equalsQuery1", true, 2, null);
 
     // Create CQs.
-    createCQ(client, "equalsQuery2", "select * from /root/regionA p where p='seeded'");
+    createCQ(client, "equalsQuery2",
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p='seeded'");
 
     // Check resultSet Size.
     executeCQ(client, "equalsQuery2", true, 2, null);
 
     // Create CQs.
     createCQ(client, "equalsStatusQuery1",
-        "select * from /root/regionA p where p.status.equals('inactive')");
+        "select * from " + SEPARATOR + "root" + SEPARATOR
+            + "regionA p where p.status.equals('inactive')");
 
     // Check resultSet Size.
     executeCQ(client, "equalsStatusQuery1", true, 1, null);
 
     // Create CQs.
     createCQ(client, "equalsStatusQuery2",
-        "select * from /root/regionA p where p.status='inactive'");
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p.status='inactive'");
 
     // Check resultSet Size.
     executeCQ(client, "equalsStatusQuery2", true, 1, null);
@@ -2819,32 +2883,35 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     /* CQ Test with initial Values. */
     int size = 10;
     // create values
-    createIndex(server, "index1", "p.status", "/root/regionA p");
+    createIndex(server, "index1", "p.status", SEPARATOR + "root" + SEPARATOR + "regionA p");
     createValuesAsPrimitives(server, regions[0], size);
     Wait.pause(500);
 
     // Create CQs.
-    createCQ(client, "equalsQuery1", "select * from /root/regionA p where p.equals('seeded')");
+    createCQ(client, "equalsQuery1",
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p.equals('seeded')");
 
     // Check resultSet Size.
     executeCQ(client, "equalsQuery1", true, 2, null);
 
     // Create CQs.
-    createCQ(client, "equalsQuery2", "select * from /root/regionA p where p='seeded'");
+    createCQ(client, "equalsQuery2",
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p='seeded'");
 
     // Check resultSet Size.
     executeCQ(client, "equalsQuery2", true, 2, null);
 
     // Create CQs.
     createCQ(client, "equalsStatusQuery1",
-        "select * from /root/regionA p where p.status.equals('inactive')");
+        "select * from " + SEPARATOR + "root" + SEPARATOR
+            + "regionA p where p.status.equals('inactive')");
 
     // Check resultSet Size.
     executeCQ(client, "equalsStatusQuery1", true, 1, null);
 
     // Create CQs.
     createCQ(client, "equalsStatusQuery2",
-        "select * from /root/regionA p where p.status='inactive'");
+        "select * from " + SEPARATOR + "root" + SEPARATOR + "regionA p where p.status='inactive'");
 
     // Check resultSet Size.
     executeCQ(client, "equalsStatusQuery2", true, 1, null);
@@ -3146,7 +3213,8 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create CQs.
     createCQ(client, "testCQEventsWithUndefined_0",
-        "SELECT ALL * FROM /root/" + regions[0] + " p where p.position2.secId <> 'ABC'");
+        "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+            + " p where p.position2.secId <> 'ABC'");
 
     executeCQ(client, "testCQEventsWithUndefined_0", false, null);
 
@@ -3182,6 +3250,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Insert invalid Events.
     server.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regions[0]);
         for (int i = -1; i >= -5; i--) {
@@ -3209,6 +3278,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   private void validateServerClientRegionEntries(VM server, VM client, final String regionName) {
 
     server.invoke(new CacheSerializableRunnable("Server Region Entries") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         logger.info("### Entries in Server :" + region.keySet().size());
@@ -3216,6 +3286,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     client.invoke(new CacheSerializableRunnable("Client Region Entries") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         logger.info("### Entries in Client :" + region.keySet().size());
@@ -3224,10 +3295,11 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /*
-   * Used only by tests that start and stop a server only to need to start the bridge server again
+   * Used only by tests that start and stop a server only to need to start the cache server again
    */
   private void restartBridgeServer(VM server, final int port) {
-    server.invoke(new CacheSerializableRunnable("Start bridge server") {
+    server.invoke(new CacheSerializableRunnable("Start cache server") {
+      @Override
       public void run2() {
         try {
           restartBridgeServers(getCache());
@@ -3240,7 +3312,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
 
 
   /**
-   * Starts a bridge server on the given port to serve up the given region.
+   * Starts a cache server on the given port to serve up the given region.
    *
    * @since GemFire 4.0
    */
@@ -3249,7 +3321,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    *
    * @since GemFire 4.0
@@ -3265,7 +3337,7 @@ public class CqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    *
    * @since GemFire 4.0
    */

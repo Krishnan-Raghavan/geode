@@ -14,17 +14,15 @@
  */
 package org.apache.geode.management.internal.configuration;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertFalse;
 import static org.apache.geode.test.dunit.Assert.assertNotNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -32,12 +30,8 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.wan.GatewayReceiver;
 import org.apache.geode.cache.wan.GatewaySender;
-import org.apache.geode.management.cli.Result;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
-import org.apache.geode.management.internal.cli.result.CommandResult;
-import org.apache.geode.management.internal.cli.result.CompositeResultData;
-import org.apache.geode.management.internal.cli.result.TabularResultData;
 import org.apache.geode.management.internal.cli.util.CommandStringBuilder;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 import org.apache.geode.test.junit.categories.WanTest;
@@ -220,17 +214,9 @@ public class WANClusterConfigurationDUnitTest {
   }
 
   private void waitTillAllGatewaySendersAreReady() {
-    Awaitility.await().atMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
-      CommandStringBuilder csb2 = new CommandStringBuilder(CliStrings.LIST_GATEWAY);
-      CommandResult cmdResult = gfsh.executeCommand(csb2.toString());
-      assertThat(cmdResult).isNotNull();
-      assertThat(cmdResult.getStatus()).isSameAs(Result.Status.OK);
-      TabularResultData tableSenderResultData = ((CompositeResultData) cmdResult.getResultData())
-          .retrieveSection(CliStrings.SECTION_GATEWAY_SENDER)
-          .retrieveTable(CliStrings.TABLE_GATEWAY_SENDER);
-      List<String> senders =
-          tableSenderResultData.retrieveAllValues(CliStrings.RESULT_GATEWAY_SENDER_ID);
-      assertThat(senders).hasSize(4);
+    await().untilAsserted(() -> {
+      gfsh.executeAndAssertThat(CliStrings.LIST_GATEWAY).statusIsSuccess()
+          .hasTableSection("gatewaySenders").hasRowSize(4);
     });
   }
 

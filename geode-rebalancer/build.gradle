@@ -15,19 +15,35 @@
  * limitations under the License.
  */
 
-dependencies {
-  compileOnly project(':geode-common')
-  compileOnly project(':geode-core')
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
 
-  compile ('org.springframework:spring-context:' + project.'springframework.version') {
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+apply from: "${project.projectDir}/../gradle/warnings.gradle"
+
+
+dependencies {
+  compile(platform(project(':boms:geode-all-bom')))
+  compile(project(':geode-core'))
+  implementation(project(':geode-serialization'))
+  implementation(project(':geode-logging'))
+  integrationTestImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+
+  implementation('org.apache.logging.log4j:log4j-api')
+  implementation('org.springframework:spring-context') {
     exclude module: 'spring-beans'
     exclude module: 'spring-expression'
     exclude module: 'spring-aop'
   }
 
-  testCompile project(':geode-core')
+  testImplementation('junit:junit')
+  testImplementation('org.assertj:assertj-core')
+  testImplementation('org.mockito:mockito-core')
 
-  integrationTestCompile 'org.awaitility:awaitility:' + project.'awaitility.version'
-  // Only needed for category Flaky by Gradle
-  integrationTestRuntime project(':geode-junit')
+  integrationTestImplementation('junit:junit')
+  integrationTestImplementation('org.awaitility:awaitility')
+  integrationTestImplementation('org.hamcrest:hamcrest-all')
+  integrationTestImplementation('org.hamcrest:hamcrest-core')
+  integrationTestImplementation('org.hamcrest:hamcrest-library')
 }

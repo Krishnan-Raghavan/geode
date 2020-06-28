@@ -14,18 +14,16 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.Scope;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * The test will verify <br>
@@ -49,7 +47,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
 
   @Override
   protected final void postTearDown() throws Exception {
-    System.clearProperty(DistributionConfig.GEMFIRE_PREFIX + "MAX_OPLOGS_PER_COMPACTION");
+    System.clearProperty(GeodeGlossary.GEMFIRE_PREFIX + "MAX_OPLOGS_PER_COMPACTION");
     diskProps.setDiskDirs(dirs);
   }
 
@@ -59,7 +57,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
    */
   @Test
   public void testMultipleRolling() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "MAX_OPLOGS_PER_COMPACTION", "17");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "MAX_OPLOGS_PER_COMPACTION", "17");
 
     deleteFiles();
     diskProps.setMaxOplogSize(450);
@@ -81,7 +79,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
       addEntries(1 /* oplogNumber */, 50 /* byte array size */);
 
       ((LocalRegion) region).getDiskStore().forceCompaction();
-      Awaitility.waitAtMost(15, TimeUnit.SECONDS).until(() -> FLAG == true);
+      await().until(() -> FLAG == true);
       logWriter.info("testMultipleRolling after waitForCompactor");
       // the compactor copied two tombstone and 1 entry to oplog #2
       // The total oplog size will become 429, that why we need to
@@ -138,7 +136,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
     }
 
     // let the main thread sleep so that rolling gets over
-    Awaitility.waitAtMost(25, TimeUnit.SECONDS).until(() -> FLAG == true);
+    await().until(() -> FLAG == true);
 
     assertTrue("Number of Oplogs to be rolled is not null : this is unexpected",
         diskRegion.getOplogToBeCompacted() == null);
@@ -191,6 +189,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
   private CacheObserver getCacheObserver() {
     return (new CacheObserverAdapter() {
 
+      @Override
       public void beforeGoingToCompact() {
 
         if (logWriter.fineEnabled()) {
@@ -200,6 +199,7 @@ public class MultipleOplogsRollingFeatureJUnitTest extends DiskRegionTestingBase
 
       }
 
+      @Override
       public void afterHavingCompacted() {
         FLAG = true;
         if (CALLBACK_SET) {

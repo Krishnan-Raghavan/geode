@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
@@ -25,10 +26,8 @@ import java.lang.management.ThreadMXBean;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -68,15 +67,15 @@ public class JarDeployerDeadlockTest {
   public void testMultiThreadingDoesNotCauseDeadlock() throws Exception {
     // Add two JARs to the classpath
     byte[] jarBytes = this.classBuilder.createJarFromName("JarClassLoaderJUnitA");
-    File jarFile = temporaryFolder.newFile();
+    File jarFile = temporaryFolder.newFile("JarClassLoaderJUnitA.jar");
     IOUtils.copy(new ByteArrayInputStream(jarBytes), new FileOutputStream(jarFile));
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitA.jar", jarFile);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile);
 
     jarBytes = this.classBuilder.createJarFromClassContent("com/jcljunit/JarClassLoaderJUnitB",
         "package com.jcljunit; public class JarClassLoaderJUnitB {}");
-    File jarFile2 = temporaryFolder.newFile();
+    File jarFile2 = temporaryFolder.newFile("JarClassLoaderJUnitB.jar");
     IOUtils.copy(new ByteArrayInputStream(jarBytes), new FileOutputStream(jarFile2));
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitB.jar", jarFile2);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile2);
 
     String[] classNames = new String[] {"JarClassLoaderJUnitA", "com.jcljunit.JarClassLoaderJUnitB",
         "NON-EXISTENT CLASS"};
@@ -88,7 +87,7 @@ public class JarDeployerDeadlockTest {
     }
 
     executorService.shutdown();
-    Awaitility.await().atMost(60, TimeUnit.SECONDS).until(executorService::isTerminated);
+    await().until(executorService::isTerminated);
 
     ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
     long[] threadIds = threadMXBean.findDeadlockedThreads();

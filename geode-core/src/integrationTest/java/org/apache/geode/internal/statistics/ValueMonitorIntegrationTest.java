@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.statistics;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -24,9 +25,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -112,7 +111,6 @@ public class ValueMonitorIntegrationTest {
     StatisticsManager mockStatisticsManager =
         mock(StatisticsManager.class, testName.getMethodName() + "$StatisticsManager");
     when(mockStatisticsManager.getName()).thenReturn("mockStatisticsManager");
-    when(mockStatisticsManager.getId()).thenReturn(1L);
     when(mockStatisticsManager.getStartTime()).thenReturn(startTime);
     when(mockStatisticsManager.getStatListModCount()).thenReturn(0);
     when(mockStatisticsManager.getStatsList()).thenReturn(new ArrayList<>());
@@ -202,7 +200,7 @@ public class ValueMonitorIntegrationTest {
 
     long timeStamp = NanoTimer.getTime();
     sampleCollector.sample(timeStamp);
-    Awaitility.await().atMost(2, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+    await()
         .until(() -> notifications.size() > 0);
     assertThat(notifications.size()).isEqualTo(1);
 
@@ -215,7 +213,7 @@ public class ValueMonitorIntegrationTest {
     st1_1.incLong("long_counter_3", 3);
     timeStamp += NanoTimer.millisToNanos(1000);
     sampleCollector.sample(timeStamp);
-    Awaitility.await().atMost(2, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+    await()
         .until(() -> notifications.size() > 0);
     assertThat(notifications.size()).isEqualTo(1);
     notification = notifications.remove(0);
@@ -223,7 +221,7 @@ public class ValueMonitorIntegrationTest {
 
     Map<String, Number> expectedValues = new HashMap<>();
     expectedValues.put("double_counter_1", 1001.1001);
-    expectedValues.put("int_counter_2", 4);
+    expectedValues.put("int_counter_2", 4L);
     expectedValues.put("long_counter_3", 3333333336L);
     int statCount = assertStatisticsNotification(notification, expectedValues);
     assertThat(statCount).isEqualTo(3);
@@ -231,7 +229,7 @@ public class ValueMonitorIntegrationTest {
     // validate no notification occurs when no stats are updated
     timeStamp += NanoTimer.millisToNanos(1000);
     sampleCollector.sample(timeStamp);
-    Awaitility.await().atMost(2, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+    await()
         .until(() -> notifications.size() == 0);
     assertThat(notifications.isEmpty()).isTrue();
 
@@ -241,23 +239,22 @@ public class ValueMonitorIntegrationTest {
     st1_2.incLong("long_counter_3", 2);
     timeStamp += NanoTimer.millisToNanos(1000);
     sampleCollector.sample(timeStamp);
-    Awaitility.await().atMost(2, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+    await()
         .until(() -> notifications.size() == 0);
     assertThat(notifications.isEmpty()).isTrue();
 
     // validate notification only contains stats added to monitor
     st1_1.incInt("int_counter_2", 100);
     st1_2.incInt("int_counter_2", 200);
-    assertThat(sampleCollector.currentHandlersForTesting().size()).isEqualTo(2);
     timeStamp += NanoTimer.millisToNanos(1000);
     sampleCollector.sample(timeStamp);
-    Awaitility.await().atMost(2, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+    await()
         .until(() -> notifications.size() > 0);
     assertThat(notifications.size()).isEqualTo(1);
     notification = notifications.remove(0);
     assertThat(notification.getType()).isEqualTo(StatisticsNotification.Type.VALUE_CHANGED);
     expectedValues = new HashMap<>();
-    expectedValues.put("int_counter_2", 104);
+    expectedValues.put("int_counter_2", 104L);
     statCount = assertStatisticsNotification(notification, expectedValues);
     assertThat(statCount).isEqualTo(1);
   }

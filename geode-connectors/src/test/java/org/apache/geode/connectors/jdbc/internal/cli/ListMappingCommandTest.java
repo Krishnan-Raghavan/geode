@@ -15,13 +15,17 @@
 package org.apache.geode.connectors.jdbc.internal.cli;
 
 import static java.util.stream.Collectors.toSet;
+import static org.apache.geode.connectors.jdbc.internal.cli.ListMappingCommand.NO_MAPPINGS_FOUND;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -30,20 +34,25 @@ import org.junit.ClassRule;
 import org.junit.Test;
 
 import org.apache.geode.cache.configuration.CacheConfig;
+import org.apache.geode.cache.configuration.CacheElement;
+import org.apache.geode.cache.configuration.RegionConfig;
 import org.apache.geode.cache.execute.ResultCollector;
-import org.apache.geode.connectors.jdbc.internal.configuration.ConnectorService;
+import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.distributed.ConfigurationPersistenceService;
-import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.distributed.internal.InternalConfigurationPersistenceService;
-import org.apache.geode.management.internal.cli.functions.CliFunctionResult;
+import org.apache.geode.management.internal.functions.CliFunctionResult;
 import org.apache.geode.test.junit.rules.GfshParserRule;
 
 
 public class ListMappingCommandTest {
-  public static final String COMMAND = "list jdbc-mappings";
+  final String TEST_GROUP1 = "testGroup1";
+  public final String COMMAND = "list jdbc-mappings";
+  public final String COMMAND_FOR_GROUP = COMMAND + " --groups=" + TEST_GROUP1;
   private ListMappingCommand command;
-  private ConfigurationPersistenceService ccService;
-  private CacheConfig cacheConfig;
+  private ConfigurationPersistenceService configService =
+      mock(ConfigurationPersistenceService.class);
+  private CacheConfig cacheConfig = mock(CacheConfig.class);
+  RegionConfig region1Config = mock(RegionConfig.class);
+  RegionConfig region2Config = mock(RegionConfig.class);
 
   @ClassRule
   public static GfshParserRule gfsh = new GfshParserRule();
@@ -51,91 +60,55 @@ public class ListMappingCommandTest {
   @Before
   public void setUp() {
     command = spy(ListMappingCommand.class);
-    ccService = mock(InternalConfigurationPersistenceService.class);
-    doReturn(ccService).when(command).getConfigurationPersistenceService();
-    cacheConfig = mock(CacheConfig.class);
-    when(ccService.getCacheConfig("cluster")).thenReturn(cacheConfig);
+    doReturn(configService).when(command).getConfigurationPersistenceService();
   }
 
   @Test
-  public void whenCCServiceIsNotAvailable() {
+  public void whenNoCacheConfig() {
+    when(configService.getCacheConfig(ConfigurationPersistenceService.CLUSTER_CONFIG))
+        .thenReturn(null);
+    gfsh.executeAndAssertThat(command, COMMAND).statusIsError()
+        .containsOutput("Cache Configuration not found.");
+  }
+
+  @Test
+  public void whenClusterConfigDisabled() {
     doReturn(null).when(command).getConfigurationPersistenceService();
-    doReturn(Collections.emptySet()).when(command).findMembers(any(), any());
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess()
-        .containsOutput("No mappings found");
+    gfsh.executeAndAssertThat(command, COMMAND).statusIsError()
+        .containsOutput("Cluster Configuration must be enabled.");
   }
 
   @Test
-  public void whenCCServiceIsRunningAndNoConnectorServiceFound() {
-    doReturn(ccService).when(command).getConfigurationPersistenceService();
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess()
-        .containsOutput("(Experimental) \\nNo mappings found");
+  public void whenNoMappingExists() {
+    when(configService.getCacheConfig(eq(ConfigurationPersistenceService.CLUSTER_CONFIG)))
+        .thenReturn(cacheConfig);
+    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess().containsOutput(NO_MAPPINGS_FOUND);
   }
 
+  @SuppressWarnings("unchecked")
   @Test
-  public void whenCCServiceIsRunningAndNoConnectionFound() {
-    doReturn(ccService).when(command).getConfigurationPersistenceService();
+  public void whenMappingExists() {
+    when(configService.getCacheConfig(eq(ConfigurationPersistenceService.CLUSTER_CONFIG)))
+        .thenReturn(cacheConfig);
+    List<RegionConfig> regions = new ArrayList<>();
+    regions.add(region1Config);
+    regions.add(region2Config);
+    when(region1Config.getName()).thenReturn("region1");
+    when(region2Config.getName()).thenReturn("region2");
 
-    ConnectorService connectorService = mock(ConnectorService.class);
-    when(cacheConfig.findCustomCacheElement(any(), any())).thenReturn(connectorService);
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess()
-        .containsOutput("(Experimental) \\nNo mappings found");
-  }
+    when(cacheConfig.getRegions()).thenReturn(regions);
+    RegionMapping mapping1 =
+        new RegionMapping("region1", "class1", "table1", "name1", null, null, null);
+    RegionMapping mapping2 =
+        new RegionMapping("region2", "class2", "table2", "name2", null, null, null);
+    List<CacheElement> mappingList1 = new ArrayList<>();
+    mappingList1.add(mapping1);
+    List<CacheElement> mappingList2 = new ArrayList<>();
+    mappingList2.add(mapping2);
+    when(region1Config.getCustomRegionElements()).thenReturn(mappingList1);
+    when(region2Config.getCustomRegionElements()).thenReturn(mappingList2);
 
-  @Test
-  public void whenCCIsAvailable() {
-    doReturn(ccService).when(command).getConfigurationPersistenceService();
-
-    // mappings found in CC
-    ConnectorService.RegionMapping mapping1 =
-        new ConnectorService.RegionMapping("region1", "class1", "table1", "name1", true);
-    mapping1.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field1", "value1"));
-    ConnectorService.RegionMapping mapping2 =
-        new ConnectorService.RegionMapping("region2", "class2", "table2", "name2", true);
-    mapping2.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field2", "value2"));
-
-    ConnectorService connectorService = new ConnectorService();
-    connectorService.getRegionMapping().add(mapping1);
-    connectorService.getRegionMapping().add(mapping2);
-
-    when(cacheConfig.findCustomCacheElement(any(), any())).thenReturn(connectorService);
-
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess().containsOutput("region1",
-        "region2");
-  }
-
-  @Test
-  public void whenCCIsNotAvailableAndNoMemberExists() {
-    doReturn(null).when(command).getConfigurationPersistenceService();
-    doReturn(Collections.emptySet()).when(command).findMembers(null, null);
-
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess()
-        .containsOutput("No mappings found");
-  }
-
-  @Test
-  public void whenCCIsNotAvailableAndMemberExists() {
-    doReturn(null).when(command).getConfigurationPersistenceService();
-    doReturn(Collections.singleton(mock(DistributedMember.class))).when(command).findMembers(null,
-        null);
-
-    ConnectorService.RegionMapping mapping1 =
-        new ConnectorService.RegionMapping("region1", "class1", "table1", "name1", true);
-    mapping1.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field1", "value1"));
-    mapping1.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field2", "value2"));
-
-    ConnectorService.RegionMapping mapping2 =
-        new ConnectorService.RegionMapping("region2", "class2", "table2", "name2", true);
-    mapping2.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field3", "value3"));
-    mapping2.getFieldMapping()
-        .add(new ConnectorService.RegionMapping.FieldMapping("field4", "value4"));
-
-    ResultCollector rc = mock(ResultCollector.class);
+    ResultCollector<CliFunctionResult, List<CliFunctionResult>> rc = mock(ResultCollector.class);
     doReturn(rc).when(command).executeFunction(any(), any(), any(Set.class));
     when(rc.getResult()).thenReturn(Collections.singletonList(new CliFunctionResult("server-1",
         Stream.of(mapping1, mapping2).collect(toSet()), "success")));
@@ -144,18 +117,35 @@ public class ListMappingCommandTest {
         "region2");
   }
 
-
+  @SuppressWarnings("unchecked")
   @Test
-  public void whenCCIsNotAvailableAndNoConnectionFoundOnMember() {
-    doReturn(null).when(command).getConfigurationPersistenceService();
-    doReturn(Collections.singleton(mock(DistributedMember.class))).when(command).findMembers(null,
-        null);
+  public void whenMappingExistsForServerGroup() {
+    when(configService.getCacheConfig(TEST_GROUP1)).thenReturn(cacheConfig);
+    List<RegionConfig> regions = new ArrayList<>();
+    regions.add(region1Config);
+    regions.add(region2Config);
+    when(region1Config.getName()).thenReturn("region1");
+    when(region2Config.getName()).thenReturn("region2");
 
-    ResultCollector rc = mock(ResultCollector.class);
+    when(cacheConfig.getRegions()).thenReturn(regions);
+    RegionMapping mapping1 =
+        new RegionMapping("region1", "class1", "table1", "name1", null, null, null);
+    RegionMapping mapping2 =
+        new RegionMapping("region2", "class2", "table2", "name2", null, null, null);
+    List<CacheElement> mappingList1 = new ArrayList<>();
+    mappingList1.add(mapping1);
+    List<CacheElement> mappingList2 = new ArrayList<>();
+    mappingList2.add(mapping2);
+    when(region1Config.getCustomRegionElements()).thenReturn(mappingList1);
+    when(region2Config.getCustomRegionElements()).thenReturn(mappingList2);
+
+    ResultCollector<CliFunctionResult, List<CliFunctionResult>> rc = mock(ResultCollector.class);
     doReturn(rc).when(command).executeFunction(any(), any(), any(Set.class));
-    when(rc.getResult()).thenReturn(Collections.emptyList());
+    when(rc.getResult()).thenReturn(Collections.singletonList(new CliFunctionResult("server-1",
+        Stream.of(mapping1, mapping2).collect(toSet()), "success")));
 
-    gfsh.executeAndAssertThat(command, COMMAND).statusIsSuccess()
-        .containsOutput("No mappings found");
+    gfsh.executeAndAssertThat(command, COMMAND_FOR_GROUP).statusIsSuccess().containsOutput(
+        "region1",
+        "region2");
   }
 }

@@ -1,3 +1,5 @@
+import org.apache.geode.gradle.plugins.DependencyConstraints
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -15,24 +17,50 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
 evaluationDependsOn(":geode-core")
 
-dependencies {
-  compile project(':extensions:geode-modules-session-internal')
-  compile project(':geode-core')
 
-  integrationTestCompile project(":geode-dunit")
-  integrationTestCompile ('org.httpunit:httpunit:' + project.'httpunit.version') {
-    exclude group: 'javax.servlet'
+
+dependencies {
+  compile(platform(project(':boms:geode-all-bom')))
+  compile(project(':extensions:geode-modules-session-internal')) {
+    exclude module: 'geode-modules'
   }
-  integrationTestCompile(group: 'org.eclipse.jetty', name: 'jetty-http', version: project.'jetty.version', classifier: 'tests')
-  integrationTestCompile(group: 'org.eclipse.jetty', name: 'jetty-servlet', version: project.'jetty.version', classifier: 'tests')
-  integrationTestCompile 'javax.servlet:javax.servlet-api:' + project.'javax.servlet-api.version'
-  integrationTestCompile 'org.slf4j:slf4j-api:' + project.'slf4j-api.version'
-  integrationTestCompile('com.mockrunner:mockrunner-servlet:' + project.'mockrunner.version') {
+  compile(project(':geode-core'))
+  integrationTestImplementation(project(':extensions:geode-modules'))
+  integrationTestImplementation(project(':geode-dunit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-logging'))
+
+  implementation('javax.servlet:javax.servlet-api')
+  implementation('org.apache.tomcat:servlet-api:' + DependencyConstraints.get('tomcat6.version'))
+  implementation('org.slf4j:slf4j-api')
+
+  integrationTestImplementation('com.mockrunner:mockrunner-servlet') {
     exclude group: 'jboss'
     exclude group: 'xerces'
   }
+  integrationTestImplementation('commons-io:commons-io')
+  integrationTestImplementation('javax.servlet:javax.servlet-api')
+  integrationTestImplementation('junit:junit')
+  integrationTestImplementation('org.apache.tomcat:jasper:' + DependencyConstraints.get('tomcat6.version'))
+  integrationTestImplementation('org.assertj:assertj-core')
+  integrationTestImplementation('org.eclipse.jetty:jetty-http:' + DependencyConstraints.get('jetty.version') + ':tests')
+  integrationTestImplementation('org.eclipse.jetty:jetty-server')
+  integrationTestImplementation('org.eclipse.jetty:jetty-servlet:' + DependencyConstraints.get('jetty.version') + ':tests')
+  integrationTestImplementation('org.eclipse.jetty:jetty-servlet:' + DependencyConstraints.get('jetty.version'))
+  integrationTestImplementation('org.eclipse.jetty:jetty-util')
+  integrationTestImplementation('org.httpunit:httpunit') {
+    exclude group: 'javax.servlet'
+    // this version of httpunit contains very outdated xercesImpl
+    exclude group: 'xerces'
+  }
+  integrationTestImplementation('org.slf4j:slf4j-api')
+
+  integrationTestRuntimeOnly('xerces:xercesImpl')
 }
 
 jar {
@@ -42,4 +70,3 @@ jar {
   baseName = 'geode-modules-session'
 }
 
-disableMavenPublishing()

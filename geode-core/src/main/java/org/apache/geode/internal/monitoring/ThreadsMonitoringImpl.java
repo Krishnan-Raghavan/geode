@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentMap;
 
 import org.apache.geode.distributed.internal.DistributionConfigImpl;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.monitoring.executor.AbstractExecutor;
 import org.apache.geode.internal.monitoring.executor.FunctionExecutionPooledExecutorGroup;
 import org.apache.geode.internal.monitoring.executor.GatewaySenderEventProcessorGroup;
@@ -44,7 +43,7 @@ public class ThreadsMonitoringImpl implements ThreadsMonitoring {
       new DistributionConfigImpl(nonDefault);
 
   private final Timer timer =
-      new Timer(LocalizedStrings.THREAD_MONITOR_NAME.toLocalizedString(), true);
+      new Timer("ThreadsMonitor", true);
 
   /** Is this ThreadsMonitoringImpl closed?? */
   private boolean isClosed = true;
@@ -85,6 +84,14 @@ public class ThreadsMonitoringImpl implements ThreadsMonitoring {
 
   public ThreadsMonitoringProcess getThreadsMonitoringProcess() {
     return this.tmProcess;
+  }
+
+  @Override
+  public void updateThreadStatus() {
+    AbstractExecutor executor = monitorMap.get(Thread.currentThread().getId());
+    if (executor != null) {
+      executor.setStartTime(System.currentTimeMillis());
+    }
   }
 
   @Override

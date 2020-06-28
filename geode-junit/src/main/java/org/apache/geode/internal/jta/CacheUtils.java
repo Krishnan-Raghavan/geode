@@ -22,6 +22,7 @@ package org.apache.geode.internal.jta;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -39,7 +40,6 @@ import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.util.test.TestUtil;
 
 public class CacheUtils {
   public static DistributedSystem ds;
@@ -57,7 +57,9 @@ public class CacheUtils {
 
   public static String init(String className) throws Exception {
     Properties props = new Properties();
-    props.setProperty(CACHE_XML_FILE, TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml"));
+    props.setProperty(CACHE_XML_FILE,
+        createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+            .getAbsolutePath());
     String tableName = "";
     props.setProperty(MCAST_PORT, "0");
 
@@ -142,12 +144,13 @@ public class CacheUtils {
     String sql = "select * from " + tableName;
 
     Connection conn = ds.getConnection();
-    Statement sm = conn.createStatement();
-    ResultSet rs = sm.executeQuery(sql);
-    while (rs.next()) {
-      System.out.println("id " + rs.getString(1) + " name " + rs.getString(2));
+    try (Statement sm = conn.createStatement()) {
+      ResultSet rs = sm.executeQuery(sql);
+      while (rs.next()) {
+        System.out.println("id " + rs.getString(1) + " name " + rs.getString(2));
+      }
+      rs.close();
     }
-    rs.close();
     conn.close();
   }
 
@@ -157,8 +160,9 @@ public class CacheUtils {
     Connection conn = ds.getConnection();
     // System.out.println (" trying to drop table: " + tableName);
     String sql = "drop table " + tableName;
-    Statement sm = conn.createStatement();
-    sm.execute(sql);
+    try (Statement sm = conn.createStatement()) {
+      sm.execute(sql);
+    }
     conn.close();
   }
 

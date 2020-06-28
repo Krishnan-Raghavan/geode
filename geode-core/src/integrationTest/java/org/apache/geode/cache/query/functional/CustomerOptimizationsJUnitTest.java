@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.functional;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
@@ -50,12 +51,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testProjectionEvaluationDuringIndexResults() throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    String[] queries = new String[] {"select  p.status from /pos p where p.ID > 0 ",
-        "select  p.status from /pos p, p.positions pos where p.ID > 0 ",
-        "select  p.status from /pos p  where p.ID > 0 and p.createTime > 0",
-        "select  p.status as sts, p as pos from /pos p  where p.ID > 0 and p.createTime > 0",
-        "select  p.status as sts, p as pos from /pos p  where p.ID IN  SET( 0,1,2,3) and p.createTime > 0",
-        "select  p.status as sts, p as pos from /pos p  where ( p.ID IN  SET( 0,1,2,3) and p.createTime > 0L) OR (p.ID IN  SET( 2,3) and p.createTime > 5L)"
+    String[] queries = new String[] {"select  p.status from " + SEPARATOR + "pos p where p.ID > 0 ",
+        "select  p.status from " + SEPARATOR + "pos p, p.positions pos where p.ID > 0 ",
+        "select  p.status from " + SEPARATOR + "pos p  where p.ID > 0 and p.createTime > 0",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where p.ID > 0 and p.createTime > 0",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where p.ID IN  SET( 0,1,2,3) and p.createTime > 0",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where ( p.ID IN  SET( 0,1,2,3) and p.createTime > 0L) OR (p.ID IN  SET( 2,3) and p.createTime > 5L)"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -65,7 +69,7 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
 
 
     ObjectType[] expectedTypes = new ObjectType[] {new ObjectTypeImpl(String.class),
@@ -87,10 +91,12 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -111,9 +117,11 @@ public class CustomerOptimizationsJUnitTest {
   public void testProjectionEvaluationDuringIndexResults_UNIMPLEMENTED() throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
     String[] queries = new String[] {
-        "select  p.status from /pos p, p.positions pos where p.ID > 0 ",
-        "select  p.status as sts, p as pos from /pos p  where ( p.ID IN  SET( 0,1,2,3) and p.createTime > 0L) OR (p.ID IN  SET( 2,3) and p.createTime > 5L)",
-        "select  p.status as sts, p as pos from /pos p  where  p.ID IN  SET( 0,1,2,3) and p.createTime > 0L"};
+        "select  p.status from " + SEPARATOR + "pos p, p.positions pos where p.ID > 0 ",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where ( p.ID IN  SET( 0,1,2,3) and p.createTime > 0L) OR (p.ID IN  SET( 2,3) and p.createTime > 5L)",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where  p.ID IN  SET( 0,1,2,3) and p.createTime > 0L"};
     SelectResults[][] sr = new SelectResults[queries.length][2];
 
     for (int i = 0; i < queries.length; ++i) {
@@ -121,8 +129,8 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
 
 
     ObjectType[] expectedTypes = new ObjectType[] {new ObjectTypeImpl(String.class),
@@ -137,10 +145,12 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -159,15 +169,17 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testUnionDuringIndexEvaluationForIN() throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  p.status as sts, p as pos from /pos p  where  p.ID IN  SET( 0,1,2,3,4,5) ",
-        "select  p.status as sts, p as pos from /pos p  where  p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l"};
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where  p.ID IN  SET( 0,1,2,3,4,5) ",
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where  p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l"};
     SelectResults[][] sr = new SelectResults[queries.length][2];
 
     for (int i = 0; i < queries.length; ++i) {
@@ -175,7 +187,7 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true, true};
     final boolean[] actualIndexUsed = new boolean[] {false, false};
 
@@ -198,22 +210,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -235,14 +252,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testBug39851() throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  p.status as sts, p as pos from /pos p  where  p.ID IN  ( Select x.ID from /pos x where x.ID > 10) "
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where  p.ID IN  ( Select x.ID from " + SEPARATOR + "pos x where x.ID > 10) "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -252,7 +270,7 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true, true};
     final boolean[] actualIndexUsed = new boolean[] {false, false};
 
@@ -273,22 +291,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -310,14 +333,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testUnionDuringIndexEvaluationWithMultipleFilters() throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  p.status as sts, p as pos from /pos p  where  p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l"
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where  p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -327,8 +351,8 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -347,22 +371,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -386,14 +415,15 @@ public class CustomerOptimizationsJUnitTest {
   public void testProjectionEvaluationDuringIndexResultsWithComplexWhereClause_UNIMPLEMENTED_1()
       throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  p.status as sts, p as pos from /pos p  where   (p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l) OR (p.ID IN  SET( 20,30,110,120) AND p.createTime > 7l)"
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where   (p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l) OR (p.ID IN  SET( 20,30,110,120) AND p.createTime > 7l)"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -403,7 +433,7 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
     // qs.createIndex("CreateTime", IndexType.FUNCTIONAL,"createTime", "/pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
@@ -423,22 +453,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -462,14 +497,15 @@ public class CustomerOptimizationsJUnitTest {
   public void testProjectionEvaluationDuringIndexResultsWithComplexWhereClause_UNIMPLEMENTED_2()
       throws QueryException {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  p.status as sts, p as pos from /pos p  where   (p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l) OR (p.ID IN  SET( 20,30,110,120) AND p.createTime > 7l)"
+        "select  p.status as sts, p as pos from " + SEPARATOR
+            + "pos p  where   (p.ID IN  SET( 0,1,2,3,4,5,101,102,103,104,105) AND p.createTime > 9l) OR (p.ID IN  SET( 20,30,110,120) AND p.createTime > 7l)"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -479,8 +515,8 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -499,22 +535,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -536,14 +577,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testSuspectedBug_1() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where   p.ID IN  SET( 0) AND p.createTime IN SET( 4l ) AND  p.\"type\" IN SET( 'type0') AND p.status IN SET( 'active')"
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where   p.ID IN  SET( 0) AND p.createTime IN SET( 4l ) AND  p.\"type\" IN SET( 'type0') AND p.status IN SET( 'active')"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -553,10 +595,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -574,22 +616,27 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -611,14 +658,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testNestedJunction() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 10000; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  (p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') )AND  p.ID >  0 "
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  (p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') )AND  p.ID >  0 "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -628,10 +676,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
     final List indexUsed = new ArrayList();
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -649,23 +697,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -688,14 +741,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testRangeQuery() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.createTime > 0 AND p.createTime <11 AND  p.ID IN  SET( 0) "
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.createTime > 0 AND p.createTime <11 AND  p.ID IN  SET( 0) "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -705,10 +759,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -726,23 +780,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexesUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -765,14 +824,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testInAndEqualityCombination() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.ID = 11 AND   p.createTime IN  SET( 10L) "
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.ID = 11 AND   p.createTime IN  SET( 10L) "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -782,10 +842,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -803,23 +863,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexesUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -842,14 +907,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testRangeAndNotEqualCombination() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.ID > 11 AND  p.ID < 20 AND  p.createTime <>9L "
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.ID > 11 AND  p.ID < 20 AND  p.createTime <>9L "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -859,10 +925,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -880,29 +946,35 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexesUsed.add(index);
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int lowerBoundOperator, Object lowerBoundKey,
           int upperBoundOperator, Object upperBoundKey, Set NotEqualKeys) {
         actualIndexUsed[i] = true;
         indexesUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -925,14 +997,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testInAndRangeCombination() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.ID > 11 AND  p.ID < 19 and  p.createTime IN  SET( 10L) "
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.ID > 11 AND  p.ID < 19 and  p.createTime IN  SET( 10L) "
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -942,10 +1015,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
 
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -963,23 +1036,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexesUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -1002,14 +1080,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testNotFilterableNestedJunction() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 10000; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  (p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') )AND  p.ID >  0 AND  p.createTime = 10l"
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  (p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') )AND  p.ID >  0 AND  p.createTime = 10l"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -1019,10 +1098,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
     final List indexUsed = new ArrayList();
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
     // qs.createIndex("Status", IndexType.FUNCTIONAL,"status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -1040,23 +1119,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -1081,14 +1165,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testProjectionEvaluationOnORJunction_NOT_IMPLEMENTED() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 10000; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') OR p.ID >  0"
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.createTime IN SET( 10l ) OR  p.status IN SET( 'active') OR p.ID >  0"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -1098,10 +1183,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
     final List indexUsed = new ArrayList();
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -1119,23 +1204,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -1158,15 +1248,16 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testLiteralBehaviour_1() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 200; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
-    String[] queries = new String[] {"select  distinct p.status  from /pos p  where  true"
+    String[] queries =
+        new String[] {"select  distinct p.status  from " + SEPARATOR + "pos p  where  true"
 
-    };
+        };
     SelectResults[][] sr = new SelectResults[queries.length][2];
 
     for (int i = 0; i < queries.length; ++i) {
@@ -1174,10 +1265,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
     final List indexUsed = new ArrayList();
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {false};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -1195,23 +1286,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }
@@ -1234,14 +1330,15 @@ public class CustomerOptimizationsJUnitTest {
   @Test
   public void testLiteralBheaviour_2() throws Exception {
     QueryService qs = CacheUtils.getQueryService();
-    Region rgn = CacheUtils.getRegion("/pos");
+    Region rgn = CacheUtils.getRegion(SEPARATOR + "pos");
     for (int i = 100; i < 1000; ++i) {
       Portfolio pf = new Portfolio(i);
       pf.setCreateTime(10l);
       rgn.put("" + i, pf);
     }
     String[] queries = new String[] {
-        "select  distinct p.status  from /pos p  where  p.createTime = 10l AND  p.status IN SET( 'active') AND  true"
+        "select  distinct p.status  from " + SEPARATOR
+            + "pos p  where  p.createTime = 10l AND  p.status IN SET( 'active') AND  true"
 
     };
     SelectResults[][] sr = new SelectResults[queries.length][2];
@@ -1251,10 +1348,10 @@ public class CustomerOptimizationsJUnitTest {
       sr[i][0] = (SelectResults) q.execute();
     }
     final List indexUsed = new ArrayList();
-    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", "/pos");
-    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", "/pos");
-    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", "/pos");
-    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", "/pos");
+    qs.createIndex("PortFolioID", IndexType.FUNCTIONAL, "ID", SEPARATOR + "pos");
+    qs.createIndex("CreateTime", IndexType.FUNCTIONAL, "createTime", SEPARATOR + "pos");
+    qs.createIndex("Status", IndexType.FUNCTIONAL, "status", SEPARATOR + "pos");
+    qs.createIndex("Type", IndexType.FUNCTIONAL, "\"type\"", SEPARATOR + "pos");
     final boolean[] expectedIndexUsed = new boolean[] {true};
     final boolean[] actualIndexUsed = new boolean[] {false};
 
@@ -1272,23 +1369,28 @@ public class CustomerOptimizationsJUnitTest {
     QueryObserverHolder.setInstance(new QueryObserverAdapter() {
       private int i = 0;
 
+      @Override
       public void invokedQueryUtilsUnion(SelectResults r1, SelectResults r2) {
         actualUnionCallback[i] = true;
       }
 
+      @Override
       public void invokedQueryUtilsIntersection(SelectResults r1, SelectResults r2) {
         actualIntersectionCallback[i] = true;
       }
 
+      @Override
       public void beforeIndexLookup(Index index, int oper, Object key) {
         actualIndexUsed[i] = true;
         indexUsed.add(index);
       }
 
+      @Override
       public void beforeApplyingProjectionOnFilterEvaluatedResults(Object preProjectionApplied) {
         actualProjectionCallback[i] = true;
       }
 
+      @Override
       public void afterQueryEvaluation(Object result) {
         ++i;
       }

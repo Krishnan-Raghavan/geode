@@ -54,8 +54,8 @@ import org.apache.geode.SerializationException;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.internal.PdxSerializerObject;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.pdx.internal.AutoSerializableManager;
 import org.apache.geode.pdx.internal.PdxField;
 import org.apache.geode.pdx.internal.PdxInstanceImpl;
@@ -236,10 +236,12 @@ public class AutoSerializableJUnitTest {
       this.v = v;
     }
 
+    @Override
     public void writeExternal(ObjectOutput out) throws IOException {
       out.writeInt(v);
     }
 
+    @Override
     public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
       this.v = in.readInt();
     }
@@ -309,6 +311,7 @@ public class AutoSerializableJUnitTest {
   public static class MyComparator implements Comparator, PdxSerializerObject {
     public MyComparator() {}
 
+    @Override
     public int compare(Object o1, Object o2) {
       return 0;
     }

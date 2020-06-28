@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.CacheListener;
 import org.apache.geode.cache.Region;
@@ -81,34 +82,39 @@ public class ConcurrentParallelGatewaySenderQueue implements RegionQueue {
     return ((ParallelGatewaySenderQueue) (processors[0].getQueue())).getRegions();
   }
 
+  @VisibleForTesting
+  public boolean getCleanQueues() {
+    return ((ParallelGatewaySenderQueue) (processors[0].getQueue())).getCleanQueues();
+  }
+
   @Override
   public Object take() throws CacheException, InterruptedException {
-    throw new UnsupportedOperationException("This method(take) is not suported");
+    throw new UnsupportedOperationException("This method(take) is not supported");
   }
 
   @Override
   public List take(int batchSize) throws CacheException, InterruptedException {
-    throw new UnsupportedOperationException("This method(take) is not suported");
+    throw new UnsupportedOperationException("This method(take) is not supported");
   }
 
   @Override
   public void remove() throws CacheException {
-    throw new UnsupportedOperationException("This method(remove) is not suported");
+    throw new UnsupportedOperationException("This method(remove) is not supported");
   }
 
   @Override
   public Object peek() throws InterruptedException, CacheException {
-    throw new UnsupportedOperationException("This method(peek) is not suported");
+    throw new UnsupportedOperationException("This method(peek) is not supported");
   }
 
   @Override
   public List peek(int batchSize) throws InterruptedException, CacheException {
-    throw new UnsupportedOperationException("This method(peek) is not suported");
+    throw new UnsupportedOperationException("This method(peek) is not supported");
   }
 
   @Override
   public List peek(int batchSize, int timeToWait) throws InterruptedException, CacheException {
-    throw new UnsupportedOperationException("This method(peek) is not suported");
+    throw new UnsupportedOperationException("This method(peek) is not supported");
   }
 
   @Override
@@ -156,11 +162,6 @@ public class ConcurrentParallelGatewaySenderQueue implements RegionQueue {
           .estimateMemoryFootprint(sizer);
     return size;
   }
-
-  /*
-   * @Override public void release() { for(int i =0; i< processors.length; i++){
-   * processors[i].getQueue().release(); } }
-   */
 
   public void removeShadowPR(String prRegionName) {
     for (int i = 0; i < processors.length; i++) {

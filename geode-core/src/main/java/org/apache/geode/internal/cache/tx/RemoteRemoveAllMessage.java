@@ -44,10 +44,8 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.ByteArrayDataInput;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.NanoTimer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.DistributedPutAllOperation.EntryVersionsList;
 import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.DistributedRemoveAllOperation;
@@ -61,10 +59,14 @@ import org.apache.geode.internal.cache.partitioned.RemoveAllPRMessage;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A Replicate Region removeAll message. Meant to be sent only to the peer who hosts transactional
@@ -202,7 +204,7 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
     Set<?> failures = event.getRegion().getDistributionManager().putOutgoing(msg);
     if (failures != null && failures.size() > 0) {
       throw new RemoteOperationException(
-          LocalizedStrings.RemotePutMessage_FAILED_SENDING_0.toLocalizedString(msg));
+          String.format("Failed sending < %s >", msg));
     }
     return p;
   }
@@ -212,13 +214,15 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
     this.bridgeContext = contx;
   }
 
+  @Override
   public int getDSFID() {
     return REMOTE_REMOVE_ALL_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.eventId = (EventID) DataSerializer.readObject(in);
     this.callbackArg = DataSerializer.readObject(in);
     this.posDup = (flags & POS_DUP) != 0;
@@ -228,10 +232,11 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
     this.removeAllDataCount = (int) InternalDataSerializer.readUnsignedVL(in);
     this.removeAllData = new RemoveAllEntryData[removeAllDataCount];
     if (this.removeAllDataCount > 0) {
-      final Version version = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+      final Version version = StaticSerialization.getVersionForDataStreamOrNull(in);
       final ByteArrayDataInput bytesIn = new ByteArrayDataInput();
       for (int i = 0; i < this.removeAllDataCount; i++) {
-        this.removeAllData[i] = new RemoveAllEntryData(in, this.eventId, i, version, bytesIn);
+        this.removeAllData[i] = new RemoveAllEntryData(in, this.eventId, i, version, bytesIn,
+            context);
       }
 
       boolean hasTags = in.readBoolean();
@@ -245,8 +250,9 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.eventId, out);
     DataSerializer.writeObject(this.callbackArg, out);
     if (this.bridgeContext != null) {
@@ -267,7 +273,7 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
         VersionTag<?> tag = removeAllData[i].versionTag;
         versionTags.add(tag);
         removeAllData[i].versionTag = null;
-        this.removeAllData[i].toData(out);
+        this.removeAllData[i].serializeTo(out, context);
         this.removeAllData[i].versionTag = tag;
       }
 
@@ -349,9 +355,11 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
       final DistributedRemoveAllOperation op =
           new DistributedRemoveAllOperation(baseEvent, removeAllDataCount, false);
       try {
+        r.lockRVVForBulkOp();
         final VersionedObjectList versions =
             new VersionedObjectList(removeAllDataCount, true, dr.getConcurrencyChecksEnabled());
         dr.syncBulkOp(new Runnable() {
+          @Override
           @SuppressWarnings("synthetic-access")
           public void run() {
             InternalDistributedMember myId = r.getDistributionManager().getDistributionManagerId();
@@ -384,6 +392,7 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
             this.removeAllDataCount);
         return false;
       } finally {
+        r.unlockRVVForBulkOp();
         op.freeOffHeapResources();
       }
     } finally {
@@ -464,14 +473,16 @@ public class RemoteRemoveAllMessage extends RemoteOperationMessageWithDirectRepl
     public RemoveAllReplyMessage() {}
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.versions = (VersionedObjectList) DataSerializer.readObject(in);
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeObject(this.versions, out);
     }
 

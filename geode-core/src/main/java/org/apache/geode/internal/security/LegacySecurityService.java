@@ -17,7 +17,7 @@ package org.apache.geode.internal.security;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadState;
 
@@ -95,7 +95,7 @@ public class LegacySecurityService implements SecurityService {
 
   @Override
   public void authorize(ResourcePermission.Resource resource,
-      ResourcePermission.Operation operation, String target, String key) {}
+      ResourcePermission.Operation operation, String target, Object key) {}
 
   @Override
   public void authorize(ResourcePermission.Resource resource,

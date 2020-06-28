@@ -16,37 +16,38 @@
  */
 package org.apache.geode.internal.cache;
 
+
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.geode.cache.Region;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
-class RegionNameValidation {
+public class RegionNameValidation {
 
-  private static final Pattern NAME_PATTERN = Pattern.compile("[aA-zZ0-9-_.]+");
+  private static final Pattern NAME_PATTERN = Pattern.compile("[a-zA-Z0-9-_.^`\\[\\]\\\\]+");
 
   static Pattern getNamePattern() {
     return NAME_PATTERN;
   }
 
-  static void validate(String name) {
+  public static void validate(String name) {
     validate(name, new InternalRegionArguments());
   }
 
   static void validate(String name, InternalRegionArguments internalRegionArguments) {
     if (name == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.LocalRegion_NAME_CANNOT_BE_NULL.toLocalizedString());
+          "name cannot be null");
     }
     if (name.isEmpty()) {
       throw new IllegalArgumentException(
-          LocalizedStrings.LocalRegion_NAME_CANNOT_BE_EMPTY.toLocalizedString());
+          "name cannot be empty");
     }
-    if (name.contains(Region.SEPARATOR)) {
+    if (name.contains(SEPARATOR)) {
       throw new IllegalArgumentException(
-          LocalizedStrings.LocalRegion_NAME_CANNOT_CONTAIN_THE_SEPARATOR_0
-              .toLocalizedString(Region.SEPARATOR));
+          String.format("name cannot contain the separator ' %s '",
+              SEPARATOR));
     }
 
     // Validate the name of the region only if it isn't an internal region

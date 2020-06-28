@@ -34,12 +34,12 @@ import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.internal.AvailablePortHelper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -47,6 +47,7 @@ import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 @Category({ClientSubscriptionTest.class})
 public class DurableClientBug39997DUnitTest extends JUnit4CacheTestCase {
 
+  @Override
   public final void postTearDownCacheTestCase() {
     Host.getHost(0).getVM(0).invoke(() -> disconnectFromDS());
   }
@@ -60,6 +61,7 @@ public class DurableClientBug39997DUnitTest extends JUnit4CacheTestCase {
     final String hostName = NetworkUtils.getServerHostName(host);
     final int port = AvailablePortHelper.getRandomAvailableTCPPort();
     vm0.invoke(new SerializableRunnable("create cache") {
+      @Override
       public void run() {
         getSystem(getClientProperties());
         PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer(hostName, port)
@@ -82,6 +84,7 @@ public class DurableClientBug39997DUnitTest extends JUnit4CacheTestCase {
     });
 
     vm1.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         Cache cache = getCache();
         AttributesFactory factory = new AttributesFactory();
@@ -98,15 +101,18 @@ public class DurableClientBug39997DUnitTest extends JUnit4CacheTestCase {
     });
 
     vm0.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         Cache cache = getCache();
         final Region region = cache.getRegion("region");
-        Wait.waitForCriterion(new WaitCriterion() {
+        GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+          @Override
           public String description() {
             return "Wait for register interest to succeed";
           }
 
+          @Override
           public boolean done() {
             try {
               region.registerInterest("ALL_KEYS");
@@ -116,7 +122,7 @@ public class DurableClientBug39997DUnitTest extends JUnit4CacheTestCase {
             return true;
           }
 
-        }, 30000, 1000, true);
+        });
       }
     });
   }

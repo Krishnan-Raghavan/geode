@@ -14,22 +14,23 @@
  */
 package org.apache.geode.cache.wan;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
 
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePort;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.junit.assertions.CommandResultAssert;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
+import org.apache.geode.test.version.VersionManager;
 
 public class WANRollingUpgradeCreateGatewaySenderMixedSiteOneCurrentSiteTwo
     extends WANRollingUpgradeDUnitTest {
@@ -51,13 +52,13 @@ public class WANRollingUpgradeCreateGatewaySenderMixedSiteOneCurrentSiteTwo
     // Get mixed site locator properties
     String hostName = NetworkUtils.getServerHostName(host);
     final int site1LocatorPort = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    DistributedTestUtils.deleteLocatorStateFile(site1LocatorPort);
+    site1Locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(site1LocatorPort));
     final String site1Locators = hostName + "[" + site1LocatorPort + "]";
     final int site1DistributedSystemId = 0;
 
     // Get current site locator properties
     final int site2LocatorPort = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    DistributedTestUtils.deleteLocatorStateFile(site2LocatorPort);
+    site2Locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(site2LocatorPort));
     final String site2Locators = hostName + "[" + site2LocatorPort + "]";
     final int site2DistributedSystemId = 1;
 
@@ -68,14 +69,15 @@ public class WANRollingUpgradeCreateGatewaySenderMixedSiteOneCurrentSiteTwo
     // Locators before 1.4 handled configuration asynchronously.
     // We must wait for configuration configuration to be ready, or confirm that it is disabled.
     site1Locator.invoke(
-        () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+        () -> await()
             .untilAsserted(() -> assertTrue(
                 !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                     || InternalLocator.getLocator().isSharedConfigurationRunning())));
 
     // Start current site locator
-    site2Locator.invoke(() -> startLocator(site2LocatorPort, site2DistributedSystemId,
-        site2Locators, site1Locators));
+    site2Locator.invoke(
+        () -> await().untilAsserted(() -> startLocator(site2LocatorPort, site2DistributedSystemId,
+            site2Locators, site1Locators)));
 
     // Start current site servers with receivers
     site2Server1.invoke(() -> createCache(site2Locators));
@@ -101,9 +103,23 @@ public class WANRollingUpgradeCreateGatewaySenderMixedSiteOneCurrentSiteTwo
 
     // Use gfsh to attempt to create a gateway sender in the mixed site servers
     this.gfsh.connectAndVerify(jmxManagerPort, GfshCommandRule.PortType.jmxManager);
-    this.gfsh
-        .executeAndAssertThat(getCreateGatewaySenderCommand("toSite2", site2DistributedSystemId))
-        .statusIsError()
-        .containsOutput(CliStrings.CREATE_GATEWAYSENDER__MSG__CAN_NOT_CREATE_DIFFERENT_VERSIONS);
+    CommandResultAssert cmd = this.gfsh
+        .executeAndAssertThat(getCreateGatewaySenderCommand("toSite2", site2DistributedSystemId));
+    if (!majorMinor(oldVersion).equals(majorMinor(Version.CURRENT.getName()))) {
+      cmd.statusIsError()
+          .containsOutput(CliStrings.CREATE_GATEWAYSENDER__MSG__CAN_NOT_CREATE_DIFFERENT_VERSIONS);
+    } else {
+      // generally serialization version is unchanged between patch releases
+      cmd.statusIsSuccess();
+    }
+  }
+
+  /**
+   * returns the major.minor prefix of a semver
+   */
+  private static String majorMinor(String version) {
+    String[] parts = version.split("\\.");
+    Assertions.assertThat(parts.length).isGreaterThanOrEqualTo(2);
+    return parts[0] + "." + parts[1];
   }
 }

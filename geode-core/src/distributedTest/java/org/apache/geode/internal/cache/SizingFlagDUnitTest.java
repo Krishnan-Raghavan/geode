@@ -46,7 +46,6 @@ import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache.util.ObjectSizer;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.SerializableCallable;
@@ -371,6 +370,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void addListener(VM vm) {
     vm.invoke(new SerializableRunnable("Add listener") {
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion("region");
@@ -646,6 +646,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private long getSizeFromPRStats(VM vm0) {
     return (Long) vm0.invoke(new SerializableCallable() {
 
+      @Override
       public Object call() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -668,6 +669,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private long getSizeFromEvictionStats(VM vm0) {
     return (Long) vm0.invoke(new SerializableCallable() {
 
+      @Override
       public Object call() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -679,6 +681,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private long getEvictions(VM vm0) {
     return (Long) vm0.invoke(new SerializableCallable() {
 
+      @Override
       public Object call() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -690,6 +693,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private int getObjectSizerInvocations(VM vm0) {
     return (Integer) vm0.invoke(new SerializableCallable() {
 
+      @Override
       public Object call() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -700,6 +704,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void assignPRBuckets(VM vm) {
     vm.invoke(new SerializableRunnable("assignPRBuckets") {
+      @Override
       public void run() {
         Cache cache = getCache();
         PartitionRegionHelper.assignBucketsToPartitions(cache.getRegion("region"));
@@ -709,6 +714,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private boolean prHostsBucketForKey(VM vm, final Object key) {
     Boolean result = (Boolean) vm.invoke(new SerializableCallable("prHostsBucketForKey") {
+      @Override
       public Object call() {
         Cache cache = getCache();
         DistributedMember myId = cache.getDistributedSystem().getDistributedMember();
@@ -728,6 +734,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private void put(VM vm0, final Object key, final Object value) {
     vm0.invoke(new SerializableRunnable("Put data") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -740,6 +747,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private void get(VM vm0, final Object key, final Object value) {
     vm0.invoke(new SerializableRunnable("Put data") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -767,6 +775,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void setDeltaRecalculatesSize(VM vm, final boolean shouldSizeChange) {
     vm.invoke(new SerializableRunnable("setDeltaRecalculatesSize") {
+      @Override
       public void run() {
         GemFireCacheImpl.DELTAS_RECALCULATE_SIZE = shouldSizeChange;
       }
@@ -775,6 +784,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void createRR(VM vm) {
     vm.invoke(new SerializableRunnable("Create rr") {
+      @Override
       public void run() {
         Cache cache = getCache();
         AttributesFactory<Integer, TestDelta> attr = new AttributesFactory<Integer, TestDelta>();
@@ -792,6 +802,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void assertValueType(VM vm, final Object key, final ValueType expectedType) {
     vm.invoke(new SerializableRunnable("Create rr") {
+      @Override
       public void run() {
         Cache cache = getCache();
         LocalRegion region = (LocalRegion) cache.getRegion("region");
@@ -830,6 +841,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void createPR(VM vm, final boolean enableLRU) {
     vm.invoke(new SerializableRunnable("Create pr") {
+      @Override
       public void run() {
         Cache cache = getCache();
         AttributesFactory<Integer, TestDelta> attr = new AttributesFactory<Integer, TestDelta>();
@@ -855,6 +867,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void createRRHeapLRU(VM vm) {
     vm.invoke(new SerializableRunnable("Create rr") {
+      @Override
       public void run() {
         Cache cache = getCache();
         ResourceManager manager = cache.getResourceManager();
@@ -875,6 +888,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
 
   private void createPRHeapLRU(VM vm) {
     vm.invoke(new SerializableRunnable("Create pr") {
+      @Override
       public void run() {
         Cache cache = getCache();
         ResourceManager manager = cache.getResourceManager();
@@ -900,9 +914,10 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
   private static class TestObjectSizer implements ObjectSizer {
     private AtomicInteger invocations = new AtomicInteger();
 
+    @Override
     public int sizeof(Object o) {
-      if (InternalDistributedSystem.getLoggerI18n().fineEnabled()) {
-        InternalDistributedSystem.getLoggerI18n()
+      if (InternalDistributedSystem.getLogger().fineEnabled()) {
+        InternalDistributedSystem.getLogger()
             .fine("TestObjectSizer invoked"/* , new Exception("stack trace") */);
       }
       if (o instanceof TestObject) {
@@ -942,10 +957,12 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
       this.value = value;
     }
 
+    @Override
     public void fromData(DataInput in) throws IOException, ClassNotFoundException {
       value = DataSerializer.readString(in);
     }
 
+    @Override
     public void toData(DataOutput out) throws IOException {
       DataSerializer.writeString(value, out);
     }
@@ -992,6 +1009,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
       this.sizeForSerialization = sizeForSerialization;
     }
 
+    @Override
     public void fromData(DataInput in) throws IOException, ClassNotFoundException {
       sizeForSizer = in.readInt();
       sizeForSerialization = in.readInt();
@@ -999,6 +1017,7 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
       in.skipBytes(sizeForSerialization);
     }
 
+    @Override
     public void toData(DataOutput out) throws IOException {
       out.writeInt(sizeForSizer);
       out.writeInt(sizeForSerialization);
@@ -1043,17 +1062,17 @@ public class SizingFlagDUnitTest extends JUnit4CacheTestCase {
     @Override
     public void afterCreate(EntryEvent event) {
       // Make sure we deserialize the new value
-      event.getRegion().getCache().getLoggerI18n().fine("invoked afterCreate with " + event);
-      event.getRegion().getCache().getLoggerI18n().info(LocalizedStrings.DEBUG,
-          "value is " + event.getNewValue());
+      event.getRegion().getCache().getLogger().fine("invoked afterCreate with " + event);
+      event.getRegion().getCache().getLogger().info(String.format("%s",
+          "value is " + event.getNewValue()));
     }
 
     @Override
     public void afterUpdate(EntryEvent event) {
       // Make sure we deserialize the new value
-      event.getRegion().getCache().getLoggerI18n().fine("invoked afterUpdate with ");
-      event.getRegion().getCache().getLoggerI18n().info(LocalizedStrings.DEBUG,
-          "value is " + event.getNewValue());
+      event.getRegion().getCache().getLogger().fine("invoked afterUpdate with ");
+      event.getRegion().getCache().getLogger().info(String.format("%s",
+          "value is " + event.getNewValue()));
     }
 
   }

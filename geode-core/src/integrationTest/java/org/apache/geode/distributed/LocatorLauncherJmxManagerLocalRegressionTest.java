@@ -14,18 +14,18 @@
  */
 package org.apache.geode.distributed;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_CLUSTER_CONFIGURATION;
 import static org.apache.geode.distributed.ConfigurationProperties.JMX_MANAGER;
 import static org.apache.geode.distributed.ConfigurationProperties.JMX_MANAGER_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.JMX_MANAGER_START;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.internal.AvailablePortHelper.getRandomAvailableTCPPorts;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -35,7 +35,7 @@ import org.apache.geode.internal.process.ProcessType;
  * Regression tests for stopping a JMX Manager process launched with {@link LocatorLauncher}.
  *
  * <p>
- * Confirms fix for <bold>GEODE-528: Locator not stopping correctly if jmx-manager-port=0</bold>
+ * Confirms fix for <bold>Locator not stopping correctly if jmx-manager-port=0</bold>
  *
  * <p>
  * Refactored from LocatorLauncherAssemblyIntegrationTest which used to be in geode-assembly.
@@ -52,25 +52,31 @@ public class LocatorLauncherJmxManagerLocalRegressionTest
   private int jmxManagerPort;
 
   @Before
-  public void setUpLocatorLauncherJmxManagerLocalIntegrationTest() throws Exception {
+  public void setUpLocatorLauncherJmxManagerLocalIntegrationTest() {
     disconnectFromDS();
     System.setProperty(ProcessType.PROPERTY_TEST_PREFIX, getUniqueName() + "-");
 
     int[] ports = getRandomAvailableTCPPorts(3);
-    this.defaultLocatorPort = ports[0];
-    this.nonDefaultLocatorPort = ports[1];
-    this.jmxManagerPort = ports[2];
+    defaultLocatorPort = ports[0];
+    nonDefaultLocatorPort = ports[1];
+    jmxManagerPort = ports[2];
 
-    this.initialThreads = Thread.getAllStackTraces().keySet();
+    initialThreads = Thread.getAllStackTraces().keySet();
   }
 
   @Test
-  public void locatorWithZeroJmxPortCleansUpWhenStopped() throws Exception {
-    startLocator(newBuilder().setDeletePidFileOnStop(true).setMemberName(getUniqueName())
-        .setPort(this.defaultLocatorPort).setRedirectOutput(false)
-        .setWorkingDirectory(getWorkingDirectoryPath()).set(LOG_LEVEL, "config")
-        .set(ENABLE_CLUSTER_CONFIGURATION, "false").set(JMX_MANAGER, "true")
-        .set(JMX_MANAGER_START, "true").set(JMX_MANAGER_PORT, "0"));
+  public void locatorWithZeroJmxPortCleansUpWhenStopped() {
+    startLocator(newBuilder()
+        .setDeletePidFileOnStop(true)
+        .setMemberName(getUniqueName())
+        .setPort(defaultLocatorPort)
+        .setRedirectOutput(false)
+        .setWorkingDirectory(getWorkingDirectoryPath())
+        .set(ENABLE_CLUSTER_CONFIGURATION, "false")
+        .set(JMX_MANAGER, "true")
+        .set(JMX_MANAGER_START, "true")
+        .set(JMX_MANAGER_PORT, "0")
+        .set(LOG_LEVEL, "config"));
 
     stopLocator();
 
@@ -79,12 +85,18 @@ public class LocatorLauncherJmxManagerLocalRegressionTest
   }
 
   @Test
-  public void locatorWithNonZeroJmxPortCleansUpWhenStopped() throws Exception {
-    startLocator(newBuilder().setDeletePidFileOnStop(true).setMemberName(getUniqueName())
-        .setPort(this.defaultLocatorPort).setRedirectOutput(false)
-        .setWorkingDirectory(getWorkingDirectoryPath()).set(LOG_LEVEL, "config")
-        .set(ENABLE_CLUSTER_CONFIGURATION, "false").set(JMX_MANAGER, "true")
-        .set(JMX_MANAGER_START, "true").set(JMX_MANAGER_PORT, String.valueOf(jmxManagerPort)));
+  public void locatorWithNonZeroJmxPortCleansUpWhenStopped() {
+    startLocator(newBuilder()
+        .setDeletePidFileOnStop(true)
+        .setMemberName(getUniqueName())
+        .setPort(defaultLocatorPort)
+        .setRedirectOutput(false)
+        .setWorkingDirectory(getWorkingDirectoryPath())
+        .set(ENABLE_CLUSTER_CONFIGURATION, "false")
+        .set(JMX_MANAGER, "true")
+        .set(JMX_MANAGER_START, "true")
+        .set(JMX_MANAGER_PORT, String.valueOf(jmxManagerPort))
+        .set(LOG_LEVEL, "config"));
 
     stopLocator();
 
@@ -93,8 +105,9 @@ public class LocatorLauncherJmxManagerLocalRegressionTest
   }
 
   private void assertThatThreadsStopped() {
-    Awaitility.await().atMost(30, SECONDS).untilAsserted(
-        () -> assertThat(currentThreadCount())
+    await()
+        .atMost(AWAIT_MILLIS, MILLISECONDS)
+        .untilAsserted(() -> assertThat(currentThreadCount())
             .isLessThanOrEqualTo(initialThreadCountPlusAwaitility()));
   }
 

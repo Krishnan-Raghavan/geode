@@ -23,6 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.locks.ReentrantLock;
@@ -35,6 +36,7 @@ import org.apache.geode.CancelCriterion;
 import org.apache.geode.CancelException;
 import org.apache.geode.InternalGemFireError;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.CommitConflictException;
 import org.apache.geode.cache.DiskAccessException;
 import org.apache.geode.cache.EntryNotFoundException;
@@ -62,10 +64,10 @@ import org.apache.geode.internal.cache.partitioned.RemoveAllPRMessage;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
 import org.apache.geode.internal.cache.tx.TransactionalOperation.ServerRegionOperation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
+import org.apache.geode.internal.statistics.StatisticsClock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * TXState is the entity that tracks the transaction state on a per thread basis, noting changes to
@@ -146,17 +148,21 @@ public class TXState implements TXStateInterface {
   /** keeps track of results of txPutEntry */
   private Map<EventID, Boolean> seenResults = new HashMap<EventID, Boolean>();
 
+  @Immutable
   static final TXEntryState ENTRY_EXISTS = new TXEntryState();
 
   private volatile DistributedMember proxyServer;
 
-  public TXState(TXStateProxy proxy, boolean onBehalfOfRemoteStub) {
-    this(proxy, onBehalfOfRemoteStub, new SingleThreadJTAExecutor());
+  private final StatisticsClock statisticsClock;
+
+  public TXState(TXStateProxy proxy, boolean onBehalfOfRemoteStub,
+      StatisticsClock statisticsClock) {
+    this(proxy, onBehalfOfRemoteStub, new SingleThreadJTAExecutor(), statisticsClock);
   }
 
   public TXState(TXStateProxy proxy, boolean onBehalfOfRemoteStub,
-      SingleThreadJTAExecutor singleThreadJTAExecutor) {
-    this.beginTime = CachePerfStats.getStatTime();
+      SingleThreadJTAExecutor singleThreadJTAExecutor, StatisticsClock statisticsClock) {
+    this.beginTime = statisticsClock.getTime();
     this.regions = new IdentityHashMap<>();
 
     this.internalAfterConflictCheck = null;
@@ -169,6 +175,7 @@ public class TXState implements TXStateInterface {
     this.proxy = proxy;
     this.onBehalfOfRemoteStub = onBehalfOfRemoteStub;
     this.singleThreadJTAExecutor = singleThreadJTAExecutor;
+    this.statisticsClock = statisticsClock;
   }
 
   private boolean hasSeenEvent(EntryEventImpl event) {
@@ -218,15 +225,30 @@ public class TXState implements TXStateInterface {
   }
 
   public void firePendingCallbacks() {
+    boolean isConfigError = false;
+    EntryEventImpl lastTransactionEvent = null;
+    try {
+      lastTransactionEvent =
+          TXLastEventInTransactionUtils.getLastTransactionEvent(getPendingCallbacks(), getCache());
+    } catch (ServiceConfigurationError ex) {
+      logger.error(ex.getMessage());
+      isConfigError = true;
+    }
+
     for (EntryEventImpl ee : getPendingCallbacks()) {
+      boolean isLastTransactionEvent = isConfigError || ee.equals(lastTransactionEvent);
       if (ee.getOperation().isDestroy()) {
-        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_DESTROY, ee, true);
+        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_DESTROY, ee, true,
+            isLastTransactionEvent);
       } else if (ee.getOperation().isInvalidate()) {
-        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_INVALIDATE, ee, true);
+        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_INVALIDATE, ee, true,
+            isLastTransactionEvent);
       } else if (ee.getOperation().isCreate()) {
-        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_CREATE, ee, true);
+        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_CREATE, ee, true,
+            isLastTransactionEvent);
       } else {
-        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_UPDATE, ee, true);
+        ee.getRegion().invokeTXCallbacks(EnumListenerEvent.AFTER_UPDATE, ee, true,
+            isLastTransactionEvent);
       }
     }
   }
@@ -349,14 +371,14 @@ public class TXState implements TXStateInterface {
       return;
     }
 
-    final long conflictStart = CachePerfStats.getStatTime();
+    final long conflictStart = statisticsClock.getTime();
     this.locks = createLockRequest();
     this.locks.obtain(getCache().getInternalDistributedSystem());
     // for now check account the dlock service time
     // later this stat end should be moved to a finally block
-    if (CachePerfStats.enableClockStats)
+    if (statisticsClock.isEnabled())
       this.proxy.getTxMgr().getCachePerfStats()
-          .incTxConflictCheckTime(CachePerfStats.getStatTime() - conflictStart);
+          .incTxConflictCheckTime(statisticsClock.getTime() - conflictStart);
     if (this.internalAfterReservation != null) {
       this.internalAfterReservation.run();
     }
@@ -379,8 +401,8 @@ public class TXState implements TXStateInterface {
   public void precommit()
       throws CommitConflictException, UnsupportedOperationInTransactionException {
     throw new UnsupportedOperationInTransactionException(
-        LocalizedStrings.Dist_TX_PRECOMMIT_NOT_SUPPORTED_IN_A_TRANSACTION
-            .toLocalizedString("precommit"));
+        String.format("precommit() operation %s meant for Dist Tx is not supported",
+            "precommit"));
   }
 
   /*
@@ -403,7 +425,7 @@ public class TXState implements TXStateInterface {
 
     if (onBehalfOfRemoteStub && !proxy.isCommitOnBehalfOfRemoteStub()) {
       throw new UnsupportedOperationInTransactionException(
-          LocalizedStrings.TXState_CANNOT_COMMIT_REMOTED_TRANSACTION.toLocalizedString());
+          "Cannot commit a transaction being run on behalf of a remote thread");
     }
     cleanupNonDirtyRegions();
     try {
@@ -415,8 +437,7 @@ public class TXState implements TXStateInterface {
       } catch (PrimaryBucketException pbe) {
         // not sure what to do here yet
         RuntimeException re = new TransactionDataRebalancedException(
-            LocalizedStrings.PartitionedRegion_TRANSACTIONAL_DATA_MOVED_DUE_TO_REBALANCING
-                .toLocalizedString());
+            "Transactional data moved, due to rebalancing.");
         re.initCause(pbe);
         throw re;
       }
@@ -474,10 +495,7 @@ public class TXState implements TXStateInterface {
          * (applyChanges) 2. Ask for advice on who to send to (buildMessage) 3. Send out to other
          * members.
          *
-         * If this is done out of order, we will have problems with GII, split brain, and HA. See
-         * bug #41187
-         *
-         * @gregp
+         * If this is done out of order, we will have problems with GII, split brain, and HA.
          */
 
         attachFilterProfileInformation(entries);
@@ -879,22 +897,22 @@ public class TXState implements TXStateInterface {
   }
 
   void doCleanup() {
-    IllegalArgumentException iae = null;
+    RuntimeException exception = null;
     try {
       this.closed = true;
       this.seenEvents.clear();
       this.seenResults.clear();
       freePendingCallbacks();
       if (this.locks != null) {
-        final long conflictStart = CachePerfStats.getStatTime();
+        final long conflictStart = statisticsClock.getTime();
         try {
           this.locks.cleanup(getCache().getInternalDistributedSystem());
-        } catch (IllegalArgumentException e) {
-          iae = e;
+        } catch (IllegalArgumentException | IllegalMonitorStateException e) {
+          exception = e;
         }
-        if (CachePerfStats.enableClockStats)
+        if (statisticsClock.isEnabled())
           this.proxy.getTxMgr().getCachePerfStats()
-              .incTxConflictCheckTime(CachePerfStats.getStatTime() - conflictStart);
+              .incTxConflictCheckTime(statisticsClock.getTime() - conflictStart);
       }
       Iterator<Map.Entry<InternalRegion, TXRegionState>> it = this.regions.entrySet().iterator();
       while (it.hasNext()) {
@@ -921,8 +939,6 @@ public class TXState implements TXStateInterface {
                     "Exception while unlocking bucket region {} this is probably because the bucket was destroyed and never locked initially.",
                     r.getFullPath(), rde);
               }
-            } finally {
-
             }
           }
         }
@@ -933,8 +949,8 @@ public class TXState implements TXStateInterface {
         this.completionGuard.notifyAll();
       }
 
-      if (iae != null && !this.proxy.getCache().isClosed()) {
-        throw iae;
+      if (exception != null && !this.proxy.getCache().isClosed()) {
+        throw exception;
       }
     }
   }
@@ -1008,7 +1024,7 @@ public class TXState implements TXStateInterface {
 
     @Override
     public boolean equals(Object o) {
-      if (o == null || !(o instanceof TXEntryStateWithRegionAndKey))
+      if (!(o instanceof TXEntryStateWithRegionAndKey))
         return false;
       return compareTo(o) == 0;
     }
@@ -1044,7 +1060,7 @@ public class TXState implements TXStateInterface {
   }
 
   private Executor getExecutor() {
-    return getCache().getDistributionManager().getWaitingThreadPool();
+    return getCache().getDistributionManager().getExecutors().getWaitingThreadPool();
   }
 
   private CancelCriterion getCancelCriterion() {
@@ -1052,7 +1068,7 @@ public class TXState implements TXStateInterface {
   }
 
   void doBeforeCompletion() {
-    final long opStart = CachePerfStats.getStatTime();
+    final long opStart = statisticsClock.getTime();
     this.jtaLifeTime = opStart - getBeginTime();
 
     try {
@@ -1094,8 +1110,8 @@ public class TXState implements TXStateInterface {
       cleanup();
       proxy.getTxMgr().noteCommitFailure(opStart, this.jtaLifeTime, this);
       throw new SynchronizationCommitConflictException(
-          LocalizedStrings.TXState_CONFLICT_DETECTED_IN_GEMFIRE_TRANSACTION_0
-              .toLocalizedString(getTransactionId()),
+          String.format("Conflict detected in GemFire transaction %s",
+              getTransactionId()),
           commitConflict);
     }
   }
@@ -1133,7 +1149,7 @@ public class TXState implements TXStateInterface {
   }
 
   void doAfterCompletionCommit() {
-    final long opStart = CachePerfStats.getStatTime();
+    final long opStart = statisticsClock.getTime();
     try {
       Assert.assertTrue(this.locks != null,
           "Gemfire Transaction afterCompletion called with illegal state.");
@@ -1153,7 +1169,7 @@ public class TXState implements TXStateInterface {
   }
 
   void doAfterCompletionRollback() {
-    final long opStart = CachePerfStats.getStatTime();
+    final long opStart = statisticsClock.getTime();
     this.jtaLifeTime = opStart - getBeginTime();
     try {
       rollback();
@@ -1545,16 +1561,21 @@ public class TXState implements TXStateInterface {
         txr = txWriteRegion(internalRegion, keyInfo);
       }
       result = dataReg.createReadEntry(txr, keyInfo, createIfAbsent);
+      if (result == null) {
+        // createReadEntry will only returns null if createIfAbsent is false.
+        // CreateIfAbsent will only be false when this method is called by set operations.
+        // In that case we do not want the TXState to have a TXEntryState.
+        assert !createIfAbsent;
+        return result;
+      }
     }
 
     if (result != null) {
       if (expectedOldValue != null) {
         Object val = result.getNearSidePendingValue();
         if (!AbstractRegionEntry.checkExpectedOldValue(expectedOldValue, val, internalRegion)) {
-          txr.cleanupNonDirtyEntries(internalRegion);
           throw new EntryNotFoundException(
-              LocalizedStrings.AbstractRegionMap_THE_CURRENT_VALUE_WAS_NOT_EQUAL_TO_EXPECTED_VALUE
-                  .toLocalizedString());
+              "The current value was not equal to expected value.");
         }
       }
     } else {
@@ -1577,8 +1598,7 @@ public class TXState implements TXStateInterface {
          */
         if (!Token.isInvalid(expectedOldValue)) {
           throw new EntryNotFoundException(
-              LocalizedStrings.AbstractRegionMap_THE_CURRENT_VALUE_WAS_NOT_EQUAL_TO_EXPECTED_VALUE
-                  .toLocalizedString());
+              "The current value was not equal to expected value.");
         }
       }
     }
@@ -1594,8 +1614,8 @@ public class TXState implements TXStateInterface {
   @Override
   public Object getDeserializedValue(KeyInfo keyInfo, LocalRegion localRegion, boolean updateStats,
       boolean disableCopyOnRead, boolean preferCD, EntryEventImpl clientEvent,
-      boolean returnTombstones, boolean retainResult) {
-    TXEntryState tx = txReadEntry(keyInfo, localRegion, true, true/* create txEntry is absent */);
+      boolean returnTombstones, boolean retainResult, boolean createIfAbsent) {
+    TXEntryState tx = txReadEntry(keyInfo, localRegion, true, createIfAbsent);
     if (tx != null) {
       Object v = tx.getValue(keyInfo, localRegion, preferCD);
       if (!disableCopyOnRead) {
@@ -1696,6 +1716,15 @@ public class TXState implements TXStateInterface {
     return localRegion.nonTXbasicGetValueInVM(keyInfo);
   }
 
+  @Override
+  public boolean putEntry(EntryEventImpl event, boolean ifNew, boolean ifOld,
+      Object expectedOldValue, boolean requireOldValue, long lastModified,
+      boolean overwriteDestroyed) {
+    return this.putEntry(event, ifNew, ifOld, expectedOldValue, requireOldValue, lastModified,
+        overwriteDestroyed, true,
+        false);
+  }
+
   /*
    * (non-Javadoc)
    *
@@ -1705,7 +1734,7 @@ public class TXState implements TXStateInterface {
   @Override
   public boolean putEntry(EntryEventImpl event, boolean ifNew, boolean ifOld,
       Object expectedOldValue, boolean requireOldValue, long lastModified,
-      boolean overwriteDestroyed) {
+      boolean overwriteDestroyed, boolean invokeCallbacks, boolean throwConcurrentModification) {
     validateDelta(event);
     return txPutEntry(event, ifNew, requireOldValue, true, expectedOldValue);
   }
@@ -1716,7 +1745,7 @@ public class TXState implements TXStateInterface {
   private void validateDelta(EntryEventImpl event) {
     if (event.getDeltaBytes() != null && !event.getRegion().getAttributes().getCloningEnabled()) {
       throw new UnsupportedOperationInTransactionException(
-          LocalizedStrings.TXState_DELTA_WITHOUT_CLONING_CANNOT_BE_USED_IN_TX.toLocalizedString());
+          "Delta without cloning cannot be used in transaction");
     }
   }
 
@@ -1746,18 +1775,18 @@ public class TXState implements TXStateInterface {
         preferCD, requestingClient, clientEvent, returnTombstones);
   }
 
-  private boolean readEntryAndCheckIfDestroyed(KeyInfo keyInfo, LocalRegion localRegion,
-      boolean rememberReads) {
-    TXEntryState tx =
-        txReadEntry(keyInfo, localRegion, rememberReads, true/* create txEntry is absent */);
-    if (tx != null) {
-      if (!tx.existsLocally()) {
+  private TXEntryState readEntryAndCheckIfDestroyed(KeyInfo keyInfo, LocalRegion localRegion,
+      boolean rememberReads, boolean createIfAbsent) {
+    TXEntryState txEntryState =
+        txReadEntry(keyInfo, localRegion, rememberReads, createIfAbsent);
+    if (txEntryState != null) {
+      if (!txEntryState.existsLocally()) {
         // It was destroyed by the transaction so skip
         // this key and try the next one
-        return true; // fix for bug 34583
+        return null; // fix for bug 34583
       }
     }
-    return false;
+    return txEntryState;
   }
 
   /*
@@ -1783,14 +1812,15 @@ public class TXState implements TXStateInterface {
         }
       }
     }
-    if (!readEntryAndCheckIfDestroyed(curr, currRgn, rememberReads)) {
+    TXEntryState txEntryState =
+        readEntryAndCheckIfDestroyed(curr, currRgn, rememberReads, allowTombstones);
+    if (txEntryState != null) {
       // need to create KeyInfo since higher level iterator may reuse KeyInfo
       return new TXEntry(currRgn,
           new KeyInfo(curr.getKey(), curr.getCallbackArg(), curr.getBucketId()), proxy,
           rememberReads);
-    } else {
-      return null;
     }
+    return null;
   }
 
   /*
@@ -1803,11 +1833,13 @@ public class TXState implements TXStateInterface {
   public Object getKeyForIterator(KeyInfo curr, LocalRegion currRgn, boolean rememberReads,
       boolean allowTombstones) {
     assert !(curr.getKey() instanceof RegionEntry);
-    if (!readEntryAndCheckIfDestroyed(curr, currRgn, rememberReads)) {
+    TXEntryState txEntryState =
+        readEntryAndCheckIfDestroyed(curr, currRgn, rememberReads, allowTombstones);
+    if (txEntryState != null) {
+      // txEntry is created/read into txState.
       return curr.getKey();
-    } else {
-      return null;
     }
+    return null;
   }
 
   /*
@@ -1901,20 +1933,19 @@ public class TXState implements TXStateInterface {
   @Override
   public void checkSupportsRegionDestroy() throws UnsupportedOperationInTransactionException {
     throw new UnsupportedOperationInTransactionException(
-        LocalizedStrings.TXState_REGION_DESTROY_NOT_SUPPORTED_IN_A_TRANSACTION.toLocalizedString());
+        "destroyRegion() is not supported while in a transaction");
   }
 
   @Override
   public void checkSupportsRegionInvalidate() throws UnsupportedOperationInTransactionException {
     throw new UnsupportedOperationInTransactionException(
-        LocalizedStrings.TXState_REGION_INVALIDATE_NOT_SUPPORTED_IN_A_TRANSACTION
-            .toLocalizedString());
+        "invalidateRegion() is not supported while in a transaction");
   }
 
   @Override
   public void checkSupportsRegionClear() throws UnsupportedOperationInTransactionException {
     throw new UnsupportedOperationInTransactionException(
-        LocalizedStrings.TXState_REGION_CLEAR_NOT_SUPPORTED_IN_A_TRANSACTION.toLocalizedString());
+        "clear() is not supported while in a transaction");
   }
 
   /*
@@ -1943,7 +1974,7 @@ public class TXState implements TXStateInterface {
     Region.Entry txval = getEntry(key, pr, allowTombstones);
     if (txval == null) {
       throw new EntryNotFoundException(
-          LocalizedStrings.PartitionedRegionDataStore_ENTRY_NOT_FOUND.toLocalizedString());
+          "entry not found");
     } else {
       NonLocalRegionEntry nlre = new NonLocalRegionEntry(txval, localRegion);
       LocalRegion dataReg = localRegion.getDataRegionForRead(key);
@@ -2145,5 +2176,9 @@ public class TXState implements TXStateInterface {
 
   boolean isClosed() {
     return closed;
+  }
+
+  public boolean hasPerformedAnyOperation() {
+    return regions.size() != 0;
   }
 }

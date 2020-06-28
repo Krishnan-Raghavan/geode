@@ -14,8 +14,9 @@
  */
 package org.apache.geode.internal.cache.locks;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
-import static org.awaitility.Awaitility.await;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -23,13 +24,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -136,8 +137,16 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     // get txLock and hold it
     final Set participants = Collections.EMPTY_SET;
     final List regionLockReqs = new ArrayList();
-    regionLockReqs.add(new TXRegionLockRequestImpl("/testTXRecoverGrantorMessageProcessor",
-        new HashSet(Arrays.asList(new String[] {"KEY-1", "KEY-2", "KEY-3", "KEY-4"}))));
+
+    Map<Object, Boolean> keymap = new HashMap<Object, Boolean>();
+    keymap.put("KEY-1", true);
+    keymap.put("KEY-2", true);
+    keymap.put("KEY-3", true);
+    keymap.put("KEY-4", true);
+    regionLockReqs
+        .add(new TXRegionLockRequestImpl(SEPARATOR + "testTXRecoverGrantorMessageProcessor",
+            keymap));
+
     TXLockService dtls = TXLockService.getDTLS();
     TXLockId txLockId = dtls.txLock(regionLockReqs, participants);
 
@@ -162,14 +171,14 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     thread.setDaemon(true);
     thread.start();
 
-    await("waiting for recovery message to block").atMost(999, TimeUnit.MILLISECONDS).until(() -> {
+    await("waiting for recovery message to block").until(() -> {
       return ((TXLockServiceImpl) dtls).isRecovering();
     });
 
     dtls.release(txLockId);
 
     // check results to verify no locks were provided in the reply
-    await("waiting for thread to exit").atMost(30, TimeUnit.SECONDS).until(() -> {
+    await("waiting for thread to exit").until(() -> {
       return !thread.isAlive();
     });
 
@@ -202,8 +211,16 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     // get txLock and hold it
     final List regionLockReqs = new ArrayList();
-    regionLockReqs.add(new TXRegionLockRequestImpl("/testTXRecoverGrantorMessageProcessor2",
-        new HashSet(Arrays.asList(new String[] {"KEY-1", "KEY-2", "KEY-3", "KEY-4"}))));
+
+    Map<Object, Boolean> keymap = new HashMap<Object, Boolean>();
+    keymap.put("KEY-1", true);
+    keymap.put("KEY-2", true);
+    keymap.put("KEY-3", true);
+    keymap.put("KEY-4", true);
+    regionLockReqs
+        .add(new TXRegionLockRequestImpl(SEPARATOR + "testTXRecoverGrantorMessageProcessor2",
+            keymap));
+
     TXLockService dtls = TXLockService.getDTLS();
     TXLockId txLockId = dtls.txLock(regionLockReqs, Collections.EMPTY_SET);
 
@@ -231,7 +248,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
       thread.setDaemon(true);
       thread.start();
 
-      await("waiting for recovery to begin").atMost(10, TimeUnit.SECONDS).until(() -> {
+      await("waiting for recovery to begin").until(() -> {
         return observer.isPreventingProcessing();
       });
 
@@ -258,7 +275,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
       System.out.println("releasing transaction locks, which should block for a bit");
       dtls.release(txLockId);
 
-      await("waiting for recovery to finish").atMost(10, TimeUnit.SECONDS).until(() -> {
+      await("waiting for recovery to finish").until(() -> {
         return !((TXLockServiceImpl) dtls).isRecovering();
       });
     } finally {
@@ -315,15 +332,26 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     final int clientB = 2;
     final Set participants = Collections.EMPTY_SET;
     final List regionLockReqs = new ArrayList();
-    regionLockReqs.add(new TXRegionLockRequestImpl("/testTXLock1",
-        new HashSet(Arrays.asList(new String[] {"KEY-1", "KEY-2", "KEY-3", "KEY-4"}))));
-    regionLockReqs.add(new TXRegionLockRequestImpl("/testTXLock2",
-        new HashSet(Arrays.asList(new String[] {"KEY-A", "KEY-B", "KEY-C", "KEY-D"}))));
+
+    Map<Object, Boolean> keymap1 = new HashMap<Object, Boolean>();
+    keymap1.put("KEY-1", true);
+    keymap1.put("KEY-2", true);
+    keymap1.put("KEY-3", true);
+    keymap1.put("KEY-4", true);
+    Map<Object, Boolean> keymap2 = new HashMap<Object, Boolean>();
+    keymap2.put("KEY-A", true);
+    keymap2.put("KEY-B", true);
+    keymap2.put("KEY-C", true);
+    keymap2.put("KEY-D", true);
+
+    regionLockReqs.add(new TXRegionLockRequestImpl(SEPARATOR + "testTXLock1", keymap1));
+    regionLockReqs.add(new TXRegionLockRequestImpl(SEPARATOR + "testTXLock2", keymap2));
 
     // create grantor
     LogWriterUtils.getLogWriter().info("[testTXLock] create grantor");
 
     Host.getHost(0).getVM(grantorVM).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
@@ -334,6 +362,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     LogWriterUtils.getLogWriter().info("[testTXLock] create clientA and request txLock");
 
     Host.getHost(0).getVM(clientA).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
@@ -341,6 +370,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     Host.getHost(0).getVM(clientA)
         .invoke(new SerializableRunnable("[testTXLock] create clientA and request txLock") {
+          @Override
           public void run() {
             TXLockService dtls = TXLockService.getDTLS();
             testTXLock_TXLockId = dtls.txLock(regionLockReqs, participants);
@@ -352,12 +382,14 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     LogWriterUtils.getLogWriter().info("[testTXLock] create clientB and fail txLock");
 
     Host.getHost(0).getVM(clientB).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
     });
 
     Host.getHost(0).getVM(clientB).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         try {
           TXLockService dtls = TXLockService.getDTLS();
@@ -380,6 +412,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     Host.getHost(0).getVM(clientA)
         .invoke(new SerializableRunnable("[testTXLock] clientA releases txLock") {
+          @Override
           public void run() {
             TXLockService dtls = TXLockService.getDTLS();
             dtls.release(testTXLock_TXLockId);
@@ -392,6 +425,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     Host.getHost(0).getVM(clientB)
         .invoke(new SerializableRunnable("[testTXLock] clientB requests txLock") {
+          @Override
           public void run() {
             TXLockService dtls = TXLockService.getDTLS();
             testTXLock_TXLockId = dtls.txLock(regionLockReqs, participants);
@@ -404,6 +438,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     Host.getHost(0).getVM(clientB)
         .invoke(new SerializableRunnable("[testTXLock] clientB releases txLock") {
+          @Override
           public void run() {
             TXLockService dtls = TXLockService.getDTLS();
             dtls.release(testTXLock_TXLockId);
@@ -422,8 +457,15 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     final int particpantB = 3;
 
     final List regionLockReqs = new ArrayList();
-    regionLockReqs.add(new TXRegionLockRequestImpl("/testTXOriginatorRecoveryProcessor",
-        new HashSet(Arrays.asList(new String[] {"KEY-1", "KEY-2", "KEY-3", "KEY-4"}))));
+
+    Map<Object, Boolean> keymap1 = new HashMap<Object, Boolean>();
+    keymap1.put("KEY-1", true);
+    keymap1.put("KEY-2", true);
+    keymap1.put("KEY-3", true);
+    keymap1.put("KEY-4", true);
+
+    regionLockReqs
+        .add(new TXRegionLockRequestImpl(SEPARATOR + "testTXOriginatorRecoveryProcessor", keymap1));
 
     // build participants set...
     InternalDistributedMember dmId = null;
@@ -441,6 +483,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
         .info("[testTXOriginatorRecoveryProcessor] grantorVM becomes grantor");
 
     Host.getHost(0).getVM(grantorVM).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
@@ -458,12 +501,14 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
         .info("[testTXOriginatorRecoveryProcessor] originatorVM requests txLock");
 
     Host.getHost(0).getVM(originatorVM).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
     });
     Host.getHost(0).getVM(originatorVM).invoke(new SerializableRunnable(
         "[testTXOriginatorRecoveryProcessor] originatorVM requests txLock") {
+      @Override
       public void run() {
         TXLockService dtls = TXLockService.getDTLS();
         testTXOriginatorRecoveryProcessor_TXLockId = dtls.txLock(regionLockReqs, participants);
@@ -474,11 +519,13 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     // create dtls in each participant
     Host.getHost(0).getVM(particpantA).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
     });
     Host.getHost(0).getVM(particpantB).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.createDTLS(system);
       }
@@ -498,6 +545,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
      */
 
     Host.getHost(0).getVM(originatorVM).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         TXLockService.destroyServices();
       }
@@ -511,6 +559,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     // verify txLock is released...
     Host.getHost(0).getVM(particpantA).invoke(
         new SerializableRunnable("[testTXOriginatorRecoveryProcessor] verify txLock is released") {
+          @Override
           public void run() {
             TXLockService dtls = TXLockService.getDTLS();
             testTXOriginatorRecoveryProcessor_TXLockId = dtls.txLock(regionLockReqs, participants);
@@ -521,6 +570,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
 
     Host.getHost(0).getVM(particpantA).invoke(new SerializableRunnable(
         "[testTXOriginatorRecoveryProcessor] particpantA releases txLock") {
+      @Override
       public void run() {
         TXLockService dtls = TXLockService.getDTLS();
         dtls.release(testTXOriginatorRecoveryProcessor_TXLockId);
@@ -540,6 +590,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
       LogWriterUtils.getLogWriter().info("[testDTLSIsDistributed] testing vm " + finalvm);
 
       Host.getHost(0).getVM(finalvm).invoke(new SerializableRunnable() {
+        @Override
         public void run() {
           TXLockService.createDTLS(system);
         }
@@ -766,6 +817,7 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
     }
   }
 
+  @Override
   public Properties getDistributedSystemProperties() {
     Properties props = super.getDistributedSystemProperties();
     props.setProperty(LOG_LEVEL, LogWriterUtils.getDUnitLogLevel());
@@ -811,10 +863,12 @@ public class TXLockServiceDUnitTest extends JUnit4DistributedTestCase {
       super(dm.getSystem(), members);
     }
 
+    @Override
     protected boolean allowReplyFromSender() {
       return true;
     }
 
+    @Override
     public void process(DistributionMessage msg) {
       DLockRecoverGrantorProcessor.DLockRecoverGrantorReplyMessage reply =
           (DLockRecoverGrantorProcessor.DLockRecoverGrantorReplyMessage) msg;

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -26,11 +27,11 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.query.cq.internal.ServerCQImpl;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.internal.DefaultQueryService;
 import org.apache.geode.cache.query.internal.cq.CqService;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
-import org.apache.geode.cache.query.internal.cq.ServerCQImpl;
 import org.apache.geode.cache.query.internal.index.IndexManager;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.internal.AvailablePortHelper;
@@ -54,7 +55,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   protected CqQueryUsingPoolDUnitTest cqDUnitTest = new CqQueryUsingPoolDUnitTest();
 
-  private final String selStr = "SELECT * FROM /root/regionA";
+  private final String selStr = "SELECT * FROM " + SEPARATOR + "root" + SEPARATOR + "regionA";
 
   /** Supported queries */
   public final String[] condition = new String[] {/* 0 */ " p WHERE p.ID > 3",
@@ -92,10 +93,12 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   /** Unsupported queries */
   public final String[] condition2 =
-      new String[] {/* 0 */ " p1, /root/regionB p2 WHERE p1.status = p2.status",
+      new String[] {/* 0 */ " p1, " + SEPARATOR + "root" + SEPARATOR
+          + "regionB p2 WHERE p1.status = p2.status",
           /* 1 */ " p, p.positions.values p1 WHERE p1.secId = 'IBM'",
           /* 2 */ " p, p.positions.values AS pos WHERE pos.secId != '1'",
-          /* 3 */ " p WHERE p.ID in (SELECT p1.ID FROM /root/regionA p1 WHERE p1.ID > 3)",
+          /* 3 */ " p WHERE p.ID in (SELECT p1.ID FROM " + SEPARATOR + "root" + SEPARATOR
+              + "regionA p1 WHERE p1.ID > 3)",
           /* 4 */ ".entries entry WHERE entry.key = '1'",
           /* 5 */ ".entries entry WHERE entry.value.ID > '3'",
           /* 6 */ ".values p WHERE p.ID > '3' and p.status = 'active'",
@@ -112,6 +115,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // system before creating ConnectionPools
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -197,10 +201,12 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createClient(client, port, host0);
 
     // Create index.
-    cqDUnitTest.createFunctionalIndex(server, "IdIndex", "p.ID", "/root/regionA p");
-    cqDUnitTest.createFunctionalIndex(server, "statusIndex", "p.status", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(server, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
+    cqDUnitTest.createFunctionalIndex(server, "statusIndex", "p.status",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
     cqDUnitTest.createFunctionalIndex(server, "portfolioIdIndex", "p.position1.portfolioId",
-        "/root/regionA p");
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Put 5 entries into the region.
     cqDUnitTest.createValues(server, "regionA", 5);
@@ -243,15 +249,18 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Create index.
     server.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = true;
       }
     });
 
-    cqDUnitTest.createFunctionalIndex(server, "IdIndex", "p.ID", "/root/regionA p");
-    cqDUnitTest.createFunctionalIndex(server, "statusIndex", "p.status", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(server, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
+    cqDUnitTest.createFunctionalIndex(server, "statusIndex", "p.status",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
     cqDUnitTest.createFunctionalIndex(server, "portfolioIdIndex", "p.position1.portfolioId",
-        "/root/regionA p");
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Put 5 entries into the region.
     cqDUnitTest.createValues(server, "regionA", 5);
@@ -267,6 +276,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Unset the flag.
     server.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = false;
       }
@@ -357,10 +367,12 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createClient(client, port, host0);
 
     // Create index.
-    cqDUnitTest.createFunctionalIndex(server1, "IdIndex", "p.ID", "/root/regionA p");
-    cqDUnitTest.createFunctionalIndex(server1, "statusIndex", "p.status", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(server1, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
+    cqDUnitTest.createFunctionalIndex(server1, "statusIndex", "p.status",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
     cqDUnitTest.createFunctionalIndex(server1, "portfolioIdIndex", "p.position1.portfolioId",
-        "/root/regionA p");
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Put 5 entries into the region.
     cqDUnitTest.createValues(server1, "regionA", 5);
@@ -407,21 +419,25 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Create index.
     server1.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = true;
       }
     });
 
     server2.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = true;
       }
     });
 
-    cqDUnitTest.createFunctionalIndex(server1, "IdIndex", "p.ID", "/root/regionA p");
-    cqDUnitTest.createFunctionalIndex(server1, "statusIndex", "p.status", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(server1, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
+    cqDUnitTest.createFunctionalIndex(server1, "statusIndex", "p.status",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
     cqDUnitTest.createFunctionalIndex(server1, "portfolioIdIndex", "p.position1.portfolioId",
-        "/root/regionA p");
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Put 5 entries into the region.
     cqDUnitTest.createValues(server1, "regionA", 5);
@@ -437,12 +453,14 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Create index.
     server1.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = false;
       }
     });
 
     server2.invoke(new CacheSerializableRunnable("Set RangeIndex Falg") {
+      @Override
       public void run2() throws CacheException {
         IndexManager.TEST_RANGEINDEX_ONLY = false;
       }
@@ -484,8 +502,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -495,8 +515,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         // Update (totalObjects - 1) entries.
         for (int i = 1; i < totalObjects; i++) {
           // Destroy entries.
@@ -524,6 +546,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -534,7 +557,8 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {
@@ -610,8 +634,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -621,8 +647,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         // Update (totalObjects - 1) entries.
         for (int i = 1; i < totalObjects; i++) {
           // Destroy entries.
@@ -651,6 +679,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -661,7 +690,8 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {
@@ -733,8 +763,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server1.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -746,8 +778,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server2.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         // Update (totalObjects - 1) entries.
         for (int i = 1; i < totalObjects; i++) {
           // Destroy entries.
@@ -771,6 +805,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server1.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -830,8 +865,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server1.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -841,8 +878,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Update from server2.
     server2.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -852,8 +891,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Destroy entries.
     server2.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.destroy("" + i);
@@ -866,6 +907,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server1.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -887,6 +929,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
     });
 
     server2.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -944,8 +987,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server1.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -955,8 +1000,10 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server1.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         // Update (totalObjects - 1) entries.
         for (int i = 1; i < totalObjects; i++) {
           // Destroy entries.
@@ -984,6 +1031,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server1.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -994,7 +1042,8 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {
@@ -1041,6 +1090,7 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Verify CQ Cache results.
     server2.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -1051,7 +1101,8 @@ public class CqResultSetUsingPoolDUnitTest extends JUnit4CacheTestCase {
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {

@@ -16,6 +16,7 @@ package org.apache.geode.internal.jta.dunit;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
@@ -41,20 +42,18 @@ import org.junit.Test;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.jta.CacheUtils;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.OSProcess;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.RMIException;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.util.test.TestUtil;
-
 
 public class LoginTimeOutDUnitTest extends JUnit4DistributedTestCase {
   private static final Logger logger = LogService.getLogger();
@@ -132,7 +131,9 @@ public class LoginTimeOutDUnitTest extends JUnit4DistributedTestCase {
     String path = File.createTempFile("dunit-cachejta_", ".xml").getAbsolutePath();
     logger.debug("PATH " + path);
     /** * Return file as string and then modify the string accordingly ** */
-    String file_as_str = readFile(TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml"));
+    String file_as_str = readFile(
+        createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+            .getAbsolutePath());
     file_as_str = file_as_str.replaceAll("newDB", "newDB_" + pid);
     String modified_file_str = modifyFile(file_as_str);
     FileOutputStream fos = new FileOutputStream(path);
@@ -278,30 +279,34 @@ public class LoginTimeOutDUnitTest extends JUnit4DistributedTestCase {
     }
     logger.debug("runTest1 got all of the goodies and is now sleeping");
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return runTest2Done;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
   }
 
   public static void runTest2() throws Exception {
     try {
       logger.debug("runTest2 sleeping");
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return runTest1Ready;
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       DataSource ds = null;
       try {

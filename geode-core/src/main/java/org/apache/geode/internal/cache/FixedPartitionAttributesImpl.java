@@ -22,7 +22,7 @@ import java.io.IOException;
 import org.apache.geode.DataSerializable;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.FixedPartitionAttributes;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Internal implementation of {@link FixedPartitionAttributes}.
@@ -58,18 +58,22 @@ public class FixedPartitionAttributesImpl extends FixedPartitionAttributes
 
   }
 
+  @Override
   public String getPartitionName() {
     return this.partitionName;
   }
 
+  @Override
   public int getNumBuckets() {
     return this.numBuckets;
   }
 
+  @Override
   public boolean isPrimary() {
     return this.isPrimary;
   }
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     this.partitionName = DataSerializer.readString(in);
     this.isPrimary = in.readBoolean();
@@ -78,6 +82,7 @@ public class FixedPartitionAttributesImpl extends FixedPartitionAttributes
 
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     DataSerializer.writeString(this.partitionName, out);
     out.writeBoolean(this.isPrimary);
@@ -142,7 +147,7 @@ public class FixedPartitionAttributesImpl extends FixedPartitionAttributes
     s.append("FixedPartitionAttributes@").append("[partitionName=").append(this.partitionName)
         .append(";isPrimary=").append(this.isPrimary).append(";numBuckets=")
         .append(this.numBuckets);
-    if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "PRDebug")) {
+    if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "PRDebug")) {
       s.append(";startingBucketID= ").append(this.startingBucketID);
     }
     s.append("]");

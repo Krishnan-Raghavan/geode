@@ -20,7 +20,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.security.SimpleTestSecurityManager;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.test.junit.categories.GfshTest;
 import org.apache.geode.test.junit.categories.SecurityTest;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -32,7 +32,7 @@ public class ConnectCommandWithSecurityTest {
   @ClassRule
   public static LocatorStarterRule locator = new LocatorStarterRule()
       .withHttpService()
-      .withSecurityManager(SimpleTestSecurityManager.class).withAutoStart();
+      .withSecurityManager(SimpleSecurityManager.class).withAutoStart();
 
   @Rule
   public GfshCommandRule gfsh = new GfshCommandRule();
@@ -45,9 +45,23 @@ public class ConnectCommandWithSecurityTest {
   }
 
   @Test
+  public void connectToLocatorWithToken() throws Exception {
+    gfsh.secureConnectWithTokenAndVerify(locator.getPort(), GfshCommandRule.PortType.locator,
+        "FOO_BAR");
+    gfsh.executeAndAssertThat("list members").statusIsSuccess();
+  }
+
+  @Test
   public void connectOverJmx() throws Exception {
     gfsh.secureConnectAndVerify(locator.getJmxPort(), GfshCommandRule.PortType.jmxManager,
         "clusterRead", "clusterRead");
+    gfsh.executeAndAssertThat("list members").statusIsSuccess();
+  }
+
+  @Test
+  public void connectOverJmxWithToken() throws Exception {
+    gfsh.secureConnectWithTokenAndVerify(locator.getJmxPort(), GfshCommandRule.PortType.jmxManager,
+        "FOO_BAR");
     gfsh.executeAndAssertThat("list members").statusIsSuccess();
   }
 
@@ -57,4 +71,12 @@ public class ConnectCommandWithSecurityTest {
         "clusterRead");
     gfsh.executeAndAssertThat("list members").statusIsSuccess();
   }
+
+  @Test
+  public void connectOverHttpWithToken() throws Exception {
+    gfsh.secureConnectWithTokenAndVerify(locator.getHttpPort(), GfshCommandRule.PortType.http,
+        "FOO_BAR");
+    gfsh.executeAndAssertThat("list members").statusIsSuccess();
+  }
+
 }

@@ -18,6 +18,7 @@ import static org.apache.geode.cache.asyncqueue.internal.AsyncEventQueueImpl.get
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.asyncqueue.AsyncEventListener;
 import org.apache.geode.cache.asyncqueue.AsyncEventQueue;
 import org.apache.geode.cache.asyncqueue.AsyncEventQueueFactory;
@@ -33,8 +34,7 @@ import org.apache.geode.internal.cache.xmlcache.AsyncEventQueueCreation;
 import org.apache.geode.internal.cache.xmlcache.CacheCreation;
 import org.apache.geode.internal.cache.xmlcache.ParallelAsyncEventQueueCreation;
 import org.apache.geode.internal.cache.xmlcache.SerialAsyncEventQueueCreation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
 
@@ -46,6 +46,8 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
   public static final int DEFAULT_BATCH_TIME_INTERVAL = 5;
 
   private final InternalCache cache;
+
+  private boolean pauseEventsDispatching = false;
 
   /**
    * Used internally to pass the attributes from this factory to the real GatewaySender it is
@@ -152,7 +154,7 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
   public AsyncEventQueue create(String asyncQueueId, AsyncEventListener listener) {
     if (listener == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.AsyncEventQueue_ASYNC_EVENT_LISTENER_CANNOT_BE_NULL.toLocalizedString());
+          "AsyncEventListener cannot be null");
     }
 
     AsyncEventQueue asyncEventQueue;
@@ -160,6 +162,9 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
     if (cache instanceof CacheCreation) {
       asyncEventQueue =
           new AsyncEventQueueCreation(asyncQueueId, gatewaySenderAttributes, listener);
+      if (pauseEventsDispatching) {
+        ((AsyncEventQueueCreation) asyncEventQueue).setPauseEventDispatching(true);
+      }
       ((CacheCreation) cache).addAsyncEventQueue(asyncEventQueue);
     } else {
       if (logger.isDebugEnabled()) {
@@ -172,6 +177,9 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
       AsyncEventQueueImpl asyncEventQueueImpl = new AsyncEventQueueImpl(sender, listener);
       asyncEventQueue = asyncEventQueueImpl;
       cache.addAsyncEventQueue(asyncEventQueueImpl);
+      if (pauseEventsDispatching) {
+        sender.setStartEventProcessorInPausedState();
+      }
       if (!gatewaySenderAttributes.isManualStart()) {
         sender.start();
       }
@@ -188,8 +196,8 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
 
     if (gatewaySenderAttributes.getDispatcherThreads() <= 0) {
       throw new AsyncEventQueueConfigurationException(
-          LocalizedStrings.AsyncEventQueue_0_CANNOT_HAVE_DISPATCHER_THREADS_LESS_THAN_1
-              .toLocalizedString(id));
+          String.format("AsyncEventQueue %s can not be created with dispatcher threads less than 1",
+              id));
     }
 
     GatewaySender sender;
@@ -197,14 +205,17 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
       if (gatewaySenderAttributes.getOrderPolicy() != null
           && gatewaySenderAttributes.getOrderPolicy().equals(OrderPolicy.THREAD)) {
         throw new AsyncEventQueueConfigurationException(
-            LocalizedStrings.AsyncEventQueue_0_CANNOT_BE_CREATED_WITH_ORDER_POLICY_1
-                .toLocalizedString(id, gatewaySenderAttributes.getOrderPolicy()));
+            String.format(
+                "AsyncEventQueue %s can not be created with OrderPolicy %s when it is set parallel",
+                id, gatewaySenderAttributes.getOrderPolicy()));
       }
 
       if (cache instanceof CacheCreation) {
         sender = new ParallelAsyncEventQueueCreation(cache, gatewaySenderAttributes);
       } else {
-        sender = new ParallelAsyncEventQueueImpl(cache, gatewaySenderAttributes);
+        sender = new ParallelAsyncEventQueueImpl(cache,
+            cache.getInternalDistributedSystem().getStatisticsManager(), cache.getStatisticsClock(),
+            gatewaySenderAttributes);
       }
       cache.addGatewaySender(sender);
 
@@ -217,7 +228,9 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
       if (cache instanceof CacheCreation) {
         sender = new SerialAsyncEventQueueCreation(cache, gatewaySenderAttributes);
       } else {
-        sender = new SerialAsyncEventQueueImpl(cache, gatewaySenderAttributes);
+        sender = new SerialAsyncEventQueueImpl(cache,
+            cache.getInternalDistributedSystem().getStatisticsManager(), cache.getStatisticsClock(),
+            gatewaySenderAttributes);
       }
       cache.addGatewaySender(sender);
     }
@@ -266,5 +279,16 @@ public class AsyncEventQueueFactoryImpl implements AsyncEventQueueFactory {
   public AsyncEventQueueFactory setForwardExpirationDestroy(boolean forward) {
     gatewaySenderAttributes.forwardExpirationDestroy = forward;
     return this;
+  }
+
+  @Override
+  public AsyncEventQueueFactory pauseEventDispatching() {
+    pauseEventsDispatching = true;
+    return this;
+  }
+
+  @VisibleForTesting
+  protected boolean isPauseEventsDispatching() {
+    return pauseEventsDispatching;
   }
 }

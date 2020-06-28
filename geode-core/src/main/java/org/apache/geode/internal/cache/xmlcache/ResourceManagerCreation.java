@@ -12,17 +12,17 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-/**
- * File comment
- */
 package org.apache.geode.internal.cache.xmlcache;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.geode.cache.control.RebalanceFactory;
 import org.apache.geode.cache.control.RebalanceOperation;
 import org.apache.geode.cache.control.ResourceManager;
+import org.apache.geode.cache.control.RestoreRedundancyOperation;
 import org.apache.geode.internal.cache.control.MemoryThresholds;
+import org.apache.geode.management.runtime.RestoreRedundancyResults;
 
 /**
  * @since GemFire 6.0
@@ -46,6 +46,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#createRebalanceFactory()
    */
+  @Override
   public RebalanceFactory createRebalanceFactory() {
     throw new IllegalArgumentException("Unused");
   }
@@ -55,7 +56,28 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#getRebalanceOperations()
    */
+  @Override
   public Set<RebalanceOperation> getRebalanceOperations() {
+    throw new IllegalArgumentException("Unused");
+  }
+
+  /*
+   * (non-Javadoc)
+   *
+   * @see org.apache.geode.cache.control.ResourceManager#createRestoreRedundancyOperation()
+   */
+  @Override
+  public RestoreRedundancyOperation createRestoreRedundancyOperation() {
+    throw new IllegalArgumentException("Unused");
+  }
+
+  /*
+   * (non-Javadoc)
+   *
+   * @see org.apache.geode.cache.control.ResourceManager#getRestoreRedundancyFutures()
+   */
+  @Override
+  public Set<CompletableFuture<RestoreRedundancyResults>> getRestoreRedundancyFutures() {
     throw new IllegalArgumentException("Unused");
   }
 
@@ -64,6 +86,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#getCriticalHeapPercentage()
    */
+  @Override
   public float getCriticalHeapPercentage() {
     return this.criticalHeapPercentage;
   }
@@ -73,6 +96,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#setCriticalHeapPercentage(int)
    */
+  @Override
   public void setCriticalHeapPercentage(float heapPercentage) {
     this.criticalHeapSet = true;
     this.criticalHeapPercentage = heapPercentage;
@@ -175,6 +199,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#getEvictionHeapPercentage()
    */
+  @Override
   public float getEvictionHeapPercentage() {
     return this.evictionHeapPercentage;
   }
@@ -184,6 +209,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#setEvictionHeapPercentage(int)
    */
+  @Override
   public void setEvictionHeapPercentage(float heapPercentage) {
     this.evictionHeapSet = true;
     this.evictionHeapPercentage = heapPercentage;
@@ -207,6 +233,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#getEvictionOffHeapPercentage()
    */
+  @Override
   public float getEvictionOffHeapPercentage() {
     return this.evictionOffHeapPercentage;
   }
@@ -216,6 +243,7 @@ public class ResourceManagerCreation implements ResourceManager {
    *
    * @see org.apache.geode.cache.control.ResourceManager#setEvictionOffHeapPercentage(int)
    */
+  @Override
   public void setEvictionOffHeapPercentage(final float offHeapPercentage) {
     this.evictionOffHeapSet = true;
     this.evictionOffHeapPercentage = offHeapPercentage;

@@ -14,13 +14,17 @@
  */
 package org.apache.geode.cache30;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.OFF_HEAP_MEMORY_SIZE;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
+import java.net.Socket;
 import java.util.List;
 import java.util.Properties;
 
@@ -33,14 +37,18 @@ import org.apache.geode.cache.asyncqueue.AsyncEvent;
 import org.apache.geode.cache.asyncqueue.AsyncEventListener;
 import org.apache.geode.cache.asyncqueue.AsyncEventQueue;
 import org.apache.geode.cache.asyncqueue.AsyncEventQueueFactory;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.cache.client.Pool;
+import org.apache.geode.cache.client.PoolFactory;
+import org.apache.geode.cache.client.PoolManager;
+import org.apache.geode.cache.client.SocketFactory;
 import org.apache.geode.internal.cache.RegionEntryContext;
 import org.apache.geode.internal.cache.xmlcache.CacheCreation;
 import org.apache.geode.internal.cache.xmlcache.CacheXml;
+import org.apache.geode.internal.cache.xmlcache.Declarable2;
 import org.apache.geode.internal.cache.xmlcache.RegionAttributesCreation;
 import org.apache.geode.internal.cache.xmlcache.ResourceManagerCreation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.IgnoredException;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 
 public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
@@ -53,7 +61,7 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
   @SuppressWarnings("rawtypes")
   @Test
   public void testEnableOffHeapMemory() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + OFF_HEAP_MEMORY_SIZE, "1m");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + OFF_HEAP_MEMORY_SIZE, "1m");
 
     final String regionName = "testEnableOffHeapMemory";
 
@@ -94,8 +102,9 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     assertEquals(true, regionBefore.getAttributes().getOffHeap());
 
     IgnoredException.addIgnoredException(
-        LocalizedStrings.LocalRegion_THE_REGION_0_WAS_CONFIGURED_TO_USE_OFF_HEAP_MEMORY_BUT_OFF_HEAP_NOT_CONFIGURED
-            .toLocalizedString("/" + regionName));
+        String.format(
+            "The region %s was configured to use off heap memory but no off heap memory was configured",
+            SEPARATOR + regionName));
 
     try {
       testXml(cache);
@@ -103,8 +112,9 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     } catch (IllegalStateException e) {
       // expected
       String msg =
-          LocalizedStrings.LocalRegion_THE_REGION_0_WAS_CONFIGURED_TO_USE_OFF_HEAP_MEMORY_BUT_OFF_HEAP_NOT_CONFIGURED
-              .toLocalizedString("/" + regionName);
+          String.format(
+              "The region %s was configured to use off heap memory but no off heap memory was configured",
+              SEPARATOR + regionName);
       assertEquals(msg, e.getMessage());
     }
   }
@@ -133,8 +143,9 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     assertEquals(true, subRegionBefore.getAttributes().getOffHeap());
 
     IgnoredException.addIgnoredException(
-        LocalizedStrings.LocalRegion_THE_REGION_0_WAS_CONFIGURED_TO_USE_OFF_HEAP_MEMORY_BUT_OFF_HEAP_NOT_CONFIGURED
-            .toLocalizedString("/" + rootRegionName + "/" + subRegionName));
+        String.format(
+            "The region %s was configured to use off heap memory but no off heap memory was configured",
+            SEPARATOR + rootRegionName + SEPARATOR + subRegionName));
 
     try {
       testXml(cache);
@@ -142,8 +153,9 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     } catch (IllegalStateException e) {
       // expected
       final String msg =
-          LocalizedStrings.LocalRegion_THE_REGION_0_WAS_CONFIGURED_TO_USE_OFF_HEAP_MEMORY_BUT_OFF_HEAP_NOT_CONFIGURED
-              .toLocalizedString("/" + rootRegionName + "/" + subRegionName);
+          String.format(
+              "The region %s was configured to use off heap memory but no off heap memory was configured",
+              SEPARATOR + rootRegionName + SEPARATOR + subRegionName);
       assertEquals(msg, e.getMessage());
     }
   }
@@ -152,13 +164,14 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
    * Test the ResourceManager element's critical-off-heap-percentage and
    * eviction-off-heap-percentage attributes
    */
+  @Override
   @Test
   public void testResourceManagerThresholds() throws Exception {
     CacheCreation cache = new CacheCreation();
     final float low = 90.0f;
     final float high = 95.0f;
 
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + OFF_HEAP_MEMORY_SIZE, "1m");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + OFF_HEAP_MEMORY_SIZE, "1m");
 
     Cache c;
     ResourceManagerCreation rmc = new ResourceManagerCreation();
@@ -191,8 +204,7 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     rmc.setCriticalOffHeapPercentage(low);
     cache.setResourceManagerCreation(rmc);
     IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.MemoryMonitor_EVICTION_PERCENTAGE_LTE_CRITICAL_PERCENTAGE
-            .toLocalizedString());
+        "Eviction percentage must be less than the critical percentage.");
     try {
       testXml(cache);
       fail("Expected IllegalArgumentException to be thrown");
@@ -293,6 +305,20 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     c.close();
   }
 
+  @Test
+  public void testPoolSocketFactory() throws IOException {
+    getSystem();
+    CacheCreation cache = new CacheCreation();
+    PoolFactory f = cache.createPoolFactory();
+    f.setSocketFactory(new TestSocketFactory());
+    f.addServer("localhost", 443);
+    f.create("mypool");
+
+    testXml(cache);
+    Pool cp = PoolManager.find("mypool");
+    assertThat(cp.getSocketFactory()).isInstanceOf(TestSocketFactory.class);
+  }
+
   public static class MyAsyncEventListenerGeode10 implements AsyncEventListener, Declarable {
 
     @Override
@@ -307,4 +333,20 @@ public class CacheXmlGeode10DUnitTest extends CacheXml81DUnitTest {
     public void init(Properties properties) {}
   }
 
+  public static class TestSocketFactory implements SocketFactory, Declarable2 {
+    @Override
+    public Socket createSocket() throws IOException {
+      return new Socket();
+    }
+
+    @Override
+    public Properties getConfig() {
+      return new Properties();
+    }
+
+    @Override
+    public void initialize(Cache cache, Properties properties) {
+
+    }
+  }
 }

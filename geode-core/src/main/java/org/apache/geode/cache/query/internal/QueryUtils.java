@@ -51,8 +51,7 @@ import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.CachePerfStats;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.partitioned.Bucket;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class QueryUtils {
   private static final Logger logger = LogService.getLogger();
@@ -390,7 +389,7 @@ public class QueryUtils {
       int len = itrsForFields.length;
       for (Object anIndividualResultSet : individualResultSet) {
         // Check if query execution on this thread is canceled.
-        QueryMonitor.isQueryExecutionCanceled();
+        QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
         if (len == 1) {
           // this means we have a ResultSet
           itrsForFields[0].setCurrent(anIndividualResultSet);
@@ -431,8 +430,8 @@ public class QueryUtils {
       return (Boolean) result;
     } else if (result != null && result != QueryService.UNDEFINED) {
       throw new TypeMismatchException(
-          LocalizedStrings.QueryUtils_ANDOR_OPERANDS_MUST_BE_OF_TYPE_BOOLEAN_NOT_TYPE_0
-              .toLocalizedString(result.getClass().getName()));
+          String.format("AND/OR operands must be of type boolean, not type ' %s '",
+              result.getClass().getName()));
     } else {
       return false;
     }
@@ -487,14 +486,18 @@ public class QueryUtils {
       QueryInvocationTargetException {
 
     int resultSize = values[level].length;
-    int limit = getLimitValue(context);
-    // stops recursion if limit has already been met
+    // We do not know if the first X results might or might not fulfill all operands.
+    Boolean applyLimit = (Boolean) context.cacheGet(CompiledValue.CAN_APPLY_LIMIT_AT_INDEX);
+    int limit = (applyLimit != null && applyLimit) ? getLimitValue(context) : -1;
+
+    // Stops recursion if limit has already been met AND limit can be applied to index.
     if (limit != -1 && result.size() >= limit) {
       return;
     }
+
     for (int j = 0; j < resultSize; ++j) {
       // Check if query execution on this thread is canceled.
-      QueryMonitor.isQueryExecutionCanceled();
+      QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
 
       if (setIndexFieldValuesInRespectiveIterators(values[level][j], indexFieldToItrsMapping[level],
           icdeh[level])) {
@@ -692,7 +695,7 @@ public class QueryUtils {
         // creates tuple
         while (itr.hasNext()) {
           // Check if query execution on this thread is canceled.
-          QueryMonitor.isQueryExecutionCanceled();
+          QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
 
           values[j++] = ((RuntimeIterator) itr.next()).evaluate(context);
         }
@@ -723,12 +726,19 @@ public class QueryUtils {
       } else if (currentLevel.getCmpIteratorDefn().getCollectionExpr()
           .getType() == OQLLexerTokenTypes.LITERAL_select) {
         useDerivedResults = false;
-      } else {
-        key = getCompiledIdFromPath(currentLevel.getCmpIteratorDefn().getCollectionExpr()).getId()
-            + ':' + currentLevel.getDefinition();
       }
       SelectResults c;
-      if (useDerivedResults && derivedResults != null && derivedResults.containsKey(key)) {
+      CompiledValue path = currentLevel.getCmpIteratorDefn().getCollectionExpr();
+      if (useDerivedResults && derivedResults != null && path.hasIdentifierAtLeafNode()) {
+        key = getCompiledIdFromPath(path).getId()
+            + ':' + currentLevel.getDefinition();
+        if (derivedResults.containsKey(key)) {
+          c = derivedResults.get(key);
+        } else {
+          c = currentLevel.evaluateCollection(context);
+        }
+      } else if (useDerivedResults && derivedResults != null && key != null
+          && derivedResults.containsKey(key)) {
         c = derivedResults.get(key);
       } else {
         c = currentLevel.evaluateCollection(context);
@@ -739,7 +749,7 @@ public class QueryUtils {
       }
       for (Object aC : c) {
         // Check if query execution on this thread is canceled.
-        QueryMonitor.isQueryExecutionCanceled();
+        QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
 
         currentLevel.setCurrent(aC);
         doNestedIterationsForIndex(expansionItrs.hasNext(), resultSet, finalItrs, expansionItrs,
@@ -1265,8 +1275,7 @@ public class QueryUtils {
       // intermediate resultset Identify the final List which will depend upon the complete
       // expansion flag Identify the iterators to be expanded to, which will also depend upon
       // complete expansion flag..
-      List totalExpList = new ArrayList();
-      totalExpList.addAll(singleUsableICH.expansionList);
+      List totalExpList = new ArrayList(singleUsableICH.expansionList);
       if (completeExpansionNeeded) {
         Support.Assert(expnItrsToIgnore != null,
             "expnItrsToIgnore should not have been null as we are in this block itself indicates that intermediate results was not null");

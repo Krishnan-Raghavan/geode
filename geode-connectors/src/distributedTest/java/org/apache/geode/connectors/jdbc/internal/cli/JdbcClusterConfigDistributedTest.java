@@ -15,7 +15,13 @@
 package org.apache.geode.connectors.jdbc.internal.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.List;
+
+import javax.sql.DataSource;
 
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -24,8 +30,12 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.connectors.jdbc.internal.JdbcConnectorService;
-import org.apache.geode.connectors.jdbc.internal.TableMetaDataView;
-import org.apache.geode.connectors.jdbc.internal.configuration.ConnectorService;
+import org.apache.geode.connectors.jdbc.internal.configuration.FieldMapping;
+import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
+import org.apache.geode.internal.jndi.JNDIInvoker;
+import org.apache.geode.pdx.PdxReader;
+import org.apache.geode.pdx.PdxSerializable;
+import org.apache.geode.pdx.PdxWriter;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 import org.apache.geode.test.junit.categories.JDBCConnectorTest;
@@ -48,43 +58,113 @@ public class JdbcClusterConfigDistributedTest {
     server = cluster.startServerVM(1, locator.getPort());
   }
 
-  @Test
-  public void recreateCacheFromClusterConfig() throws Exception {
-    gfsh.connectAndVerify(locator);
-    gfsh.executeAndAssertThat("create jdbc-connection --name=connection --url=url")
-        .statusIsSuccess();
+  private void setupDatabase() {
     gfsh.executeAndAssertThat(
-        "create jdbc-mapping --region=regionName --connection=connection --table=testTable --pdx-class-name=myPdxClass --value-contains-primary-key --field-mapping=field1:column1,field2:column2")
+        "create data-source --name=myDataSource"
+            + " --pooled=false"
+            + " --url=\"jdbc:derby:memory:newDB;create=true\"")
         .statusIsSuccess();
+    executeSql(
+        "create table mySchema.testTable (myId varchar(10) primary key, name varchar(10))");
+  }
 
+  private void teardownDatabase() {
+    executeSql("drop table mySchema.testTable");
+  }
+
+  private void executeSql(String sql) {
     server.invoke(() -> {
-      JdbcConnectorService service =
-          ClusterStartupRule.getCache().getService(JdbcConnectorService.class);
-      validateRegionMapping(service.getMappingForRegion("regionName"));
-    });
-
-    server.stop(false);
-
-    server = cluster.startServerVM(1, locator.getPort());
-    server.invoke(() -> {
-      JdbcConnectorService service =
-          ClusterStartupRule.getCache().getService(JdbcConnectorService.class);
-      assertThat(service.getConnectionConfig("connection")).isNotNull();
-      validateRegionMapping(service.getMappingForRegion("regionName"));
+      try {
+        DataSource ds = JNDIInvoker.getDataSource("myDataSource");
+        Connection conn = ds.getConnection();
+        Statement sm = conn.createStatement();
+        sm.execute(sql);
+        sm.close();
+        conn.close();
+      } catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
     });
   }
 
-  private static void validateRegionMapping(ConnectorService.RegionMapping regionMapping) {
+
+  public static class IdAndName implements PdxSerializable {
+    private String id;
+    private String name;
+
+    public IdAndName() {
+      // nothing
+    }
+
+    IdAndName(String id, String name) {
+      this.id = id;
+      this.name = name;
+    }
+
+    String getId() {
+      return id;
+    }
+
+    String getName() {
+      return name;
+    }
+
+    @Override
+    public void toData(PdxWriter writer) {
+      writer.writeString("myId", this.id);
+      writer.writeString("name", this.name);
+    }
+
+    @Override
+    public void fromData(PdxReader reader) {
+      this.id = reader.readString("myId");
+      this.name = reader.readString("name");
+    }
+  }
+
+  @Test
+  public void recreateCacheFromClusterConfig() throws Exception {
+    gfsh.connectAndVerify(locator);
+
+    gfsh.executeAndAssertThat("create region --name=regionName --type=PARTITION").statusIsSuccess();
+    setupDatabase();
+    try {
+      gfsh.executeAndAssertThat(
+          "create jdbc-mapping --region=regionName --data-source=myDataSource --table=testTable --pdx-name="
+              + IdAndName.class.getName() + " --schema=mySchema")
+          .statusIsSuccess();
+
+      server.invoke(() -> {
+        JdbcConnectorService service =
+            ClusterStartupRule.getCache().getService(JdbcConnectorService.class);
+        validateRegionMapping(service.getMappingForRegion("regionName"));
+      });
+
+      server.stop(false);
+
+      server = cluster.startServerVM(1, locator.getPort());
+      server.invoke(() -> {
+        JdbcConnectorService service =
+            ClusterStartupRule.getCache().getService(JdbcConnectorService.class);
+        validateRegionMapping(service.getMappingForRegion("regionName"));
+      });
+    } finally {
+      teardownDatabase();
+    }
+  }
+
+  private static void validateRegionMapping(RegionMapping regionMapping) {
     assertThat(regionMapping).isNotNull();
     assertThat(regionMapping.getRegionName()).isEqualTo("regionName");
-    assertThat(regionMapping.getConnectionConfigName()).isEqualTo("connection");
+    assertThat(regionMapping.getDataSourceName()).isEqualTo("myDataSource");
     assertThat(regionMapping.getTableName()).isEqualTo("testTable");
-    assertThat(regionMapping.getPdxClassName()).isEqualTo("myPdxClass");
-    assertThat(regionMapping.isPrimaryKeyInValue()).isEqualTo(true);
-    assertThat(regionMapping.getColumnNameForField("field1", mock(TableMetaDataView.class)))
-        .isEqualTo("column1");
-    assertThat(regionMapping.getColumnNameForField("field2", mock(TableMetaDataView.class)))
-        .isEqualTo("column2");
+    assertThat(regionMapping.getPdxName()).isEqualTo(IdAndName.class.getName());
+    List<FieldMapping> fieldMappings = regionMapping.getFieldMappings();
+    assertThat(fieldMappings).hasSize(2);
+    assertThat(fieldMappings.get(0))
+        .isEqualTo(new FieldMapping("myId", "STRING", "MYID", "VARCHAR", false));
+    assertThat(fieldMappings.get(1))
+        .isEqualTo(new FieldMapping("name", "STRING", "NAME", "VARCHAR", true));
   }
 
 }

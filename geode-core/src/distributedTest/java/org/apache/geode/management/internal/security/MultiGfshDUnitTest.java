@@ -14,24 +14,17 @@
  */
 package org.apache.geode.management.internal.security;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.management.cli.Result.Status;
-import org.apache.geode.management.internal.cli.result.CommandResult;
-import org.apache.geode.management.internal.cli.result.ErrorResultData;
-import org.apache.geode.management.internal.cli.result.ResultBuilder;
-import org.apache.geode.security.SimpleTestSecurityManager;
+import org.apache.geode.examples.SimpleSecurityManager;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
@@ -52,12 +45,11 @@ public class MultiGfshDUnitTest {
   @Before
   public void setup() throws Exception {
     server = lsRule.startServerVM(0,
-        x -> x.withJMXManager().withSecurityManager(SimpleTestSecurityManager.class));
+        x -> x.withJMXManager().withSecurityManager(SimpleSecurityManager.class));
   }
 
   @Test
   public void testMultiUser() throws Exception {
-
     IgnoredException.addIgnoredException("java.util.zip.ZipException: zip file is empty");
     IgnoredException
         .addIgnoredException("java.lang.IllegalStateException: WAN service is not available.");
@@ -66,12 +58,12 @@ public class MultiGfshDUnitTest {
     // set up vm_1 as a gfsh vm, data-reader will login and log out constantly in this vm until the
     // test is done.
     VM vm1 = lsRule.getVM(1);
-    AsyncInvocation vm1Invoke = vm1.invokeAsync("run as data-reader", () -> {
+    vm1.invokeAsync("run as data-reader", () -> {
       while (true) {
-        GfshCommandRule gfsh = new GfshCommandRule();
+        GfshCommandRule gfsh = new GfshCommandRule(server::getJmxPort, PortType.jmxManager);
         gfsh.secureConnectAndVerify(jmxPort, PortType.jmxManager, "dataRead", "dataRead");
 
-        Awaitility.waitAtMost(5, TimeUnit.MILLISECONDS);
+        await();
         gfsh.close();
       }
     });
@@ -86,25 +78,10 @@ public class MultiGfshDUnitTest {
       List<TestCommand> allCommands = TestCommand.getOnlineCommands();
       for (TestCommand command : allCommands) {
         LogService.getLogger().info("executing: " + command.getCommand());
-
-        CommandResult result = gfsh.executeCommand(command.getCommand());
-
-        if (!(result.getResultData() instanceof ErrorResultData)) {
-          break;
-        }
-        int errorCode = ((ErrorResultData) result.getResultData()).getErrorCode();
-
-        // for some commands there are pre execution checks to check for user input error, will skip
-        // those commands
-        if (errorCode == ResultBuilder.ERRORCODE_USER_ERROR) {
-          LogService.getLogger().info("Skip user error: " + result.getMessageFromContent());
-          continue;
-        }
-
-        assertEquals("Not an expected result: " + result.toString(),
-            ResultBuilder.ERRORCODE_UNAUTHORIZED,
-            ((ErrorResultData) result.getResultData()).getErrorCode());
+        gfsh.executeAndAssertThat(command.getCommand()).statusIsError()
+            .containsOutput("Unauthorized");
       }
+
       gfsh.close();
       LogService.getLogger().info("vm 2 done!");
     });
@@ -112,7 +89,7 @@ public class MultiGfshDUnitTest {
 
     VM vm3 = lsRule.getVM(3);
     IgnoredException
-        .addIgnoredException("java.lang.IllegalArgumentException: Region doesnt exist: {0}", vm3);
+        .addIgnoredException("java.lang.IllegalArgumentException: Region does not exist: {0}", vm3);
     IgnoredException.addIgnoredException("java.lang.ClassNotFoundException: myApp.myListener", vm3);
 
     // set up vm_3 as another gfsh vm, and then connect as "super-user" and try to execute the
@@ -124,20 +101,7 @@ public class MultiGfshDUnitTest {
       List<TestCommand> allCommands = TestCommand.getOnlineCommands();
       for (TestCommand command : allCommands) {
         LogService.getLogger().info("executing: " + command.getCommand());
-
-        CommandResult result = gfsh.executeCommand(command.getCommand());
-        if (result.getStatus() == Status.OK) {
-          continue;
-        }
-
-        int errorResultCode;
-        if (result.getResultData() instanceof ErrorResultData) {
-          errorResultCode = ((ErrorResultData) result.getResultData()).getErrorCode();
-        } else {
-          errorResultCode = 9999; // ((ResultModel) result.getResultData()).getErrorCode();
-        }
-        assertNotEquals("Did not expect an Unauthorized exception: " + result.toString(),
-            ResultBuilder.ERRORCODE_UNAUTHORIZED, errorResultCode);
+        gfsh.executeAndAssertThat(command.getCommand()).doesNotContainOutput("Unauthorized");
       }
       gfsh.close();
       LogService.getLogger().info("vm 3 done!");

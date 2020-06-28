@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.partitioned;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.geode.admin.AdminDistributedSystemFactory.defineDistributedSystem;
@@ -27,20 +28,25 @@ import static org.apache.geode.cache.RegionShortcut.PARTITION_PROXY;
 import static org.apache.geode.cache.RegionShortcut.REPLICATE;
 import static org.apache.geode.cache.RegionShortcut.REPLICATE_PERSISTENT;
 import static org.apache.geode.distributed.ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.Assert.assertEquals;
 
 import java.io.Serializable;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
@@ -59,6 +65,8 @@ import org.junit.runner.RunWith;
 import org.apache.geode.admin.AdminDistributedSystem;
 import org.apache.geode.admin.AdminException;
 import org.apache.geode.admin.DistributedSystemConfig;
+import org.apache.geode.admin.internal.AdminDistributedSystemImpl;
+import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.DiskAccessException;
 import org.apache.geode.cache.PartitionAttributesFactory;
@@ -79,6 +87,7 @@ import org.apache.geode.distributed.internal.DistributionMessageObserver;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
+import org.apache.geode.internal.cache.CacheClosingDistributionMessageObserver;
 import org.apache.geode.internal.cache.DiskRegion;
 import org.apache.geode.internal.cache.InitialImageOperation.RequestImageMessage;
 import org.apache.geode.internal.cache.InternalCache;
@@ -88,9 +97,10 @@ import org.apache.geode.internal.cache.control.InternalResourceManager;
 import org.apache.geode.internal.cache.control.InternalResourceManager.ResourceObserver;
 import org.apache.geode.internal.cache.control.InternalResourceManager.ResourceObserverAdapter;
 import org.apache.geode.internal.cache.persistence.PersistentMemberID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.IgnoredException;
+import org.apache.geode.test.dunit.SerializableRunnableIF;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.rules.CacheRule;
 import org.apache.geode.test.dunit.rules.DistributedDiskDirRule;
@@ -114,6 +124,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
   private VM vm1;
   private VM vm2;
   private VM vm3;
+
+  private static final long TIMEOUT_MILLIS = GeodeAwaitility.getTimeout().toMillis();
 
   @Rule
   public DistributedRule distributedRule = new DistributedRule();
@@ -143,7 +155,10 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
   @After
   public void tearDown() {
-    invokeInEveryVM(() -> InternalResourceManager.setResourceObserver(null));
+    invokeInEveryVM(() -> {
+      InternalResourceManager.setResourceObserver(null);
+      DistributionMessageObserver.setInstance(null);
+    });
   }
 
   private Properties getDistributedSystemProperties() {
@@ -192,15 +207,17 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     assertThatThrownBy(() -> createPartitionedRegion(0, 0, 2, true))
         .isInstanceOf(IllegalStateException.class).hasMessageContaining(
-            LocalizedStrings.PartitionedRegion_FOR_REGION_0_TotalBucketNum_1_SHOULD_NOT_BE_CHANGED_Previous_Configured_2
-                .toString("/" + partitionedRegionName, 2, 5));
+            String.format(
+                "For partition region %s,total-num-buckets %s should not be changed. Previous configured number is %s.",
+                SEPARATOR + partitionedRegionName, 2, 5));
 
     getCache().close();
 
     assertThatThrownBy(() -> createPartitionedRegion(0, 0, 10, true))
         .isInstanceOf(IllegalStateException.class).hasMessageContaining(
-            LocalizedStrings.PartitionedRegion_FOR_REGION_0_TotalBucketNum_1_SHOULD_NOT_BE_CHANGED_Previous_Configured_2
-                .toString("/" + partitionedRegionName, 10, 5));
+            String.format(
+                "For partition region %s,total-num-buckets %s should not be changed. Previous configured number is %s.",
+                SEPARATOR + partitionedRegionName, 10, 5));
   }
 
   @Test
@@ -211,8 +228,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     int numBuckets = 50;
     vm0.invoke(() -> createData(0, numBuckets, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
     assertThat(bucketsOnVM1).isEqualTo(bucketsOnVM0);
 
     vm0.invoke(() -> getCache().close());
@@ -234,7 +251,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       try {
         adminDS.waitToBeConnected(MINUTES.toMillis(2));
 
-        await().atMost(2, MINUTES).until(() -> {
+        await().until(() -> {
           Set<PersistentID> missingIds = adminDS.getMissingPersistentMembers();
           if (missingIds.size() != 1) {
             return false;
@@ -250,9 +267,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       }
     });
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
 
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
 
     vm0.invoke(() -> {
       checkData(0, numBuckets, "a");
@@ -283,9 +300,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, numBuckets, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
 
     vm0.invoke(() -> getCache().close());
     vm1.invoke(() -> getCache().close());
@@ -298,13 +315,13 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM2 =
         vm2.invokeAsync(() -> createPartitionedRegion(redundancy, -1, numBuckets, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
-    createPartitionedRegionOnVM2.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
+    createPartitionedRegionOnVM2.await();
 
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM2);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM2);
 
     vm0.invoke(() -> {
       checkData(0, numBuckets, "a");
@@ -327,9 +344,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     createPartitionedRegionOnVM2 =
         vm2.invokeAsync(() -> createPartitionedRegion(redundancy, -1, numBuckets, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
-    createPartitionedRegionOnVM2.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
+    createPartitionedRegionOnVM2.await();
 
     vm0.invoke(() -> checkData(0, numBuckets, null));
   }
@@ -341,7 +358,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
    * <bold>before</bold> a member starts up and is missing the diskStore identified by the UUID.
    */
   @Test
-  public void missingDiskStoreCanBeRevokedBeforeStartingServer() throws Exception {
+  public void missingDiskStoreCanBeRevokedBeforeStartingServer() {
     int numBuckets = 50;
 
     vm0.invoke(() -> createPartitionedRegion(1, -1, 113, true));
@@ -349,13 +366,13 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, numBuckets, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
     assertThat(bucketsOnVM1).isEqualTo(bucketsOnVM0);
 
     // This should fail with a revocation failed message
     try (IgnoredException ie = addIgnoredException(RevokeFailedException.class)) {
-      vm2.invoke(() -> {
+      vm2.invoke("revoke disk store should fail", () -> {
         assertThatThrownBy(() -> {
           DistributedSystemConfig config = defineDistributedSystem(getSystem(), "");
           AdminDistributedSystem adminDS = getDistributedSystem(config);
@@ -363,7 +380,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
           try {
             adminDS.waitToBeConnected(MINUTES.toMillis(2));
-            adminDS.revokePersistentMember(InetAddress.getLocalHost(), null);
+            adminDS.revokePersistentMember(getFirstInet4Address(), null);
           } finally {
             adminDS.disconnect();
           }
@@ -377,9 +394,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     String diskDirPathOnVM1 = diskDirRule.getDiskDirFor(vm1).getAbsolutePath();
     vm1.invoke(() -> getCache().close());
 
-    vm0.invoke(() -> {
-      getCache();
-    });
+    vm0.invoke((SerializableRunnableIF) this::getCache);
 
     vm2.invoke(() -> {
       DistributedSystemConfig config = defineDistributedSystem(getSystem(), "");
@@ -387,7 +402,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       adminDS.connect();
       try {
         adminDS.waitToBeConnected(MINUTES.toMillis(2));
-        adminDS.revokePersistentMember(InetAddress.getLocalHost(), diskDirPathOnVM1);
+        adminDS.revokePersistentMember(getFirstInet4Address(), diskDirPathOnVM1);
       } finally {
         adminDS.disconnect();
       }
@@ -414,14 +429,14 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
    * Test that we wait for missing data to come back if the redundancy was 0.
    */
   @Test
-  public void waitsForMissingDiskStoreWhenRedundancyIsZero() throws Exception {
+  public void waitsForMissingDiskStoreWhenRedundancyIsZero() {
     vm0.invoke(() -> createPartitionedRegion(0, -1, 113, true));
     vm1.invoke(() -> createPartitionedRegion(0, -1, 113, true));
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
 
     int bucketOnVM0 = bucketsOnVM0.iterator().next();
     int bucketOnVM1 = bucketsOnVM1.iterator().next();
@@ -455,8 +470,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketOnVM1 = vm1.invoke(this::getBucketList);
 
     int bucketIdOnVM0 = bucketOnVM0.iterator().next();
     int bucketIdOnVM1 = bucketOnVM1.iterator().next();
@@ -496,8 +511,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
     assertThat(bucketsOnVM1).isEqualTo(bucketsOnVM0);
 
     int bucketIdOnVM0 = bucketsOnVM0.iterator().next();
@@ -508,7 +523,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm2.invoke(() -> createPartitionedRegion(1, -1, 113, true));
 
-    Set<Integer> vm2Buckets = vm2.invoke(() -> getBucketList());
+    Set<Integer> vm2Buckets = vm2.invoke(this::getBucketList);
 
     // VM 2 should have created a copy of all of the buckets
     assertThat(vm2Buckets).isEqualTo(bucketsOnVM0);
@@ -524,8 +539,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
 
     int bucketOnVM0 = bucketsOnVM0.iterator().next();
     int bucketOnVM1 = bucketsOnVM1.iterator().next();
@@ -577,8 +592,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
     assertThat(bucketsOnVM1).isEqualTo(bucketsOnVM0);
 
     vm1.invoke(() -> getCache().close());
@@ -596,7 +611,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       // This should make a copy of all of the buckets, because we have revoked VM1.
       createPartitionedRegion(1, -1, 113, true);
 
-      Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+      Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
       assertThat(bucketsOnVM2).isEqualTo(bucketsOnVM1);
     });
 
@@ -617,8 +632,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM2 =
         vm2.invokeAsync(() -> createPartitionedRegion(1, -1, 113, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM2.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM2.await();
 
     vm1.invoke(() -> {
       try (IgnoredException ie = addIgnoredException(RevokedPersistentDataException.class)) {
@@ -645,17 +660,17 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     // This should do nothing because we have satisfied redundancy.
     vm2.invoke(() -> createPartitionedRegion(1, 0, 113, true));
-    assertThat(vm2.invoke(() -> getBucketList())).isEmpty();
+    assertThat(vm2.invoke(this::getBucketList)).isEmpty();
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsLost = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsLost = vm1.invoke(this::getBucketList);
 
     vm1.invoke(() -> getCache().close());
 
     // VM2 should pick up the slack
 
-    await().atMost(2, MINUTES).until(() -> {
-      Set<Integer> vm2Buckets = vm2.invoke(() -> getBucketList());
+    await().until(() -> {
+      Set<Integer> vm2Buckets = vm2.invoke(this::getBucketList);
       return bucketsLost.equals(vm2Buckets);
     });
 
@@ -685,15 +700,15 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM2 =
         vm2.invokeAsync(() -> createPartitionedRegion(1, 0, 113, true));
 
-    createPartitionedRegionOnVM2.await(2, MINUTES);
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
+    createPartitionedRegionOnVM2.await();
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
 
     // The data shouldn't be affected.
     vm1.invoke(() -> checkData(0, NUM_BUCKETS, "b"));
-    assertThat(vm1.invoke(() -> getBucketList())).isEmpty();
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEmpty();
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
   }
 
   /**
@@ -707,8 +722,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, NUM_BUCKETS, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
 
     vm1.invoke(() -> getCache().close());
 
@@ -727,7 +742,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     // This shouldn't create any buckets, because we know there are offline copies
     vm2.invoke(() -> createPartitionedRegion(1, 0, 113, true));
 
-    Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
     assertThat(bucketsOnVM2).isEmpty();
 
     vm1.invoke(() -> {
@@ -739,9 +754,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     });
 
     // Make sure we restored the buckets in the right place
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm2.invoke(() -> getBucketList())).isEmpty();
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm2.invoke(this::getBucketList)).isEmpty();
   }
 
   @Test
@@ -756,13 +771,13 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     vm1.invoke(() -> createPartitionedRegion(redundancy, -1, 113, true));
     vm2.invoke(() -> createPartitionedRegion(redundancy, -1, 113, true));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
 
-    InternalDistributedMember memberVM0 = vm0.invoke(() -> getInternalDistributedMember());
-    InternalDistributedMember memberVM1 = vm1.invoke(() -> getInternalDistributedMember());
-    InternalDistributedMember memberVM2 = vm2.invoke(() -> getInternalDistributedMember());
+    InternalDistributedMember memberVM0 = vm0.invoke(this::getInternalDistributedMember);
+    InternalDistributedMember memberVM1 = vm1.invoke(this::getInternalDistributedMember);
+    InternalDistributedMember memberVM2 = vm2.invoke(this::getInternalDistributedMember);
 
     vm1.invoke(() -> moveBucketToMe(0, memberVM0));
     vm2.invoke(() -> moveBucketToMe(0, memberVM1));
@@ -771,9 +786,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(226, 227, "a"));
 
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM2);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM2);
 
     vm0.invoke(() -> getCache().close());
     vm1.invoke(() -> getCache().close());
@@ -786,13 +801,13 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM2 =
         vm2.invokeAsync(() -> createPartitionedRegion(redundancy, -1, 113, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
-    createPartitionedRegionOnVM2.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
+    createPartitionedRegionOnVM2.await();
 
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM2);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM2);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
 
     vm0.invoke(() -> {
       checkData(0, 2, "a");
@@ -821,8 +836,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM1 =
         vm1.invokeAsync(() -> createPartitionedRegion(1, -1, 113, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
 
     vm0.invoke(() -> checkData(0, 1, "a"));
     vm1.invoke(() -> checkData(0, 1, "a"));
@@ -836,8 +851,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     createPartitionedRegionOnVM0 = vm0.invokeAsync(() -> createPartitionedRegion(1, -1, 113, true));
     createPartitionedRegionOnVM1 = vm1.invokeAsync(() -> createPartitionedRegion(1, -1, 113, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
 
     vm0.invoke(() -> checkData(0, 1, "a"));
     vm1.invoke(() -> checkData(0, 1, "a"));
@@ -862,9 +877,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
   @Test
   public void partitionedRegionsCanBeNested() throws Exception {
-    vm0.invoke(() -> createNestedPartitionedRegion());
-    vm1.invoke(() -> createNestedPartitionedRegion());
-    vm2.invoke(() -> createNestedPartitionedRegion());
+    vm0.invoke(this::createNestedPartitionedRegion);
+    vm1.invoke(this::createNestedPartitionedRegion);
+    vm2.invoke(this::createNestedPartitionedRegion);
 
     int numBuckets = 50;
     vm0.invoke(() -> {
@@ -896,20 +911,20 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     vm2.invoke(() -> getCache().close());
 
     AsyncInvocation<Void> createNestedPartitionedRegionOnVM0 =
-        vm0.invokeAsync(() -> createNestedPartitionedRegion());
+        vm0.invokeAsync(this::createNestedPartitionedRegion);
     // Note: Make sure that vm0 is waiting for vm1 and vm2 to recover
     // If VM(0) recovers early, that is a problem, because vm1 has newer data
     createNestedPartitionedRegionOnVM0.join(SECONDS.toMillis(1));
     assertThat(createNestedPartitionedRegionOnVM0.isAlive()).isTrue();
 
     AsyncInvocation<Void> createNestedPartitionedRegionOnVM1 =
-        vm1.invokeAsync(() -> createNestedPartitionedRegion());
+        vm1.invokeAsync(this::createNestedPartitionedRegion);
     AsyncInvocation<Void> createNestedPartitionedRegionOnVM2 =
-        vm2.invokeAsync(() -> createNestedPartitionedRegion());
+        vm2.invokeAsync(this::createNestedPartitionedRegion);
 
-    createNestedPartitionedRegionOnVM0.await(2, MINUTES);
-    createNestedPartitionedRegionOnVM1.await(2, MINUTES);
-    createNestedPartitionedRegionOnVM2.await(2, MINUTES);
+    createNestedPartitionedRegionOnVM0.await();
+    createNestedPartitionedRegionOnVM1.await();
+    createNestedPartitionedRegionOnVM2.await();
 
     assertThat(
         vm0.invoke(() -> getBucketListFor(parentRegion1Name + SEPARATOR + partitionedRegionName)))
@@ -952,8 +967,10 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     vm0.invoke(() -> createPartitionedRegion(1, -1, 1, true));
     vm1.invoke(() -> createPartitionedRegion(1, -1, 1, true));
 
-    // Make sure we create a bucket
-    vm1.invoke(() -> createData(0, 1, "a"));
+    vm1.invoke(() -> {
+      Region<Integer, Integer> region = getCache().getRegion(partitionedRegionName);
+      region.put(0, -1);
+    });
 
     // Try to make sure there are some operations in flight while closing the cache
     AsyncInvocation<Integer> createPartitionedRegionWithPutsOnVM0 = vm0.invokeAsync(() -> {
@@ -964,12 +981,10 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
         try {
           region.put(0, i);
           i++;
-        } catch (CacheClosedException e) {
+        } catch (CacheClosedException | DistributedSystemDisconnectedException e) {
           break;
-        } catch (DistributedSystemDisconnectedException e) {
-          // remove this check when GEODE-5457 is resolved
-          break;
-        }
+        } // remove this check when GEODE-5457 is resolved
+
       }
 
       return i - 1;
@@ -977,23 +992,19 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> {
       Region<Integer, Integer> region = getCache().getRegion(partitionedRegionName);
-      // The value is initialized as a String so wait for it to be changed to an Integer.
-      await().atMost(2, MINUTES).until(() -> region.get(0) != null);
-      return region.get(0);
+      await().until(() -> region.get(0) > 0);
     });
     vm1.invoke(() -> {
       Region<Integer, Integer> region = getCache().getRegion(partitionedRegionName);
-      // The value is initialized as a String so wait for it to be changed to an Integer.
-      await().atMost(2, MINUTES).until(() -> region.get(0) != null);
-      return region.get(0);
+      await().until(() -> region.get(0) > 0);
     });
 
     AsyncInvocation<Void> closeCacheOnVM0 = vm0.invokeAsync(() -> getCache().close());
     AsyncInvocation<Void> closeCacheOnVM1 = vm1.invokeAsync(() -> getCache().close());
 
     // wait for the close to finish
-    closeCacheOnVM0.await(2, MINUTES);
-    closeCacheOnVM1.await(2, MINUTES);
+    closeCacheOnVM0.await();
+    closeCacheOnVM1.await();
 
     int lastValue = createPartitionedRegionWithPutsOnVM0.get();
 
@@ -1002,8 +1013,8 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     AsyncInvocation<Void> createPartitionedRegionOnVM1 =
         vm1.invokeAsync(() -> createPartitionedRegion(1, -1, 1, true));
 
-    createPartitionedRegionOnVM0.await(2, MINUTES);
-    createPartitionedRegionOnVM1.await(2, MINUTES);
+    createPartitionedRegionOnVM0.await();
+    createPartitionedRegionOnVM1.await();
 
     int valueOnVM0 = vm0.invoke(() -> {
       Region<Integer, Integer> region = getCache().getRegion(partitionedRegionName);
@@ -1034,18 +1045,18 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, numBuckets, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
 
     vm0.invoke(() -> getCache().close());
     vm1.invoke(() -> getCache().close());
     vm2.invoke(() -> getCache().close());
 
     try {
-      vm0.invoke(() -> slowGII());
-      vm1.invoke(() -> slowGII());
-      vm2.invoke(() -> slowGII());
+      vm0.invoke(this::slowGII);
+      vm1.invoke(this::slowGII);
+      vm2.invoke(this::slowGII);
 
       AsyncInvocation<Void> createPartitionedRegionOnVM0 =
           vm0.invokeAsync(() -> createPartitionedRegionWithPersistence(redundancy));
@@ -1054,9 +1065,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       AsyncInvocation<Void> createPartitionedRegionOnVM2 =
           vm2.invokeAsync(() -> createPartitionedRegionWithPersistence(redundancy));
 
-      createPartitionedRegionOnVM0.await(2, MINUTES);
-      createPartitionedRegionOnVM1.await(2, MINUTES);
-      createPartitionedRegionOnVM2.await(2, MINUTES);
+      createPartitionedRegionOnVM0.await();
+      createPartitionedRegionOnVM1.await();
+      createPartitionedRegionOnVM2.await();
 
       // Make sure all of the primary are available.
       vm0.invoke(() -> {
@@ -1065,9 +1076,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       });
 
       // But none of the secondaries
-      Set<Integer> initialBucketsOnVM0 = vm0.invoke(() -> getBucketList());
-      Set<Integer> initialBucketsOnVM1 = vm1.invoke(() -> getBucketList());
-      Set<Integer> initialBucketsOnVM2 = vm2.invoke(() -> getBucketList());
+      Set<Integer> initialBucketsOnVM0 = vm0.invoke(this::getBucketList);
+      Set<Integer> initialBucketsOnVM1 = vm1.invoke(this::getBucketList);
+      Set<Integer> initialBucketsOnVM2 = vm2.invoke(this::getBucketList);
 
       assertThat(
           initialBucketsOnVM0.size() + initialBucketsOnVM1.size() + initialBucketsOnVM2.size())
@@ -1076,19 +1087,19 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
               .isEqualTo(numBuckets);
     } finally {
       // Reset the slow GII flag, and wait for the redundant buckets to be recovered.
-      AsyncInvocation<Void> resetSlowGiiOnVM0 = vm0.invokeAsync(() -> resetSlowGII());
-      AsyncInvocation<Void> resetSlowGiiOnVM1 = vm1.invokeAsync(() -> resetSlowGII());
-      AsyncInvocation<Void> resetSlowGiiOnVM2 = vm2.invokeAsync(() -> resetSlowGII());
+      AsyncInvocation<Void> resetSlowGiiOnVM0 = vm0.invokeAsync(this::resetSlowGII);
+      AsyncInvocation<Void> resetSlowGiiOnVM1 = vm1.invokeAsync(this::resetSlowGII);
+      AsyncInvocation<Void> resetSlowGiiOnVM2 = vm2.invokeAsync(this::resetSlowGII);
 
-      resetSlowGiiOnVM0.await(2, MINUTES);
-      resetSlowGiiOnVM1.await(2, MINUTES);
-      resetSlowGiiOnVM2.await(2, MINUTES);
+      resetSlowGiiOnVM0.await();
+      resetSlowGiiOnVM1.await();
+      resetSlowGiiOnVM2.await();
     }
 
     // Now we better have all of the buckets
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM2);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM2);
 
     // Make sure the members see the data recovered from disk in those secondary buckets
     vm0.invoke(() -> checkData(0, numBuckets, "a"));
@@ -1101,7 +1112,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
 
   @Test
-  public void cacheIsClosedWhenConflictingPersistentDataExceptionIsThrown() throws Exception {
+  public void cacheIsClosedWhenConflictingPersistentDataExceptionIsThrown() {
     vm0.invoke(() -> {
       createPartitionedRegion(0, -1, 113, true);
       // create some buckets
@@ -1118,9 +1129,16 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
       // This results in ConflictingPersistentDataException. As part of GEODE-2918, the cache is
       // closed when ConflictingPersistentDataException is encountered.
       vm0.invoke(() -> {
-        assertThatThrownBy(() -> createPartitionedRegion(0, -1, 113, true))
-            .isInstanceOf(CacheClosedException.class)
-            .hasCauseInstanceOf(ConflictingPersistentDataException.class);
+        Cache cache = getCache();
+        Throwable expectedException =
+            catchThrowable(() -> createPartitionedRegion(0, -1, 113, true));
+
+        assertThat(thrownByDiskRecoveryDueToConflictingPersistentDataException(expectedException)
+            || thrownByAsyncFlusherThreadDueToConflictingPersistentDataException(expectedException))
+                .isTrue();
+
+        // Wait for the cache to completely close
+        cache.close();
       });
     }
 
@@ -1152,9 +1170,11 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     addIgnoredException(CacheClosedException.class);
 
     vm0.invoke(() -> {
-      assertThatThrownBy(() -> createPartitionedRegion(1, -1, 113, true))
-          .isInstanceOf(CacheClosedException.class)
-          .hasCauseInstanceOf(ConflictingPersistentDataException.class);
+      Throwable expectedException = catchThrowable(() -> createPartitionedRegion(1, -1, 113, true));
+
+      assertThat(thrownByDiskRecoveryDueToConflictingPersistentDataException(expectedException)
+          || thrownByAsyncFlusherThreadDueToConflictingPersistentDataException(expectedException))
+              .isTrue();
     });
   }
 
@@ -1171,16 +1191,16 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     vm0.invoke(() -> createData(0, numBuckets, "a"));
 
-    Set<Integer> bucketsOnVM0 = vm0.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM1 = vm1.invoke(() -> getBucketList());
-    Set<Integer> bucketsOnVM2 = vm2.invoke(() -> getBucketList());
+    Set<Integer> bucketsOnVM0 = vm0.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM1 = vm1.invoke(this::getBucketList);
+    Set<Integer> bucketsOnVM2 = vm2.invoke(this::getBucketList);
 
     // We expect to see 10 primaries on each node since we have 30 buckets
-    Set<Integer> primariesOnVM0 = vm0.invoke(() -> getPrimaryBucketList());
+    Set<Integer> primariesOnVM0 = vm0.invoke(this::getPrimaryBucketList);
     assertThat(primariesOnVM0).hasSize(10);
-    Set<Integer> primariesOnVM1 = vm1.invoke(() -> getPrimaryBucketList());
+    Set<Integer> primariesOnVM1 = vm1.invoke(this::getPrimaryBucketList);
     assertThat(primariesOnVM1).hasSize(10);
-    Set<Integer> primariesOnVM2 = vm2.invoke(() -> getPrimaryBucketList());
+    Set<Integer> primariesOnVM2 = vm2.invoke(this::getPrimaryBucketList);
     assertThat(primariesOnVM2).hasSize(10);
 
     // bounce vm0
@@ -1188,9 +1208,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     vm0.invoke(() -> createPartitionedRegion(1, -1, 113, true));
 
     vm0.invoke(() -> waitForBucketRecovery(bucketsOnVM0));
-    assertThat(vm0.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM0);
-    assertThat(vm1.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM1);
-    assertThat(vm2.invoke(() -> getBucketList())).isEqualTo(bucketsOnVM2);
+    assertThat(vm0.invoke(this::getBucketList)).isEqualTo(bucketsOnVM0);
+    assertThat(vm1.invoke(this::getBucketList)).isEqualTo(bucketsOnVM1);
+    assertThat(vm2.invoke(this::getBucketList)).isEqualTo(bucketsOnVM2);
 
     /*
      * Though we make best effort to get the primaries evenly distributed after bouncing the VM. In
@@ -1198,9 +1218,9 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
      * fail fast we don`t get to verify if other vm`s end up having 11 primaries. So rather than
      * asserting for 10 primaries in each VM, try asserting total primaries.
      */
-    primariesOnVM0 = vm0.invoke(() -> getPrimaryBucketList());
-    primariesOnVM1 = vm1.invoke(() -> getPrimaryBucketList());
-    primariesOnVM2 = vm2.invoke(() -> getPrimaryBucketList());
+    primariesOnVM0 = vm0.invoke(this::getPrimaryBucketList);
+    primariesOnVM1 = vm1.invoke(this::getPrimaryBucketList);
+    primariesOnVM2 = vm2.invoke(this::getPrimaryBucketList);
     int totalPrimaries = primariesOnVM0.size() + primariesOnVM1.size() + primariesOnVM2.size();
     assertThat(totalPrimaries).isEqualTo(numBuckets);
 
@@ -1215,10 +1235,10 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
   @Test
   public void partitionedRegionProxySupportsConcurrencyChecksEnabled() {
-    vm0.invoke(() -> createPRProxy());
-    vm1.invoke(() -> createPRWithConcurrencyChecksEnabled());
-    vm2.invoke(() -> createPRWithConcurrencyChecksEnabled());
-    vm3.invoke(() -> createPRProxy());
+    vm0.invoke(this::createPRProxy);
+    vm1.invoke(this::createPRWithConcurrencyChecksEnabled);
+    vm2.invoke(this::createPRWithConcurrencyChecksEnabled);
+    vm3.invoke(this::createPRProxy);
 
     vm0.invoke(() -> {
       Region<?, ?> region = getCache().getRegion(partitionedRegionName);
@@ -1259,15 +1279,112 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     vm1.invoke(() -> {
       getCache().createRegionFactory(REPLICATE_PERSISTENT).create(partitionedRegionName);
     });
-    vm2.invoke(() -> {
-      assertThatCode(() -> getCache().createRegionFactory(REPLICATE).create(partitionedRegionName))
-          .doesNotThrowAnyException();
+    vm2.invoke(() -> assertThatCode(
+        () -> getCache().createRegionFactory(REPLICATE).create(partitionedRegionName))
+            .doesNotThrowAnyException());
+    vm3.invoke(() -> assertThatCode(
+        () -> getCache().createRegionFactory(REPLICATE_PERSISTENT).create(partitionedRegionName))
+            .doesNotThrowAnyException());
+  }
+
+  @Test
+  public void rebalanceWithMembersOfflineDoesNotResultInMissingDiskStores() {
+    int numBuckets = 12;
+
+    vm0.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+    vm1.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+    vm2.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+    vm3.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+
+    vm0.invoke(() -> createData(0, numBuckets, "a"));
+
+    // Stop vm0, rebalance, stop vm1, rebalance
+    vm0.invoke(() -> getCache().close());
+    rebalance(vm3);
+    vm1.invoke(() -> getCache().close());
+    rebalance(vm3);
+
+    // Check missing disk stores (should include vm0 and vm1)
+    Set<PersistentID> missingMembers = getMissingPersistentMembers(vm3);
+    assertThat(missingMembers).hasSize(2);
+
+    vm1.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+    vm0.invoke(() -> createPartitionedRegion(1, -1, numBuckets, true));
+
+
+    missingMembers = getMissingPersistentMembers(vm3);
+    assertThat(missingMembers).isEmpty();
+  }
+
+  /**
+   * The purpose of this test is to ensure no data loss occurs when a secondary fails to get
+   * updated bucket images due to failed GII. We want to ensure the secondary's disk region
+   * is not unintentially deleted when the GII fails.
+   *
+   * Tests the following scenario to ensure data is not lost:
+   * 1. Create a persistent partitioned region on server 1 with redundancy 1
+   * (Redundancy will not be satisfied initially)
+   * 2. Add data to the region
+   * 3. Create the region on server 2 which will cause creation of secondary buckets
+   * 4. Close the cache on server 2.
+   * 5. Install a DistributedMessageObserver which forces a cache close
+   * during a bucket move from server 1 to server 2.
+   * 6. Restart server 2. The listener installed in step 2 will cause
+   * server 1 to crash when server 2 requests the new bucket images.
+   * 7. Revoke server 1's persistent membership
+   * 8. Perform gets on server 2 to ensure data consistency after it takes over as primary
+   */
+  @Test
+  public void testCacheCloseDuringBucketMoveDoesntCauseDataLoss()
+      throws InterruptedException {
+    int redundantCopies = 1;
+    int recoveryDelay = -1;
+    int numBuckets = 6;
+    boolean diskSynchronous = true;
+
+    vm0.invoke(() -> {
+      createPartitionedRegion(redundantCopies, recoveryDelay, numBuckets, diskSynchronous);
+      createData(0, numBuckets, "a");
     });
-    vm3.invoke(() -> {
-      assertThatCode(
-          () -> getCache().createRegionFactory(REPLICATE_PERSISTENT).create(partitionedRegionName))
-              .doesNotThrowAnyException();
+
+    vm1.invoke(() -> {
+      createPartitionedRegion(redundantCopies, recoveryDelay, numBuckets, diskSynchronous);
+      getCache().close();
     });
+
+    vm0.invoke(() -> {
+      DistributionMessageObserver
+          .setInstance(new CacheClosingDistributionMessageObserver(
+              "_B__" + partitionedRegionName + "_", getCache()));
+    });
+
+    // Need to invoke this async because vm1 will wait for vm0 to come back online
+    // unless we explicitly revoke it.
+    AsyncInvocation<Object> createRegionAsync = vm1.invokeAsync(
+        () -> createPartitionedRegion(redundantCopies, recoveryDelay, numBuckets, diskSynchronous));
+
+    vm1.invoke(() -> {
+      revokeKnownMissingMembers(1);
+      for (int i = 0; i < numBuckets; ++i) {
+        assertEquals(getCache().getRegion(partitionedRegionName).get(i), "a");
+      }
+    });
+
+    createRegionAsync.get();
+  }
+
+  private void rebalance(VM vm) {
+    vm.invoke(() -> getCache().getResourceManager().createRebalanceFactory().start().getResults());
+  }
+
+  private void revokePersistentMember(PersistentID missingMember, VM vm) {
+    vm.invoke(() -> AdminDistributedSystemImpl
+        .revokePersistentMember(getCache().getDistributionManager(), missingMember.getUUID()));
+  }
+
+  private Set<PersistentID> getMissingPersistentMembers(VM vm) {
+    return vm.invoke(() -> AdminDistributedSystemImpl
+        .getMissingPersistentMembers(getCache().getDistributionManager()));
   }
 
   private void moveBucketToMe(final int bucketId, final InternalDistributedMember sourceMember) {
@@ -1300,7 +1417,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     PartitionedRegion region = (PartitionedRegion) getCache().getRegion(partitionedRegionName);
     PartitionedRegionDataStore dataStore = region.getDataStore();
 
-    await().atMost(2, MINUTES).until(() -> lostBuckets.equals(dataStore.getAllLocalBucketIds()));
+    await().until(() -> lostBuckets.equals(dataStore.getAllLocalBucketIds()));
   }
 
   private void createPartitionedRegionWithPersistence(final int redundancy) {
@@ -1323,7 +1440,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     RecoveryObserver recoveryObserver =
         (RecoveryObserver) InternalResourceManager.getResourceObserver();
     messageObserver.unblock();
-    recoveryObserver.await(2, MINUTES);
+    recoveryObserver.await(TIMEOUT_MILLIS, MILLISECONDS);
     InternalResourceManager.setResourceObserver(null);
   }
 
@@ -1345,22 +1462,22 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     InternalResourceManager.setResourceObserver(observer);
 
-    RegionFactory<?, ?> regionFactory = getCache().createRegionFactory(REPLICATE);
+    RegionFactory<Object, Object> regionFactory = getCache().createRegionFactory(REPLICATE);
 
-    Region<?, ?> parentRegion1 = regionFactory.create(parentRegion1Name);
-    Region<?, ?> parentRegion2 = regionFactory.create(parentRegion2Name);
+    Region<Object, Object> parentRegion1 = regionFactory.create(parentRegion1Name);
+    Region<Object, Object> parentRegion2 = regionFactory.create(parentRegion2Name);
 
     PartitionAttributesFactory<?, ?> partitionAttributesFactory = new PartitionAttributesFactory();
     partitionAttributesFactory.setRedundantCopies(1);
 
-    RegionFactory<?, ?> regionFactoryPR =
+    RegionFactory<Object, Object> regionFactoryPR =
         getCache().createRegionFactory(PARTITION_PERSISTENT);
     regionFactoryPR.setPartitionAttributes(partitionAttributesFactory.create());
 
     regionFactoryPR.createSubregion(parentRegion1, partitionedRegionName);
     regionFactoryPR.createSubregion(parentRegion2, partitionedRegionName);
 
-    recoveryDone.await(2, MINUTES);
+    recoveryDone.await(TIMEOUT_MILLIS, MILLISECONDS);
   }
 
   private void fakeCleanShutdown(final int bucketId) {
@@ -1411,29 +1528,26 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
         .isInstanceOf(PartitionOfflineException.class);
 
     assertThatThrownBy(() -> getCache().getQueryService()
-        .newQuery("select * from /" + partitionedRegionName).execute())
+        .newQuery("select * from " + SEPARATOR + partitionedRegionName).execute())
             .isInstanceOf(PartitionOfflineException.class);
 
     Set<?> keys = region.keySet();
     assertThatThrownBy(() -> {
-      for (Iterator iterator = keys.iterator(); iterator.hasNext();) {
-        Object key = iterator.next();
+      for (Object key : keys) {
         // nothing
       }
     }).isInstanceOf(PartitionOfflineException.class);
 
     Collection<?> values = region.values();
     assertThatThrownBy(() -> {
-      for (Iterator iterator = values.iterator(); iterator.hasNext();) {
-        Object value = iterator.next();
+      for (Object value : values) {
         // nothing
       }
     }).isInstanceOf(PartitionOfflineException.class);
 
     Set<?> entries = region.entrySet();
     assertThatThrownBy(() -> {
-      for (Iterator iterator = entries.iterator(); iterator.hasNext();) {
-        Object entry = iterator.next();
+      for (Object entry : entries) {
         // nothing
       }
     }).isInstanceOf(PartitionOfflineException.class);
@@ -1498,7 +1612,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
 
     regionFactory.create(partitionedRegionName);
 
-    recoveryDone.await(2, MINUTES);
+    recoveryDone.await(TIMEOUT_MILLIS, MILLISECONDS);
   }
 
   private void createData(final int startKey, final int endKey, final String value) {
@@ -1542,7 +1656,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     try {
       adminDS.waitToBeConnected(MINUTES.toMillis(2));
 
-      await().atMost(2, MINUTES).until(() -> {
+      await().until(() -> {
         Set<PersistentID> missingIds = adminDS.getMissingPersistentMembers();
         if (missingIds.size() != numExpectedMissing) {
           return false;
@@ -1559,12 +1673,47 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
     }
   }
 
+  private static InetAddress getFirstInet4Address() throws SocketException, UnknownHostException {
+    for (NetworkInterface netint : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+      for (InetAddress inetAddress : Collections.list(netint.getInetAddresses())) {
+        if (inetAddress instanceof Inet4Address && !inetAddress.isLoopbackAddress()) {
+          return inetAddress;
+        }
+      }
+    }
+
+    // If no INet4Address was found for any of the interfaces above, default to getLocalHost()
+    return InetAddress.getLocalHost();
+  }
+
   private InternalCache getCache() {
     return cacheRule.getOrCreateCache();
   }
 
   private InternalDistributedSystem getSystem() {
     return getCache().getInternalDistributedSystem();
+  }
+
+  private boolean thrownByDiskRecoveryDueToConflictingPersistentDataException(
+      Throwable expectedException) {
+    return expectedException instanceof CacheClosedException
+        && expectedException.getCause() instanceof ConflictingPersistentDataException;
+  }
+
+  private boolean thrownByAsyncFlusherThreadDueToConflictingPersistentDataException(
+      Throwable expectedException) {
+    if (expectedException == null) {
+      return false;
+    }
+
+    Throwable rootExceptionCause = expectedException.getCause();
+    Throwable nestedExceptionCause = rootExceptionCause.getCause();
+
+    return expectedException instanceof CacheClosedException
+        && (rootExceptionCause instanceof CacheClosedException
+            && rootExceptionCause.getMessage().contains(
+                "Could not schedule asynchronous write because the flusher thread had been terminated"))
+        && nestedExceptionCause instanceof ConflictingPersistentDataException;
   }
 
   private static class RecoveryObserver extends ResourceObserverAdapter {
@@ -1628,7 +1777,7 @@ public class PersistentPartitionedRegionDistributedTest implements Serializable 
         // make sure this is a bucket region doing a GII
         if (requestImageMessage.regionPath.contains("B_")) {
           try {
-            latch.await(2, MINUTES);
+            latch.await(TIMEOUT_MILLIS, MILLISECONDS);
           } catch (InterruptedException e) {
             throw new Error(e);
           }

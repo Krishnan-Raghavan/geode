@@ -14,11 +14,13 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_ACCESSOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_ACCESSOR_PP;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTHENTICATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Properties;
@@ -40,8 +42,6 @@ import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
-import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 
 @Category({ClientSubscriptionTest.class})
@@ -68,7 +68,7 @@ public class CqStateDUnitTest extends HelperTestCase {
 
     final String host0 = NetworkUtils.getServerHostName(serverA.getHost());
     startClient(client, new VM[] {serverA, serverB}, ports, 1, getClientProperties());
-    createCQ(client, cqName, "select * from /" + regionName, null);
+    createCQ(client, cqName, "select * from " + SEPARATOR + regionName, null);
 
     // create the cacheserver but regions must be present first or else cq execute will fail with no
     // region found
@@ -79,25 +79,10 @@ public class CqStateDUnitTest extends HelperTestCase {
     AsyncInvocation async = executeCQ(client, cqName);
     ThreadUtils.join(async, 10000);
 
-    Boolean clientRunning = (Boolean) client.invoke(new SerializableCallable() {
-      @Override
-      public Object call() throws Exception {
-        final CqQuery cq = getCache().getQueryService().getCq(cqName);
-        Wait.waitForCriterion(new WaitCriterion() {
-          @Override
-          public boolean done() {
-            return cq.getState().isRunning();
-          }
-
-          @Override
-          public String description() {
-            return "waiting for Cq to be in a running state: " + cq;
-          }
-        }, 30000, 1000, false);
-        return cq.getState().isRunning();
-      }
+    client.invoke(() -> {
+      final CqQuery cq = getCache().getQueryService().getCq(cqName);
+      await("Waiting for CQ to be in running state: " + cq).until(() -> cq.getState().isRunning());
     });
-    assertTrue("Client was not running", clientRunning);
 
     // hope that server 2 comes up before num retries is exhausted by the execute cq command
     // hope that the redundancy satisfier sends message and is executed after execute cq has been
@@ -130,6 +115,7 @@ public class CqStateDUnitTest extends HelperTestCase {
     return props;
   }
 
+  @Override
   public Properties getClientProperties() {
     Properties props = new Properties();
     props.put(SECURITY_CLIENT_AUTH_INIT, UserPasswordAuthInit.class.getName() + ".create");

@@ -45,7 +45,6 @@ import org.apache.geode.cache.query.types.ObjectType;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.RegionEntry;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.pdx.internal.PdxString;
 
 public class PrimaryKeyIndex extends AbstractIndex {
@@ -66,6 +65,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     markValid(true);
   }
 
+  @Override
   public IndexType getType() {
     return IndexType.PRIMARY_KEY;
   }
@@ -75,10 +75,12 @@ public class PrimaryKeyIndex extends AbstractIndex {
     return false;
   }
 
+  @Override
   public ObjectType getResultSetType() {
     return this.indexResultType;
   }
 
+  @Override
   void removeMapping(RegionEntry entry, int opCode) {}
 
   @Override
@@ -133,7 +135,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
         Iterator iter = values.iterator();
         while (iter.hasNext()) {
           // Check if query execution on this thread is canceled.
-          QueryMonitor.isQueryExecutionCanceled();
+          QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
           addResultToResults(context, results, key, iter.next());
           if (limit != -1 && results.size() == limit) {
             observer.limitAppliedAtIndexLevel(this, limit, results);
@@ -162,12 +164,13 @@ public class PrimaryKeyIndex extends AbstractIndex {
       }
       default: {
         throw new IllegalArgumentException(
-            LocalizedStrings.PrimaryKeyIndex_INVALID_OPERATOR.toLocalizedString());
+            "Invalid Operator");
       }
     } // end switch
     numUses++;
   }
 
+  @Override
   void lockedQuery(Object key, int operator, Collection results, CompiledValue iterOps,
       RuntimeIterator runtimeItr, ExecutionContext context, List projAttrib,
       SelectResults intermediateResults, boolean isIntersection) throws TypeMismatchException,
@@ -248,11 +251,13 @@ public class PrimaryKeyIndex extends AbstractIndex {
     numUses++;
   }
 
+  @Override
   void recreateIndexData() throws IMQException {
     Support.Assert(false,
         "PrimaryKeyIndex::recreateIndexData: This method should not have got invoked at all");
   }
 
+  @Override
   public boolean clear() throws QueryException {
     return true;
   }
@@ -266,6 +271,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     }
   }
 
+  @Override
   protected InternalIndexStatistics createStats(String indexName) {
     return new PrimaryKeyIndexStatistics();
   }
@@ -274,6 +280,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     /**
      * Returns the total number of times this index has been accessed by a query.
      */
+    @Override
     public long getTotalUses() {
       return numUses;
     }
@@ -281,6 +288,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     /**
      * Returns the number of keys in this index.
      */
+    @Override
     public long getNumberOfKeys() {
       return getRegion().keySet().size();
     }
@@ -288,6 +296,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     /**
      * Returns the number of values in this index.
      */
+    @Override
     public long getNumberOfValues() {
       return getRegion().values().size();
     }
@@ -295,6 +304,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     /**
      * Return the number of values for the specified key in this index.
      */
+    @Override
     public long getNumberOfValues(Object key) {
       if (getRegion().containsValueForKey(key))
         return 1;
@@ -318,11 +328,11 @@ public class PrimaryKeyIndex extends AbstractIndex {
       int upperBoundOperator, Collection results, Set keysToRemove, ExecutionContext context)
       throws TypeMismatchException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.PrimaryKeyIndex_FOR_A_PRIMARYKEY_INDEX_A_RANGE_HAS_NO_MEANING
-            .toLocalizedString());
+        "For a PrimaryKey Index , a range has no meaning");
 
   }
 
+  @Override
   public int getSizeEstimate(Object key, int op, int matchLevel) {
     return 1;
   }
@@ -337,6 +347,7 @@ public class PrimaryKeyIndex extends AbstractIndex {
     // Do Nothing; We are not going to call this for PrimaryKeyIndex ever.
   }
 
+  @Override
   public boolean isEmpty() {
     return createStats("primaryKeyIndex").getNumberOfKeys() == 0 ? true : false;
   }

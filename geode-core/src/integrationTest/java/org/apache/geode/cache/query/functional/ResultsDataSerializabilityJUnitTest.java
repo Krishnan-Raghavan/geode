@@ -20,6 +20,7 @@
 
 package org.apache.geode.cache.query.functional;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -54,7 +55,7 @@ import org.apache.geode.cache.query.internal.types.CollectionTypeImpl;
 import org.apache.geode.cache.query.internal.types.MapTypeImpl;
 import org.apache.geode.cache.query.internal.types.ObjectTypeImpl;
 import org.apache.geode.cache.query.internal.types.StructTypeImpl;
-import org.apache.geode.internal.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
 import org.apache.geode.test.junit.categories.OQLQueryTest;
 
 /**
@@ -112,7 +113,7 @@ public class ResultsDataSerializabilityJUnitTest {
       region.put(i + "", new Portfolio(i));
     }
 
-    String queryStr = "SELECT DISTINCT * FROM /Portfolios";
+    String queryStr = "SELECT DISTINCT * FROM " + SEPARATOR + "Portfolios";
     Query q = CacheUtils.getQueryService().newQuery(queryStr);
 
     SelectResults res1 = (SelectResults) q.execute();

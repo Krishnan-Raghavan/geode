@@ -14,13 +14,15 @@
  */
 package org.apache.geode.test.junit.rules;
 
+import static java.util.stream.Collectors.toList;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import javax.management.JMX;
@@ -34,7 +36,6 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 
-import org.awaitility.Awaitility;
 import org.junit.runner.Description;
 
 import org.apache.geode.management.internal.security.AccessControlMXBean;
@@ -78,16 +79,22 @@ public class MBeanServerConnectionRule extends DescribedExternalResource {
     if (config == null)
       return;
 
-    Map<String, String[]> env = new HashMap<>();
-    String user = config.user();
-    String password = config.password();
-    env.put(JMXConnector.CREDENTIALS, new String[] {user, password});
-    connect(null, portSupplier.get(), env);
+    connect(portSupplier.get(), config.user(), config.password());
   }
 
   @Override
   protected void after(Description description) throws Exception {
     disconnect();
+  }
+
+  /**
+   * Retrieve a new proxy MXBean
+   *
+   * @return A new proxy MXBean of the same type with which the class was constructed
+   */
+  public <T> T getProxyMXBean(Class<T> proxyClass)
+      throws MalformedObjectNameException, IOException {
+    return getProxyMXBean(proxyClass, null);
   }
 
   /**
@@ -108,6 +115,24 @@ public class MBeanServerConnectionRule extends DescribedExternalResource {
   public <T> T getProxyMBean(Class<T> proxyClass, String beanQueryName)
       throws IOException, MalformedObjectNameException {
     return JMX.newMBeanProxy(con, getObjectName(proxyClass, beanQueryName), proxyClass);
+  }
+
+  /**
+   * Returns a list of remote MBeans from the given member. The MBeans are filtered to exclude the
+   * member's local MBeans. The resulting list includes only MBeans that all locators in the system
+   * should have.
+   **/
+  public List<ObjectName> getGemfireFederatedBeans() throws IOException {
+    Set<ObjectName> allBeans = con.queryNames(null, null);
+    // Each locator will have a "Manager" bean that is a part of the above query,
+    // representing the ManagementAdapter.
+    // This bean is registered (and so included in its own queries),
+    // but *not* federated (and so is not included in another locator's bean queries).
+    return allBeans.stream()
+        .filter(b -> b.toString().contains("GemFire"))
+        .filter(b -> !b.toString().contains("service=Manager,type=Member,member=locator"))
+        .sorted()
+        .collect(toList());
   }
 
   /**
@@ -144,23 +169,14 @@ public class MBeanServerConnectionRule extends DescribedExternalResource {
         AccessControlMXBean.class);
   }
 
-  /**
-   * Retrieve a new proxy MXBean
-   *
-   * @return A new proxy MXBean of the same type with which the class was constructed
-   */
-  public <T> T getProxyMXBean(Class<T> proxyClass)
-      throws MalformedObjectNameException, IOException {
-    return getProxyMXBean(proxyClass, null);
-  }
-
-  public <T> T getProxyMXBean(String beanQueryName)
-      throws MalformedObjectNameException, IOException {
-    return getProxyMXBean(null, beanQueryName);
-  }
-
   public MBeanServerConnection getMBeanServerConnection() throws IOException {
     return con;
+  }
+
+  public void connect(int port, String username, String password) throws Exception {
+    Map<String, String[]> env = new HashMap<>();
+    env.put(JMXConnector.CREDENTIALS, new String[] {username, password});
+    connect(null, port, env);
   }
 
   public void connect(int jmxPort) throws Exception {
@@ -189,7 +205,7 @@ public class MBeanServerConnectionRule extends DescribedExternalResource {
     // to retrieve RMIServer stub: javax.naming.CommunicationException [Root exception is
     // java.rmi.NoSuchObjectException: no such object in table]" Exception
     // Have to implement a wait mechanism here. We can use Awaitility here
-    Awaitility.await().atMost(2, TimeUnit.MINUTES).pollDelay(2, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       Map<String, ?> env = new HashMap<>();
       if (environment != null) {
         env = new HashMap<>(environment);

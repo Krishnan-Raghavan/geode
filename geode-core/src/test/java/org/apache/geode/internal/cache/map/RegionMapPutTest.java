@@ -44,6 +44,7 @@ import org.apache.geode.cache.Operation;
 import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.cache.Scope;
 import org.apache.geode.internal.cache.CachePerfStats;
+import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.EntryEventImpl;
 import org.apache.geode.internal.cache.EntryEventSerialization;
 import org.apache.geode.internal.cache.ImageState;
@@ -130,6 +131,27 @@ public class RegionMapPutTest {
 
     verify(event, times(1)).setOldValue(same(oldValue), eq(true));
     verify(event, never()).setOldValue(not(same(oldValue)), eq(true));
+  }
+
+  @Test
+  public void doesNotSetEventOldValueIfRetriedPutIfAbsentOperation() {
+    final byte[] bytes = new byte[] {1, 2, 3, 4, 5};
+    givenExistingRegionEntry();
+    when(existingRegionEntry.getValue()).thenReturn(bytes);
+    when(internalRegion.getConcurrencyChecksEnabled()).thenReturn(true);
+    givenPutIfAbsentOperation(bytes); // duplicate operation
+    doPut();
+    verify(event).setOldValue(null, true);
+    assertThat(instance.isOverwritePutIfAbsent()).isTrue();
+  }
+
+  private void givenPutIfAbsentOperation(byte[] bytes) {
+    when(event.isPossibleDuplicate()).thenReturn(true);
+    when(event.basicGetNewValue()).thenReturn(bytes);
+    when(event.getOperation()).thenReturn(Operation.PUT_IF_ABSENT);
+    when(event.hasValidVersionTag()).thenReturn(false);
+    ifNew = true;
+    ifOld = false;
   }
 
   @Test
@@ -682,8 +704,9 @@ public class RegionMapPutTest {
   }
 
   @Test
-  public void lruUpdateCallbackCalled_ifPutDoneWithoutAClear() throws Exception {
+  public void lruUpdateCallbackCalled_ifPutDoneWithoutAClear() {
     ifNew = true;
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(true);
     when(event.getOperation()).thenReturn(Operation.CREATE);
 
     doPut();
@@ -692,9 +715,43 @@ public class RegionMapPutTest {
   }
 
   @Test
+  public void lruUpdateCallbackNotCalled_ifCallbacksNotDisabled() {
+    ifNew = true;
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(false);
+    when(event.getOperation()).thenReturn(Operation.CREATE);
+
+    doPut();
+
+    verify(focusedRegionMap, never()).lruUpdateCallback();
+  }
+
+  @Test
+  public void enableLruUpdateCallbackCalled_ifCallbacksDisabled() {
+    ifNew = true;
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(true);
+    when(event.getOperation()).thenReturn(Operation.CREATE);
+
+    doPut();
+
+    verify(focusedRegionMap, times(1)).enableLruUpdateCallback();
+  }
+
+  @Test
+  public void enableLruUpdateCallbackNotCalled_ifCallbacksNotDisabled() {
+    ifNew = true;
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(false);
+    when(event.getOperation()).thenReturn(Operation.CREATE);
+
+    doPut();
+
+    verify(focusedRegionMap, never()).enableLruUpdateCallback();
+  }
+
+  @Test
   public void lruUpdateCallbackNotCalled_ifPutDoneWithAClear() throws Exception {
     ifNew = true;
     when(event.getOperation()).thenReturn(Operation.CREATE);
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(true);
     doThrow(RegionClearedException.class).when(event).putNewEntry(any(), any());
 
     doPut();
@@ -777,6 +834,7 @@ public class RegionMapPutTest {
   public void putThrows_ifLruUpdateCallbackThrowsDiskAccessException() throws Exception {
     ifNew = true;
     when(event.getOperation()).thenReturn(Operation.CREATE);
+    when(focusedRegionMap.disableLruUpdateCallback()).thenReturn(true);
     doThrow(DiskAccessException.class).when(focusedRegionMap).lruUpdateCallback();
 
     assertThatThrownBy(() -> doPut()).isInstanceOf(DiskAccessException.class);
@@ -942,6 +1000,41 @@ public class RegionMapPutTest {
         eq(false));
     verify(internalRegion, times(1)).basicPutPart3(eq(event), eq(result), eq(true), anyLong(),
         eq(true), eq(ifNew), eq(ifOld), eq(expectedOldValue), eq(requireOldValue));
+  }
+
+  @Test
+  public void runWileLockedForCacheModificationDoesNotLockGIIClearLockWhenRegionIsInitialized()
+      throws Exception {
+    DistributedRegion region = mock(DistributedRegion.class);
+    when(region.isInitialized()).thenReturn(true);
+    when(region.lockWhenRegionIsInitializing()).thenCallRealMethod();
+    RegionMapPut regionMapPut = new RegionMapPut(focusedRegionMap, region, cacheModificationLock,
+        entryEventSerialization, event, ifNew, ifOld, overwriteDestroyed, requireOldValue,
+        expectedOldValue);
+
+    regionMapPut.runWhileLockedForCacheModification(() -> {
+    });
+
+    verify(region).lockWhenRegionIsInitializing();
+    assertThat(region.lockWhenRegionIsInitializing()).isFalse();
+    verify(region, never()).unlockWhenRegionIsInitializing();
+  }
+
+  @Test
+  public void runWileLockedForCacheModificationLockGIIClearLockWhenRegionIsInitializing() {
+    DistributedRegion region = mock(DistributedRegion.class);
+    when(region.isInitialized()).thenReturn(false);
+    when(region.lockWhenRegionIsInitializing()).thenCallRealMethod();
+    RegionMapPut regionMapPut = new RegionMapPut(focusedRegionMap, region, cacheModificationLock,
+        entryEventSerialization, event, ifNew, ifOld, overwriteDestroyed, requireOldValue,
+        expectedOldValue);
+
+    regionMapPut.runWhileLockedForCacheModification(() -> {
+    });
+
+    verify(region).lockWhenRegionIsInitializing();
+    assertThat(region.lockWhenRegionIsInitializing()).isTrue();
+    verify(region).unlockWhenRegionIsInitializing();
   }
 
   private void givenAnOperationThatDoesNotGuaranteeOldValue() {

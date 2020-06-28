@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.wan.misc;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
@@ -25,7 +26,6 @@ import org.apache.geode.internal.cache.wan.WANTestBase;
 import org.apache.geode.internal.net.SocketCreatorFactory;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Wait;
-import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.WanTest;
 
 @Category({WanTest.class})
@@ -151,18 +151,9 @@ public class WANSSLDUnitTest extends WANTestBase {
   }
 
   public static boolean ValidateSSLRegionSize(String regionName, final int regionSize) {
-    final Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    final Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
-    WaitCriterion wc = new WaitCriterion() {
-      public boolean done() {
-        return false;
-      }
-
-      public String description() {
-        return null;
-      }
-    };
-    Wait.waitForCriterion(wc, 2000, 500, false);
+    Wait.pause(2000);
 
     if (r.size() == regionSize) {
       return true;

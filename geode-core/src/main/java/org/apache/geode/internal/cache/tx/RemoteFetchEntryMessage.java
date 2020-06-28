@@ -43,9 +43,10 @@ import org.apache.geode.internal.cache.KeyInfo;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.NonLocalRegionEntry;
 import org.apache.geode.internal.cache.RemoteOperationException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is used as the request for a
@@ -88,7 +89,7 @@ public class RemoteFetchEntryMessage extends RemoteOperationMessage {
     Set<?> failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new RemoteOperationException(
-          LocalizedStrings.RemoteFetchEntryMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
 
     return p;
@@ -113,7 +114,7 @@ public class RemoteFetchEntryMessage extends RemoteOperationMessage {
       FetchEntryReplyMessage.send(getSender(), getProcessorId(), null, dm, new ReplyException(tex));
     } catch (EntryNotFoundException enfe) {
       FetchEntryReplyMessage.send(getSender(), getProcessorId(), null, dm, new ReplyException(
-          LocalizedStrings.RemoteFetchEntryMessage_ENTRY_NOT_FOUND.toLocalizedString(), enfe));
+          "entry not found", enfe));
     }
 
     // Unless there was an exception thrown, this message handles sending the
@@ -128,19 +129,22 @@ public class RemoteFetchEntryMessage extends RemoteOperationMessage {
     buff.append("; key=").append(this.key);
   }
 
+  @Override
   public int getDSFID() {
     return R_FETCH_ENTRY_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.key = DataSerializer.readObject(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.key, out);
   }
 
@@ -212,8 +216,9 @@ public class RemoteFetchEntryMessage extends RemoteOperationMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       if (this.value == null) {
         out.writeBoolean(true); // null entry
       } else {
@@ -228,8 +233,9 @@ public class RemoteFetchEntryMessage extends RemoteOperationMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       boolean nullEntry = in.readBoolean();
       if (!nullEntry) {
         // EntrySnapshot.setRegion is called later

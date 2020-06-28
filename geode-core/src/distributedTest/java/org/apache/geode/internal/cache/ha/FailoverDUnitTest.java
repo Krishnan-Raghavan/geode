@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.cache.client.PoolManager.find;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
@@ -46,11 +48,11 @@ import org.apache.geode.internal.cache.ClientServerObserverAdapter;
 import org.apache.geode.internal.cache.ClientServerObserverHolder;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -133,9 +135,13 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
 
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
-    ClientServerTestCase.configureConnectionPoolWithName(factory, hostName,
-        new int[] {PORT1, PORT2}, true, -1, 2, null, "FailoverPool");
+    ClientServerTestCase
+        .configureConnectionPoolWithNameAndFactory(factory, hostName, new int[] {PORT1, PORT2},
+            true, -1,
+            2, (String) null, "FailoverPool", PoolManager.createFactory(), -1, -1, -2,
+            -1);
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterUpdate(EntryEvent event) {
         synchronized (this) {
           cache.getLogger().info("Event Received : key..." + event.getKey());
@@ -162,8 +168,9 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public void waitForPrimaryAndBackups(final int numBackups) {
-    final PoolImpl pool = (PoolImpl) PoolManager.find("FailoverPool");
+    final PoolImpl pool = (PoolImpl) find("FailoverPool");
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         if (pool.getPrimary() == null) {
           return false;
@@ -174,11 +181,12 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
         return true;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 20 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     assertNotNull(pool.getPrimary());
     assertTrue("backups=" + pool.getRedundants() + " expected=" + numBackups,
         pool.getRedundants().size() >= numBackups);
@@ -186,7 +194,7 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void registerInterestList() {
     try {
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       r.registerInterest("key-1");
       r.registerInterest("key-2");
@@ -201,7 +209,7 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
   public static void createEntries() {
     try {
 
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
 
       r.create("key-1", "key-1");
@@ -228,7 +236,7 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void put() {
     try {
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
 
       r.put("key-1", "value-1");
@@ -241,18 +249,20 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public void verifyEntries() {
-    final Region r = cache.getRegion("/" + regionName);
+    final Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return !r.getEntry("key-3").getValue().equals("key-3");
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 20 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     assertEquals("value-1", r.getEntry("key-1").getValue());
     assertEquals("value-2", r.getEntry("key-2").getValue());
@@ -262,6 +272,7 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
   public static void setClientServerObserver() {
     PoolImpl.BEFORE_PRIMARY_IDENTIFICATION_FROM_BACKUP_CALLBACK_FLAG = true;
     ClientServerObserverHolder.setInstance(new ClientServerObserverAdapter() {
+      @Override
       public void beforePrimaryIdentificationFromBackup() {
         primary.invoke(() -> FailoverDUnitTest.putDuringFailover());
         PoolImpl.BEFORE_PRIMARY_IDENTIFICATION_FROM_BACKUP_CALLBACK_FLAG = false;
@@ -271,7 +282,7 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void putDuringFailover() {
     try {
-      Region r = cache.getRegion("/" + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       r.put("key-4", "value-4");
       r.put("key-5", "value-5");
@@ -282,18 +293,20 @@ public class FailoverDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public void verifyEntriesAfterFailover() {
-    final Region r = cache.getRegion("/" + regionName);
+    final Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return !r.getEntry("key-5").getValue().equals("key-5");
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 20 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     assertEquals("value-5", r.getEntry("key-5").getValue());
     assertEquals("value-4", r.getEntry("key-4").getValue());
   }

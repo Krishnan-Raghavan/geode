@@ -17,7 +17,6 @@ package org.apache.geode.management.internal.messages;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,6 +27,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelException;
 import org.apache.geode.DataSerializer;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.persistence.PersistentID;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
@@ -40,7 +40,9 @@ import org.apache.geode.internal.admin.remote.AdminResponse;
 import org.apache.geode.internal.cache.DiskStoreImpl;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * An instruction to all members with cache that they should compact their disk stores.
@@ -54,6 +56,7 @@ public class CompactRequest extends AdminRequest {
 
   private String diskStoreName;
 
+  @MakeNotStatic
   private static String notExecutedMembers;
 
   public static Map<DistributedMember, PersistentID> send(DistributionManager dm,
@@ -118,31 +121,34 @@ public class CompactRequest extends AdminRequest {
     return notExecutedMembers;
   }
 
+  @Override
   public int getDSFID() {
     return MGMT_COMPACT_REQUEST;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.diskStoreName = DataSerializer.readString(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeString(this.diskStoreName, out);
   }
 
   @Override
   public String toString() {
-    return "Compact request sent to " + Arrays.toString(this.getRecipients()) + " from "
+    return "Compact request sent to " + this.getRecipientsDescription() + " from "
         + this.getSender() + " for " + this.diskStoreName;
   }
 
   private static class CompactReplyProcessor extends AdminMultipleReplyProcessor {
     Map<DistributedMember, PersistentID> results =
-        Collections.synchronizedMap(new HashMap<DistributedMember, PersistentID>());
+        Collections.synchronizedMap(new HashMap<>());
 
     public CompactReplyProcessor(DistributionManager dm, Collection<?> initMembers) {
       super(dm, initMembers);

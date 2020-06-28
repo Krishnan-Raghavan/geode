@@ -25,7 +25,6 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Properties;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Test;
@@ -51,7 +50,7 @@ import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.RestAPITest;
-import org.apache.geode.util.test.TestUtil;
+import org.apache.geode.test.util.ResourceUtils;
 
 @Category({RestAPITest.class})
 public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
@@ -79,6 +78,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     createClientRegion(vm2, port);
 
     vm1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         JSONAllStringTest();
         return null;
@@ -86,6 +86,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     });
 
     vm2.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         JSONAllByteArrayTest();
         return null;
@@ -108,6 +109,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     createClientRegion(vm2, port);
 
     vm1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         try {
           System.setProperty(JSONFormatter.SORT_JSON_FIELD_NAMES_PROPERTY, "true");
@@ -121,6 +123,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     });
 
     vm2.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         try {
           System.setProperty(JSONFormatter.SORT_JSON_FIELD_NAMES_PROPERTY, "true");
@@ -149,6 +152,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     createClientRegion(vm2, port);
 
     vm1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         JSONUnQuoteFields();
         return null;
@@ -167,10 +171,11 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
     createServerRegion(vm0, true);
     int port = createServerRegion(vm3, true);
-    createClientRegion(vm1, port, false, true);
-    createClientRegion(vm2, port, false, true);
+    createClientRegion(vm1, port, true);
+    createClientRegion(vm2, port, true);
 
     vm1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         VerifyPdxInstanceAndJsonConversion();
         return null;
@@ -178,7 +183,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     });
   }
 
-  public void VerifyPdxInstanceAndJsonConversion() throws JsonProcessingException {
+  public void VerifyPdxInstanceAndJsonConversion() throws Exception {
     Region region = getRootRegion("testSimplePdx");
 
     // Create Object and initialize its members.
@@ -194,7 +199,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     PdxInstance pi = (PdxInstance) result;
     String json = JSONFormatter.toJSON(pi);
 
-    JSONFormatterJUnitTest.verifyJsonWithJavaObject(json, testObject);
+    JSONFormatVerifyUtility.verifyJsonWithJavaObject(json, testObject);
 
     // TestCase-2 : Validate Java-->JSON-->PdxInstance --> Java Mapping
     TestObjectForJSONFormatter actualTestObject = new TestObjectForJSONFormatter();
@@ -208,7 +213,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void validateReceivedJSON(Region region, TestObjectForJSONFormatter actualTestObject,
-      ObjectMapper objectMapper) throws JsonProcessingException {
+      ObjectMapper objectMapper) throws Exception {
     // 1. get the json from the object using Jackson Object Mapper
     String json = objectMapper.writeValueAsString(actualTestObject);
     String jsonWithClassType = actualTestObject.addClassTypeToJson(json);
@@ -234,7 +239,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
   }
 
   String getJSONDir(String file) {
-    String path = TestUtil.getResourcePath(getClass(), file);
+    String path = ResourceUtils.getResource(getClass(), file).getPath();
     return new File(path).getParent();
   }
 
@@ -465,6 +470,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private void closeCache(VM vm) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         closeCache();
         return null;
@@ -475,6 +481,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private int createServerRegion(VM vm) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         AttributesFactory af = new AttributesFactory();
         // af.setScope(Scope.DISTRIBUTED_ACK);
@@ -494,6 +501,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private int createServerRegion(VM vm, final boolean isPdxReadSerialized) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         AttributesFactory af = new AttributesFactory();
         // af.setScope(Scope.DISTRIBUTED_ACK);
@@ -515,6 +523,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private int createServerRegionWithPersistence(VM vm, final boolean persistentPdxRegistry) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         CacheFactory cf = new CacheFactory();
         if (persistentPdxRegistry) {
@@ -543,6 +552,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private int createServerAccessor(VM vm) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         AttributesFactory af = new AttributesFactory();
         // af.setScope(Scope.DISTRIBUTED_ACK);
@@ -562,6 +572,7 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
 
   private int createLonerServerRegion(VM vm, final String regionName, final String dsId) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Properties props = new Properties();
         props.setProperty(LOCATORS, "");
@@ -584,16 +595,11 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void createClientRegion(final VM vm, final int port) {
-    createClientRegion(vm, port, false);
-  }
-
-  private void createClientRegion(final VM vm, final int port,
-      final boolean threadLocalConnections) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientCacheFactory cf = new ClientCacheFactory();
         cf.addPoolServer(NetworkUtils.getServerHostName(vm.getHost()), port);
-        cf.setPoolThreadLocalConnections(threadLocalConnections);
         ClientCache cache = getClientCache(cf);
         cache.createClientRegionFactory(ClientRegionShortcut.PROXY).create("testSimplePdx");
         return null;
@@ -602,13 +608,12 @@ public class JSONPdxClientServerDUnitTest extends JUnit4CacheTestCase {
     vm.invoke(createRegion);
   }
 
-  private void createClientRegion(final VM vm, final int port, final boolean threadLocalConnections,
-      final boolean isPdxReadSerialized) {
+  private void createClientRegion(final VM vm, final int port, final boolean isPdxReadSerialized) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientCacheFactory cf = new ClientCacheFactory();
         cf.addPoolServer(NetworkUtils.getServerHostName(vm.getHost()), port);
-        cf.setPoolThreadLocalConnections(threadLocalConnections);
         cf.setPdxReadSerialized(isPdxReadSerialized);
         ClientCache cache = getClientCache(cf);
         cache.createClientRegionFactory(ClientRegionShortcut.PROXY).create("testSimplePdx");

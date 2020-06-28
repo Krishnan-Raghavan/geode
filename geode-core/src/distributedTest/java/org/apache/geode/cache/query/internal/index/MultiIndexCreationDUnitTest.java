@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -62,7 +63,7 @@ public class MultiIndexCreationDUnitTest extends JUnit4CacheTestCase {
     final VM server1 = host.getVM(1);
 
     final int numberOfEntries = 10;
-    final String name = "/" + regionName;
+    final String name = SEPARATOR + regionName;
 
     // Start server1
     AsyncInvocation a1 = server1.invokeAsync(new SerializableCallable("Create Server1") {
@@ -104,10 +105,12 @@ public class MultiIndexCreationDUnitTest extends JUnit4CacheTestCase {
         QueryObserver old = QueryObserverHolder.setInstance(new QueryObserverAdapter() {
           private boolean indexCalled = false;
 
+          @Override
           public void afterIndexLookup(Collection results) {
             indexCalled = true;
           }
 
+          @Override
           public void endQuery() {
             assertFalse("Index should not have been used. ", indexCalled);
           }
@@ -148,10 +151,12 @@ public class MultiIndexCreationDUnitTest extends JUnit4CacheTestCase {
         QueryObserver old = QueryObserverHolder.setInstance(new QueryObserverAdapter() {
           private boolean indexCalled = false;
 
+          @Override
           public void afterIndexLookup(Collection results) {
             indexCalled = true;
           }
 
+          @Override
           public void endQuery() {
             assertTrue("Index should have been used. ", indexCalled);
           }

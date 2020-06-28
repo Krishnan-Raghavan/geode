@@ -20,13 +20,12 @@ import java.util.Properties;
 import java.util.Set;
 
 import org.apache.geode.admin.internal.AdminDistributedSystemImpl;
-import org.apache.geode.annotations.TestingOnly;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.persistence.PersistentID;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.management.BackupStatus;
 import org.apache.geode.management.ManagementException;
 import org.apache.geode.management.internal.BackupStatusImpl;
@@ -51,7 +50,7 @@ public class BackupOperation {
         new DefaultMissingPersistentMembersProvider());
   }
 
-  @TestingOnly
+  @VisibleForTesting
   BackupOperation(FlushToDiskFactory flushToDiskFactory, PrepareBackupFactory prepareBackupFactory,
       AbortBackupFactory abortBackupFactory, FinishBackupFactory finishBackupFactory,
       DistributionManager dm, InternalCache cache, BackupLockService backupLockService,
@@ -81,7 +80,7 @@ public class BackupOperation {
       }
     } else {
       throw new ManagementException(
-          LocalizedStrings.DistributedSystem_BACKUP_ALREADY_IN_PROGRESS.toLocalizedString());
+          "A backup is already in progress.");
     }
   }
 

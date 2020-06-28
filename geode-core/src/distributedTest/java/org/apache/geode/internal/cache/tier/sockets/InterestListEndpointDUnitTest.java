@@ -14,6 +14,9 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.Entry;
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.cache.client.PoolManager.find;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
@@ -50,6 +53,7 @@ import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.NetworkUtils;
@@ -174,12 +178,13 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
     // do two dumb puts, which will ensure that fail over happens from the
     // interest list end point in case Live ServerMonitor is not working
     client1.invoke(new CacheSerializableRunnable("Ensure that the failover from ILEP occurs") {
+      @Override
       public void run2() throws CacheException {
-        Region r = cache.getRegion("/" + REGION_NAME);
+        Region r = cache.getRegion(SEPARATOR + REGION_NAME);
 
         String poolName = r.getAttributes().getPoolName();
         assertNotNull(poolName);
-        final PoolImpl pool = (PoolImpl) PoolManager.find(poolName);
+        final PoolImpl pool = (PoolImpl) find(poolName);
         assertNotNull(pool);
         pool.acquireConnection();
         try {
@@ -195,15 +200,17 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
         }
 
         WaitCriterion ev = new WaitCriterion() {
+          @Override
           public boolean done() {
             return pool.getConnectedServerCount() != 2;
           }
 
+          @Override
           public String description() {
             return null;
           }
         };
-        Wait.waitForCriterion(ev, maxWaitTime, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
       }
     });
 
@@ -219,7 +226,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
   }
 
   public static int getPrimaryPort() throws Exception {
-    Region r1 = cache.getRegion("/" + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     String poolName = r1.getAttributes().getPoolName();
     assertNotNull(poolName);
     pool = (PoolImpl) PoolManager.find(poolName);
@@ -238,7 +245,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
 
   public static void acquirePoolConnection() {
     try {
-      Region r1 = cache.getRegion("/" + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       String poolName = r1.getAttributes().getPoolName();
       assertNotNull(poolName);
@@ -278,7 +285,6 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
       Iterator iter_prox = bs.getAcceptor().getCacheClientNotifier().getClientProxies().iterator();
       if (iter_prox.hasNext()) {
         CacheClientProxy proxy = (CacheClientProxy) iter_prox.next();
-        // if (proxy._interestList._keysOfInterest.get("/"+REGION_NAME) != null) {
         if (proxy.isPrimary()) {
           Iterator iter = cache.getCacheServers().iterator();
           if (iter.hasNext()) {
@@ -295,7 +301,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
 
   public static void createEntriesK1andK2() {
     try {
-      Region r1 = cache.getRegion("/" + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       if (!r1.containsKey(k1)) {
         r1.create(k1, client_k1);
@@ -371,7 +377,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
 
   public static void put() {
     try {
-      Region r = cache.getRegion("/" + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(k1, server_k1);
       r.put(k2, server_k2);
@@ -392,9 +398,8 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
       // only one server thats why if and not while
       if (iter.hasNext()) {
         CacheClientProxy proxy = (CacheClientProxy) iter.next();
-        // if (proxy._interestList._keysOfInterest.get("/"+ REGION_NAME) == null) {
         if (!proxy.isPrimary()) {
-          Region r = cache.getRegion("/" + REGION_NAME);
+          Region r = cache.getRegion(SEPARATOR + REGION_NAME);
           r.put(k1, server_k1);
           r.put(k2, server_k2);
         }
@@ -407,7 +412,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
 
   public static void registerKey1() {
     try {
-      Region r = cache.getRegion("/" + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.registerInterest(k1, InterestResultPolicy.KEYS);
     } catch (Exception ex) {
@@ -417,14 +422,15 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
 
   public static void verifyPut() {
     try {
-      final Region r = cache.getRegion("/" + REGION_NAME);
+      final Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Region.Entry e1 = r.getEntry(k1);
+          Entry e1 = r.getEntry(k1);
           if (e1 == null)
             return false;
-          Region.Entry e2 = r.getEntry(k2);
+          Entry e2 = r.getEntry(k2);
           if (e2 == null)
             return false;
           Object v1 = e1.getValue();
@@ -437,11 +443,12 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
           return true;
         }
 
+        @Override
         public String description() {
-          Region.Entry e1 = r.getEntry(k1);
+          Entry e1 = r.getEntry(k1);
           if (e1 == null)
             return "Entry for " + k1 + " is null";
-          Region.Entry e2 = r.getEntry(k2);
+          Entry e2 = r.getEntry(k2);
           if (e2 == null)
             return "Entry for " + k2 + " is null";
           Object v1 = e1.getValue();
@@ -455,7 +462,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
           return "Test missed a success";
         }
       };
-      Wait.waitForCriterion(ev, 20 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       // yes update
       assertEquals(server_k1, r.getEntry(k1).getValue());
@@ -482,6 +489,7 @@ public class InterestListEndpointDUnitTest extends JUnit4DistributedTestCase {
     CacheServerTestUtil.resetDisableShufflingOfEndpointsFlag();
     cache = null;
     Invoke.invokeInEveryVM(new SerializableRunnable() {
+      @Override
       public void run() {
         cache = null;
       }

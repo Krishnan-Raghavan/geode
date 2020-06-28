@@ -15,6 +15,8 @@
 
 package org.apache.geode.cache.lucene.internal.directory;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.io.File;
 import java.util.Collection;
 
@@ -33,7 +35,7 @@ import org.apache.geode.cache.lucene.internal.repository.IndexRepository;
 import org.apache.geode.cache.lucene.internal.repository.RepositoryManager;
 import org.apache.geode.internal.cache.BucketNotFoundException;
 import org.apache.geode.internal.cache.execute.InternalFunction;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class DumpDirectoryFiles implements InternalFunction {
   private static final long serialVersionUID = 1L;
@@ -75,7 +77,7 @@ public class DumpDirectoryFiles implements InternalFunction {
         FileSystem fs = directory.getFileSystem();
 
         String bucketName = index.getName() + "_" + repo.getRegion().getFullPath();
-        bucketName = bucketName.replace("/", "_");
+        bucketName = bucketName.replace(SEPARATOR, "_");
         File bucketDirectory = new File(exportLocation, bucketName);
         bucketDirectory.mkdirs();
         fs.export(bucketDirectory);

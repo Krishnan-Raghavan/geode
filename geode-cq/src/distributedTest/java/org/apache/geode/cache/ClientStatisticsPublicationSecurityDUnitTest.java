@@ -14,15 +14,15 @@
  */
 package org.apache.geode.cache;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.cache.client.ClientRegionShortcut.CACHING_PROXY;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -36,12 +36,12 @@ import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.management.CacheServerMXBean;
 import org.apache.geode.management.ClientHealthStatus;
 import org.apache.geode.management.ManagementService;
 import org.apache.geode.management.internal.SystemManagementService;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.security.templates.UserPasswordAuthInit;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -80,7 +80,7 @@ public class ClientStatisticsPublicationSecurityDUnitTest {
 
       cache.createRegionFactory(RegionShortcut.REPLICATE).create("regionName");
     });
-    locator.waitUntilRegionIsReadyOnExactlyThisManyServers("/regionName", 1);
+    locator.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "regionName", 1);
   }
 
   @Test
@@ -118,7 +118,7 @@ public class ClientStatisticsPublicationSecurityDUnitTest {
       String... expectedPoolStatKeys) {
     final int serverPort = server.getPort();
     server.invoke(() -> {
-      Awaitility.waitAtMost(1, TimeUnit.MINUTES).untilAsserted(() -> {
+      await().untilAsserted(() -> {
         Cache cache = ClusterStartupRule.getCache();
         SystemManagementService service =
             (SystemManagementService) ManagementService.getExistingManagementService(cache);

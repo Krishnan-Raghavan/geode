@@ -41,7 +41,7 @@ import org.apache.geode.cache.Scope;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.SerializableRunnable;
@@ -356,6 +356,7 @@ public class ClearRvvLockingDUnitTest extends JUnit4CacheTestCase {
     @Override
     public void run() throws InterruptedException {
       Runnable putThread1 = new Runnable() {
+        @Override
         public void run() {
           DistributedSystem.setThreadsSocketPolicy(false);
           doPut();
@@ -364,6 +365,7 @@ public class ClearRvvLockingDUnitTest extends JUnit4CacheTestCase {
       };
 
       Runnable putThread2 = new Runnable() {
+        @Override
         public void run() {
           DistributedSystem.setThreadsSocketPolicy(false);
           awaitStep1Latch();
@@ -521,6 +523,7 @@ public class ClearRvvLockingDUnitTest extends JUnit4CacheTestCase {
 
   private InternalDistributedMember createCache(VM vm) {
     return (InternalDistributedMember) vm.invoke(new SerializableCallable<Object>() {
+      @Override
       public Object call() {
         cache = getCache(new CacheFactory().set("conserve-sockets", "true"));
         return getSystem().getDistributedMember();
@@ -530,6 +533,7 @@ public class ClearRvvLockingDUnitTest extends JUnit4CacheTestCase {
 
   private InternalDistributedMember createNoConserveSocketsCache(VM vm) {
     return (InternalDistributedMember) vm.invoke(new SerializableCallable<Object>() {
+      @Override
       public Object call() {
         cache = getCache(new CacheFactory().set("conserve-sockets", "false"));
         return getSystem().getDistributedMember();

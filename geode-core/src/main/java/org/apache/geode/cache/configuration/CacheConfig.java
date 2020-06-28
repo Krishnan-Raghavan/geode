@@ -1,26 +1,23 @@
 
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work for additional information regarding
+ * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 package org.apache.geode.cache.configuration;
 
-import static org.apache.geode.cache.configuration.CacheElement.findElement;
+import static org.apache.geode.lang.Identifiable.find;
 
-import java.io.Serializable;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,14 +29,14 @@ import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
-import javax.xml.bind.annotation.adapters.CollapsedStringAdapter;
 import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
 import org.w3c.dom.Element;
 
 import org.apache.geode.annotations.Experimental;
 import org.apache.geode.cache.Region;
-
+import org.apache.geode.internal.config.VersionAdapter;
+import org.apache.geode.lang.Identifiable;
 
 /**
  * <p>
@@ -164,6 +161,7 @@ import org.apache.geode.cache.Region;
  *                 &lt;attribute name="alert-threshold" type="{http://www.w3.org/2001/XMLSchema}string" />
  *                 &lt;attribute name="dispatcher-threads" type="{http://www.w3.org/2001/XMLSchema}string" />
  *                 &lt;attribute name="order-policy" type="{http://www.w3.org/2001/XMLSchema}string" />
+ *                 &lt;attribute name="group-transaction-events" type="{http://www.w3.org/2001/XMLSchema}boolean" />
  *               &lt;/restriction>
  *             &lt;/complexContent>
  *           &lt;/complexType>
@@ -279,18 +277,18 @@ public class CacheConfig {
   @XmlElement(name = "dynamic-region-factory", namespace = "http://geode.apache.org/schema/cache")
   protected DynamicRegionFactoryType dynamicRegionFactory;
   @XmlElement(name = "gateway-hub", namespace = "http://geode.apache.org/schema/cache")
-  protected List<CacheConfig.GatewayHub> gatewayHubs;
+  protected List<GatewayHub> gatewayHubs;
   @XmlElement(name = "gateway-sender", namespace = "http://geode.apache.org/schema/cache")
-  protected List<CacheConfig.GatewaySender> gatewaySenders;
+  protected List<GatewaySender> gatewaySenders;
   @XmlElement(name = "gateway-receiver", namespace = "http://geode.apache.org/schema/cache")
-  protected CacheConfig.GatewayReceiver gatewayReceiver;
+  protected GatewayReceiverConfig gatewayReceiver;
   @XmlElement(name = "gateway-conflict-resolver",
       namespace = "http://geode.apache.org/schema/cache")
   protected DeclarableType gatewayConflictResolver;
   @XmlElement(name = "async-event-queue", namespace = "http://geode.apache.org/schema/cache")
-  protected List<CacheConfig.AsyncEventQueue> asyncEventQueues;
+  protected List<AsyncEventQueue> asyncEventQueues;
   @XmlElement(name = "cache-server", namespace = "http://geode.apache.org/schema/cache")
-  protected List<CacheConfig.CacheServer> cacheServers;
+  protected List<CacheServer> cacheServers;
   @XmlElement(name = "pool", namespace = "http://geode.apache.org/schema/cache")
   protected List<PoolType> pools;
   @XmlElement(name = "disk-store", namespace = "http://geode.apache.org/schema/cache")
@@ -329,12 +327,19 @@ public class CacheConfig {
   @XmlAttribute(name = "search-timeout")
   protected String searchTimeout;
   @XmlAttribute(name = "version", required = true)
-  @XmlJavaTypeAdapter(CollapsedStringAdapter.class)
+  @XmlJavaTypeAdapter(VersionAdapter.class)
   protected String version;
+
+  /**
+   * @deprecated Please use {@link Region#SEPARATOR}
+   */
+  @Deprecated
+  public static final String SEPARATOR = Region.SEPARATOR;
 
   public CacheConfig() {}
 
   public CacheConfig(String version) {
+
     this.version = version;
   }
 
@@ -405,9 +410,9 @@ public class CacheConfig {
    *
    *
    */
-  public List<CacheConfig.GatewayHub> getGatewayHubs() {
+  public List<GatewayHub> getGatewayHubs() {
     if (gatewayHubs == null) {
-      gatewayHubs = new ArrayList<CacheConfig.GatewayHub>();
+      gatewayHubs = new ArrayList<GatewayHub>();
     }
     return this.gatewayHubs;
   }
@@ -435,9 +440,9 @@ public class CacheConfig {
    *
    *
    */
-  public List<CacheConfig.GatewaySender> getGatewaySenders() {
+  public List<GatewaySender> getGatewaySenders() {
     if (gatewaySenders == null) {
-      gatewaySenders = new ArrayList<CacheConfig.GatewaySender>();
+      gatewaySenders = new ArrayList<>();
     }
     return this.gatewaySenders;
   }
@@ -446,10 +451,10 @@ public class CacheConfig {
    * Gets the value of the gatewayReceiver property.
    *
    * possible object is
-   * {@link CacheConfig.GatewayReceiver }
+   * {@link GatewayReceiverConfig }
    *
    */
-  public CacheConfig.GatewayReceiver getGatewayReceiver() {
+  public GatewayReceiverConfig getGatewayReceiver() {
     return gatewayReceiver;
   }
 
@@ -457,10 +462,10 @@ public class CacheConfig {
    * Sets the value of the gatewayReceiver property.
    *
    * allowed object is
-   * {@link CacheConfig.GatewayReceiver }
+   * {@link GatewayReceiverConfig }
    *
    */
-  public void setGatewayReceiver(CacheConfig.GatewayReceiver value) {
+  public void setGatewayReceiver(GatewayReceiverConfig value) {
     this.gatewayReceiver = value;
   }
 
@@ -509,9 +514,9 @@ public class CacheConfig {
    *
    *
    */
-  public List<CacheConfig.AsyncEventQueue> getAsyncEventQueues() {
+  public List<AsyncEventQueue> getAsyncEventQueues() {
     if (asyncEventQueues == null) {
-      asyncEventQueues = new ArrayList<CacheConfig.AsyncEventQueue>();
+      asyncEventQueues = new ArrayList<AsyncEventQueue>();
     }
     return this.asyncEventQueues;
   }
@@ -539,9 +544,9 @@ public class CacheConfig {
    *
    *
    */
-  public List<CacheConfig.CacheServer> getCacheServers() {
+  public List<CacheServer> getCacheServers() {
     if (cacheServers == null) {
-      cacheServers = new ArrayList<CacheConfig.CacheServer>();
+      cacheServers = new ArrayList<CacheServer>();
     }
     return this.cacheServers;
   }
@@ -601,7 +606,7 @@ public class CacheConfig {
    */
   public List<DiskStoreType> getDiskStores() {
     if (diskStores == null) {
-      diskStores = new ArrayList<DiskStoreType>();
+      diskStores = new ArrayList<>();
     }
     return this.diskStores;
   }
@@ -1026,11 +1031,22 @@ public class CacheConfig {
     this.version = value;
   }
 
+  // this supports looking for sub regions
   public RegionConfig findRegionConfiguration(String regionPath) {
     if (regionPath.startsWith(Region.SEPARATOR)) {
       regionPath = regionPath.substring(1);
     }
-    return findElement(getRegions(), regionPath);
+    List<RegionConfig> regions = getRegions();
+    RegionConfig found = null;
+    for (String regionToken : regionPath.split(Region.SEPARATOR)) {
+      found = Identifiable.find(regions, regionToken);
+      // couldn't find one of the sub regions, break out of the loop
+      if (found == null) {
+        return null;
+      }
+      regions = found.getRegions();
+    }
+    return found;
   }
 
   public <T extends CacheElement> List<T> findCustomCacheElements(Class<T> classT) {
@@ -1045,7 +1061,7 @@ public class CacheConfig {
   }
 
   public <T extends CacheElement> T findCustomCacheElement(String elementId, Class<T> classT) {
-    return findElement(findCustomCacheElements(classT), elementId);
+    return find(findCustomCacheElements(classT), elementId);
   }
 
   public <T extends CacheElement> List<T> findCustomRegionElements(String regionPath,
@@ -1067,7 +1083,7 @@ public class CacheConfig {
 
   public <T extends CacheElement> T findCustomRegionElement(String regionPath, String elementId,
       Class<T> classT) {
-    return findElement(findCustomRegionElements(regionPath, classT), elementId);
+    return find(findCustomRegionElements(regionPath, classT), elementId);
   }
 
   /**
@@ -1108,7 +1124,7 @@ public class CacheConfig {
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "",
       propOrder = {"gatewayEventFilters", "gatewayEventSubstitutionFilter", "asyncEventListener"})
-  public static class AsyncEventQueue implements Serializable {
+  public static class AsyncEventQueue extends CacheElement {
 
     @XmlElement(name = "gateway-event-filter", namespace = "http://geode.apache.org/schema/cache")
     protected List<DeclarableType> gatewayEventFilters;
@@ -1142,6 +1158,35 @@ public class CacheConfig {
     protected String orderPolicy;
     @XmlAttribute(name = "forward-expiration-destroy")
     protected Boolean forwardExpirationDestroy;
+    @XmlAttribute(name = "pause-event-processing")
+    protected Boolean pauseEventProcessing;
+
+    /**
+     * Gets the value of whether the queue was created with paused processing of the events queued
+     *
+     *
+     * @return {@link Boolean} - true if queue will be created with paused processing of the events
+     *         queued
+     *         - false if queue will be created without pausing the processing of the events queued
+     *
+     */
+    public Boolean isPauseEventProcessing() {
+      return pauseEventProcessing;
+    }
+
+    /**
+     * Sets the value of whether the queue will be created with paused processing of the events
+     * queued
+     *
+     * @param pauseEventProcessing {@link Boolean} - true if queue will be created with paused
+     *        processing of the events queued
+     *        - false if queue will be created without pausing the processing of the events
+     *        queued
+     */
+
+    public void setPauseEventProcessing(Boolean pauseEventProcessing) {
+      this.pauseEventProcessing = pauseEventProcessing;
+    }
 
     /**
      * Gets the value of the gatewayEventFilters property.
@@ -1224,6 +1269,7 @@ public class CacheConfig {
      * {@link String }
      *
      */
+    @Override
     public String getId() {
       return id;
     }
@@ -1637,7 +1683,7 @@ public class CacheConfig {
   public static class GatewayHub {
 
     @XmlElement(name = "gateway", namespace = "http://geode.apache.org/schema/cache")
-    protected List<CacheConfig.GatewayHub.Gateway> gateways;
+    protected List<Gateway> gateways;
     @XmlAttribute(name = "id", required = true)
     protected String id;
     @XmlAttribute(name = "bind-address")
@@ -1678,9 +1724,9 @@ public class CacheConfig {
      *
      *
      */
-    public List<CacheConfig.GatewayHub.Gateway> getGateway() {
+    public List<Gateway> getGateway() {
       if (gateways == null) {
-        gateways = new ArrayList<CacheConfig.GatewayHub.Gateway>();
+        gateways = new ArrayList<Gateway>();
       }
       return this.gateways;
     }
@@ -1935,7 +1981,7 @@ public class CacheConfig {
     public static class Gateway {
 
       @XmlElement(name = "gateway-endpoint", namespace = "http://geode.apache.org/schema/cache")
-      protected List<CacheConfig.GatewayHub.Gateway.GatewayEndpoint> gatewayEndpoints;
+      protected List<GatewayEndpoint> gatewayEndpoints;
       @XmlElement(name = "gateway-listener", namespace = "http://geode.apache.org/schema/cache")
       protected List<DeclarableType> gatewayListeners;
       @XmlElement(name = "gateway-queue", namespace = "http://geode.apache.org/schema/cache")
@@ -1976,9 +2022,9 @@ public class CacheConfig {
        *
        *
        */
-      public List<CacheConfig.GatewayHub.Gateway.GatewayEndpoint> getGatewayEndpoints() {
+      public List<GatewayEndpoint> getGatewayEndpoints() {
         if (gatewayEndpoints == null) {
-          gatewayEndpoints = new ArrayList<CacheConfig.GatewayHub.Gateway.GatewayEndpoint>();
+          gatewayEndpoints = new ArrayList<GatewayEndpoint>();
         }
         return this.gatewayEndpoints;
       }
@@ -2535,243 +2581,6 @@ public class CacheConfig {
    *   &lt;complexContent>
    *     &lt;restriction base="{http://www.w3.org/2001/XMLSchema}anyType">
    *       &lt;sequence>
-   *         &lt;element name="gateway-transport-filter" type="{http://geode.apache.org/schema/cache}class-with-parameters-type" maxOccurs="unbounded" minOccurs="0"/>
-   *       &lt;/sequence>
-   *       &lt;attribute name="start-port" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="end-port" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="bind-address" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="maximum-time-between-pings" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="socket-buffer-size" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="hostname-for-senders" type="{http://www.w3.org/2001/XMLSchema}string" />
-   *       &lt;attribute name="manual-start" type="{http://www.w3.org/2001/XMLSchema}boolean" />
-   *     &lt;/restriction>
-   *   &lt;/complexContent>
-   * &lt;/complexType>
-   * </pre>
-   *
-   *
-   */
-  @XmlAccessorType(XmlAccessType.FIELD)
-  @XmlType(name = "", propOrder = {"gatewayTransportFilters"})
-  public static class GatewayReceiver {
-
-    @XmlElement(name = "gateway-transport-filter",
-        namespace = "http://geode.apache.org/schema/cache")
-    protected List<DeclarableType> gatewayTransportFilters;
-    @XmlAttribute(name = "start-port")
-    protected String startPort;
-    @XmlAttribute(name = "end-port")
-    protected String endPort;
-    @XmlAttribute(name = "bind-address")
-    protected String bindAddress;
-    @XmlAttribute(name = "maximum-time-between-pings")
-    protected String maximumTimeBetweenPings;
-    @XmlAttribute(name = "socket-buffer-size")
-    protected String socketBufferSize;
-    @XmlAttribute(name = "hostname-for-senders")
-    protected String hostnameForSenders;
-    @XmlAttribute(name = "manual-start")
-    protected Boolean manualStart;
-
-    /**
-     * Gets the value of the gatewayTransportFilters property.
-     *
-     * <p>
-     * This accessor method returns a reference to the live list,
-     * not a snapshot. Therefore any modification you make to the
-     * returned list will be present inside the JAXB object.
-     * This is why there is not a <CODE>set</CODE> method for the gatewayTransportFilters property.
-     *
-     * <p>
-     * For example, to add a new item, do as follows:
-     *
-     * <pre>
-     * getGatewayTransportFilters().add(newItem);
-     * </pre>
-     *
-     *
-     * <p>
-     * Objects of the following type(s) are allowed in the list
-     * {@link DeclarableType }
-     *
-     *
-     */
-    public List<DeclarableType> getGatewayTransportFilters() {
-      if (gatewayTransportFilters == null) {
-        gatewayTransportFilters = new ArrayList<DeclarableType>();
-      }
-      return this.gatewayTransportFilters;
-    }
-
-    /**
-     * Gets the value of the startPort property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getStartPort() {
-      return startPort;
-    }
-
-    /**
-     * Sets the value of the startPort property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setStartPort(String value) {
-      this.startPort = value;
-    }
-
-    /**
-     * Gets the value of the endPort property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getEndPort() {
-      return endPort;
-    }
-
-    /**
-     * Sets the value of the endPort property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setEndPort(String value) {
-      this.endPort = value;
-    }
-
-    /**
-     * Gets the value of the bindAddress property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getBindAddress() {
-      return bindAddress;
-    }
-
-    /**
-     * Sets the value of the bindAddress property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setBindAddress(String value) {
-      this.bindAddress = value;
-    }
-
-    /**
-     * Gets the value of the maximumTimeBetweenPings property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getMaximumTimeBetweenPings() {
-      return maximumTimeBetweenPings;
-    }
-
-    /**
-     * Sets the value of the maximumTimeBetweenPings property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setMaximumTimeBetweenPings(String value) {
-      this.maximumTimeBetweenPings = value;
-    }
-
-    /**
-     * Gets the value of the socketBufferSize property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getSocketBufferSize() {
-      return socketBufferSize;
-    }
-
-    /**
-     * Sets the value of the socketBufferSize property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setSocketBufferSize(String value) {
-      this.socketBufferSize = value;
-    }
-
-    /**
-     * Gets the value of the hostnameForSenders property.
-     *
-     * possible object is
-     * {@link String }
-     *
-     */
-    public String getHostnameForSenders() {
-      return hostnameForSenders;
-    }
-
-    /**
-     * Sets the value of the hostnameForSenders property.
-     *
-     * allowed object is
-     * {@link String }
-     *
-     */
-    public void setHostnameForSenders(String value) {
-      this.hostnameForSenders = value;
-    }
-
-    /**
-     * Gets the value of the manualStart property.
-     *
-     * possible object is
-     * {@link Boolean }
-     *
-     */
-    public Boolean isManualStart() {
-      return manualStart;
-    }
-
-    /**
-     * Sets the value of the manualStart property.
-     *
-     * allowed object is
-     * {@link Boolean }
-     *
-     */
-    public void setManualStart(Boolean value) {
-      this.manualStart = value;
-    }
-
-  }
-
-
-  /**
-   * <p>
-   * Java class for anonymous complex type.
-   *
-   * <p>
-   * The following schema fragment specifies the expected content contained within this class.
-   *
-   * <pre>
-   * &lt;complexType>
-   *   &lt;complexContent>
-   *     &lt;restriction base="{http://www.w3.org/2001/XMLSchema}anyType">
-   *       &lt;sequence>
    *         &lt;element name="gateway-event-filter" type="{http://geode.apache.org/schema/cache}class-with-parameters-type" maxOccurs="unbounded" minOccurs="0"/>
    *         &lt;element name="gateway-event-substitution-filter" type="{http://geode.apache.org/schema/cache}class-with-parameters-type" minOccurs="0"/>
    *         &lt;element name="gateway-transport-filter" type="{http://geode.apache.org/schema/cache}class-with-parameters-type" maxOccurs="unbounded" minOccurs="0"/>
@@ -2792,6 +2601,7 @@ public class CacheConfig {
    *       &lt;attribute name="alert-threshold" type="{http://www.w3.org/2001/XMLSchema}string" />
    *       &lt;attribute name="dispatcher-threads" type="{http://www.w3.org/2001/XMLSchema}string" />
    *       &lt;attribute name="order-policy" type="{http://www.w3.org/2001/XMLSchema}string" />
+   *       &lt;attribute name="group-transaction-events" type="{http://www.w3.org/2001/XMLSchema}boolean" />
    *     &lt;/restriction>
    *   &lt;/complexContent>
    * &lt;/complexType>
@@ -2844,6 +2654,8 @@ public class CacheConfig {
     protected String dispatcherThreads;
     @XmlAttribute(name = "order-policy")
     protected String orderPolicy;
+    @XmlAttribute(name = "group-transaction-events")
+    protected Boolean groupTransactionEvents;
 
     /**
      * Gets the value of the gatewayEventFilters property.
@@ -2870,7 +2682,7 @@ public class CacheConfig {
      */
     public List<DeclarableType> getGatewayEventFilters() {
       if (gatewayEventFilters == null) {
-        gatewayEventFilters = new ArrayList<DeclarableType>();
+        gatewayEventFilters = new ArrayList<>();
       }
       return this.gatewayEventFilters;
     }
@@ -2922,7 +2734,7 @@ public class CacheConfig {
      */
     public List<DeclarableType> getGatewayTransportFilters() {
       if (gatewayTransportFilters == null) {
-        gatewayTransportFilters = new ArrayList<DeclarableType>();
+        gatewayTransportFilters = new ArrayList<>();
       }
       return this.gatewayTransportFilters;
     }
@@ -2969,6 +2781,15 @@ public class CacheConfig {
      */
     public void setRemoteDistributedSystemId(String value) {
       this.remoteDistributedSystemId = value;
+    }
+
+    public Boolean mustGroupTransactionEvents() {
+      return groupTransactionEvents;
+    }
+
+
+    public void setGroupTransactionEvents(Boolean value) {
+      this.groupTransactionEvents = value;
     }
 
     /**

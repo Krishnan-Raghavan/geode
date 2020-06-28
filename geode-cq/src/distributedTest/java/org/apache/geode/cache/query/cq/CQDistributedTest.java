@@ -15,17 +15,20 @@
 package org.apache.geode.cache.query.cq;
 
 import static junit.framework.TestCase.assertEquals;
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.Serializable;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import org.apache.geode.cache.CacheTransactionManager;
+import org.apache.geode.cache.Operation;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.client.ClientCache;
@@ -53,6 +56,8 @@ public class CQDistributedTest implements Serializable {
   private CqAttributes cqa;
   private QueryService qs;
   private TestCqListener testListener;
+  private TestCqListener2 testListener2;
+
 
   @Rule
   public ClusterStartupRule clusterStartupRule = new ClusterStartupRule();
@@ -71,13 +76,16 @@ public class CQDistributedTest implements Serializable {
     qs = clientCache.getQueryService();
     CqAttributesFactory cqaf = new CqAttributesFactory();
     testListener = new TestCqListener();
+    testListener2 = new TestCqListener2();
     cqaf.addCqListener(testListener);
+    cqaf.addCqListener(testListener2);
+
     cqa = cqaf.create();
   }
 
   @Test
   public void cqUsingModShouldFireEventsWhenFilterCriteriaIsMet() throws Exception {
-    qs.newCq("Select * from /region r where r.ID % 2 = 1", cqa).execute();
+    qs.newCq("Select * from " + SEPARATOR + "region r where r.ID % 2 = 1", cqa).execute();
 
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
@@ -88,13 +96,13 @@ public class CQDistributedTest implements Serializable {
       regionOnServer.put(4, new Portfolio(4));
     });
 
-    Awaitility.await().atMost(10, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertEquals(2, testListener.onEventCalls));
   }
 
   @Test
   public void cqUsingPlusShouldFireEventsWhenFilterCriteriaIsMet() throws Exception {
-    qs.newCq("Select * from /region r where r.ID + 3 > 4", cqa).execute();
+    qs.newCq("Select * from " + SEPARATOR + "region r where r.ID + 3 > 4", cqa).execute();
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
       regionOnServer.put(0, new Portfolio(0));
@@ -104,13 +112,13 @@ public class CQDistributedTest implements Serializable {
       regionOnServer.put(4, new Portfolio(4));
     });
 
-    Awaitility.await().atMost(10, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertEquals(3, testListener.onEventCalls));
   }
 
   @Test
   public void cqUsingSubtractShouldFireEventsWhenFilterCriteriaIsMet() throws Exception {
-    qs.newCq("Select * from /region r where r.ID - 3 < 0", cqa).execute();
+    qs.newCq("Select * from " + SEPARATOR + "region r where r.ID - 3 < 0", cqa).execute();
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
       regionOnServer.put(0, new Portfolio(0));
@@ -120,13 +128,13 @@ public class CQDistributedTest implements Serializable {
       regionOnServer.put(4, new Portfolio(4));
     });
 
-    Awaitility.await().atMost(10, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertEquals(3, testListener.onEventCalls));
   }
 
   @Test
   public void cqUsingDivideShouldFireEventsWhenFilterCriteriaIsMet() throws Exception {
-    qs.newCq("Select * from /region r where r.ID / 2 = 1", cqa).execute();
+    qs.newCq("Select * from " + SEPARATOR + "region r where r.ID / 2 = 1", cqa).execute();
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
       regionOnServer.put(0, new Portfolio(0));
@@ -136,13 +144,13 @@ public class CQDistributedTest implements Serializable {
       regionOnServer.put(4, new Portfolio(4));
     });
 
-    Awaitility.await().atMost(10, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertEquals(2, testListener.onEventCalls));
   }
 
   @Test
   public void cqUsingMultiplyShouldFireEventsWhenFilterCriteriaIsMet() throws Exception {
-    qs.newCq("Select * from /region r where r.ID * 2 > 3", cqa).execute();
+    qs.newCq("Select * from " + SEPARATOR + "region r where r.ID * 2 > 3", cqa).execute();
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
       regionOnServer.put(0, new Portfolio(0));
@@ -152,7 +160,7 @@ public class CQDistributedTest implements Serializable {
       regionOnServer.put(4, new Portfolio(4));
     });
 
-    Awaitility.await().atMost(10, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertEquals(3, testListener.onEventCalls));
   }
 
@@ -162,7 +170,7 @@ public class CQDistributedTest implements Serializable {
     server.invoke(() -> {
       Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
       ClusterStartupRule.getCache().getQueryService().createKeyIndex("PrimaryKeyIndex", "ID",
-          "/region");
+          SEPARATOR + "region");
       regionOnServer.put(0, new Portfolio(0));
       regionOnServer.put(1, new Portfolio(1));
       regionOnServer.put(2, new Portfolio(2));
@@ -171,10 +179,59 @@ public class CQDistributedTest implements Serializable {
     });
 
     SelectResults results =
-        qs.newCq("Select * from /region where ID = 1", cqa).executeWithInitialResults();
+        qs.newCq("Select * from " + SEPARATOR + "region where ID = 1", cqa)
+            .executeWithInitialResults();
     assertEquals(1, results.size());
   }
 
+  @Test
+  public void cqWithTransaction() throws Exception {
+    qs.newCq("Select * from /region r where r.ID = 1", cqa).execute();
+
+    server.invoke(() -> {
+      Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
+      final CacheTransactionManager txMgr =
+          ClusterStartupRule.getCache().getCacheTransactionManager();
+
+      // CREATE new entry
+      txMgr.begin();
+      regionOnServer.put(0, new Portfolio(1));
+      txMgr.commit();
+
+      // UPDATE
+      txMgr.begin();
+      regionOnServer.put(0, new Portfolio(0));
+      txMgr.commit();
+
+      // CREATE
+      txMgr.begin();
+      regionOnServer.put(0, new Portfolio(1));
+      txMgr.commit();
+    });
+
+    await().untilAsserted(() -> assertThat(testListener2.onEventCreateCalls).isEqualTo(2));
+    await().untilAsserted(() -> assertThat(testListener2.onEventUpdateCalls).isEqualTo(0));
+  }
+
+  @Test
+  public void cqWithoutTransaction() throws Exception {
+    qs.newCq("Select * from /region r where r.ID = 1", cqa).execute();
+
+    server.invoke(() -> {
+      Region regionOnServer = ClusterStartupRule.getCache().getRegion("region");
+      // CREATE new entry
+      regionOnServer.put(0, new Portfolio(1));
+
+      // UPDATE
+      regionOnServer.put(0, new Portfolio(0));
+
+      // CREATE
+      regionOnServer.put(0, new Portfolio(1));
+    });
+
+    await().untilAsserted(() -> assertThat(testListener2.onEventCreateCalls).isEqualTo(2));
+    await().untilAsserted(() -> assertThat(testListener2.onEventUpdateCalls).isEqualTo(0));
+  }
 
   private class TestCqListener implements CqListener, Serializable {
     public int onEventCalls = 0;
@@ -185,15 +242,33 @@ public class CQDistributedTest implements Serializable {
     }
 
     @Override
-    public void onError(CqEvent aCqEvent) {
+    public void onError(CqEvent aCqEvent) {}
 
+    @Override
+    public void close() {}
+  }
+
+  private class TestCqListener2 implements CqListener, Serializable {
+    public int onEventCreateCalls = 0;
+    public int onEventUpdateCalls = 0;
+
+    @Override
+    public void onEvent(CqEvent aCqEvent) {
+      Operation queryOperation = aCqEvent.getQueryOperation();
+      if (queryOperation.isCreate()) {
+        onEventCreateCalls++;
+      } else if (queryOperation.isUpdate()) {
+        onEventUpdateCalls++;
+      }
     }
 
     @Override
-    public void close() {
+    public void onError(CqEvent aCqEvent) {}
 
-    }
+    @Override
+    public void close() {}
   }
+
 
   private void createServerRegion(MemberVM server, RegionShortcut regionShortcut) {
     server.invoke(() -> {

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DELTA_PROPAGATION;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
@@ -56,6 +57,7 @@ import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
@@ -145,6 +147,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
     interestListener = null;
 
     Invoke.invokeInEveryVM(new SerializableRunnable() {
+      @Override
       public void run() {
         cache = null;
         server = null;
@@ -575,7 +578,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
     new InterestListDUnitTest().createCache(props);
     PoolFactory pfactory = PoolManager.createFactory().addServer(host, port)
-        .setThreadLocalConnections(true).setMinConnections(3).setSubscriptionEnabled(true)
+        .setMinConnections(3).setSubscriptionEnabled(true)
         .setSubscriptionRedundancy(-1).setReadTimeout(10000).setSocketBufferSize(32768);
     // .setRetryInterval(10000)
     // .setRetryAttempts(5)
@@ -658,7 +661,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
           return "waiting for queues to drain for " + fproxy.getProxyID();
         }
       };
-      Wait.waitForCriterion(ev, 5 * 10 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
     }
   }
 
@@ -708,7 +711,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
         return "waiting for " + fCacheListener.getExpectedCreates() + " create events";
       }
     };
-    Wait.waitForCriterion(ev, 5 * 10 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
   }
 
   private static void confirmNoCacheListenerUpdates() throws Exception {
@@ -735,7 +738,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void createEntriesK1andK2() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (!r.containsKey(key1)) {
         r.create(key1, key1_originalValue);
@@ -752,7 +755,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   }
 
   private static void registerKeyOnly(Object key) {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
     r.registerInterest(key);
   }
@@ -775,7 +778,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
     try {
       ClientSession cs = server.getClientSession(clientId);
       if (cs.isPrimary()) {
-        cs.registerInterest(Region.SEPARATOR + REGION_NAME, key, InterestResultPolicy.KEYS_VALUES,
+        cs.registerInterest(SEPARATOR + REGION_NAME, key, InterestResultPolicy.KEYS_VALUES,
             false);
       }
     } catch (Exception ex) {
@@ -795,7 +798,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void registerALL_KEYS() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.registerInterest("ALL_KEYS");
     } catch (Exception ex) {
@@ -805,7 +808,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void put_ALL_KEYS() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(key1, "vm1-key-1");
       r.put(key2, "vm1-key-2");
@@ -819,7 +822,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void validate_ALL_KEYS() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       assertEquals(r.getEntry(key1).getValue(), "vm1-key-1");
       assertEquals(r.getEntry(key2).getValue(), "vm1-key-2");
@@ -831,7 +834,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   private static void registerKeys() {
     List list = new ArrayList();
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       list.add("k1");
       list.add("k2");
@@ -844,7 +847,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   private static void registerKeysAgain() {
     List list = new ArrayList();
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       list.add("k3");
       list.add("k4");
       list.add("k5");
@@ -855,7 +858,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   }
 
   private static void unregisterKeyOnly(Object key) {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
     r.unregisterInterest(key);
   }
@@ -878,7 +881,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
     try {
       ClientSession cs = server.getClientSession(clientId);
       if (cs.isPrimary()) {
-        cs.unregisterInterest(Region.SEPARATOR + REGION_NAME, key, false);
+        cs.unregisterInterest(SEPARATOR + REGION_NAME, key, false);
       }
     } catch (Exception ex) {
       Assert.fail("failed while un-registering key(" + key + ") for client " + clientId, ex);
@@ -890,7 +893,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   }
 
   private static void validateRegionEntriesFromInterestListInVm1() {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
     Region.Entry k1, k2;
     k1 = r.getEntry("k1");
@@ -902,7 +905,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
   }
 
   private static void validateRegionEntriesFromInterestListInVm2() {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
     assertEquals(r.getEntry("k3").getValue(), "server3");
     assertEquals(r.getEntry("k4").getValue(), "server4");
@@ -911,7 +914,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void putSingleEntry(Object key, String value) {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(key, value);
       // Verify that no invalidates occurred to this region
@@ -923,7 +926,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void put(String vm) {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (vm.equals("vm1")) {
         r.put(key1, "vm1-key-1");
@@ -946,7 +949,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void multiple_put() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put("k1", "server1");
       r.put("k2", "server2");
@@ -961,7 +964,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void putAgain(String vm) {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (vm.equals("vm1")) {
         r.put(key1, "vm1-key-1-again");
@@ -1001,7 +1004,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
       @Override
       public boolean done() {
         try {
-          Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+          Region r = cache.getRegion(SEPARATOR + REGION_NAME);
           assertNotNull(r);
           if (vm.equals("vm1")) {
             // Verify that 'key-1' was updated, but 'key-2' was not and contains the
@@ -1025,12 +1028,12 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
         return "waiting for client to apply events from server";
       }
     };
-    Wait.waitForCriterion(ev, 5 * 10 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
   }
 
   private static void validateSingleEntry(Object key, String value) {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertEquals(value, r.getEntry(key).getValue());
     } catch (Exception ex) {
       Assert.fail("failed while validateSingleEntry()", ex);
@@ -1039,7 +1042,7 @@ public class InterestListDUnitTest extends JUnit4DistributedTestCase {
 
   private static void validateEntriesAgain(String vm) {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (vm.equals("vm1")) {
         // Verify that neither 'key-1' 'key-2' was updated and contain the

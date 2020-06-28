@@ -34,10 +34,12 @@ import org.apache.geode.cache.query.internal.utils.LimitIterator;
 import org.apache.geode.cache.query.internal.utils.PDXUtils;
 import org.apache.geode.cache.query.types.CollectionType;
 import org.apache.geode.cache.query.types.ObjectType;
-import org.apache.geode.internal.DataSerializableFixedID;
 import org.apache.geode.internal.HeapDataOutputStream;
-import org.apache.geode.internal.HeapDataOutputStream.LongUpdater;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.serialization.BufferDataOutputStream.LongUpdater;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 
 /**
  * This is used as a wrapper over all the results of PR which are of non distinct type
@@ -175,7 +177,6 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
       this.results = results;
       this.limit = limit;
       this.collectionsMetdata = collectionsMetadata;
-
     }
 
     @Override
@@ -191,12 +192,6 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
         return totalSize;
       }
     }
-
-    /*
-     * @Override public boolean isEmpty() { boolean isEmpty = true; for (SelectResults<E> result :
-     * this.sortedResults) { isEmpty = result.isEmpty(); if (!isEmpty) { break; } } return isEmpty;
-     * }
-     */
 
     @Override
     public Iterator<E> iterator() {
@@ -283,8 +278,9 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    ObjectType elementType = (ObjectType) DataSerializer.readObject(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    ObjectType elementType = (ObjectType) context.getDeserializer().readObject(in);
     this.collectionType = new CollectionTypeImpl(CumulativeNonDistinctResults.class, elementType);
     boolean isStruct = elementType.isStructType();
 
@@ -296,13 +292,14 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
         Object[] fields = DataSerializer.readObjectArray(in);
         this.data.add((E) new StructImpl((StructTypeImpl) elementType, fields));
       } else {
-        E element = DataSerializer.readObject(in);
+        E element = context.getDeserializer().readObject(in);
         this.data.add(element);
       }
       --numLeft;
     }
   }
 
+  @Override
   public int getDSFID() {
     return CUMULATIVE_RESULTS;
   }
@@ -311,9 +308,10 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
   // instead
   // of struct
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     boolean isStruct = this.collectionType.getElementType().isStructType();
-    DataSerializer.writeObject(this.collectionType.getElementType(), out);
+    context.getSerializer().writeObject(this.collectionType.getElementType(), out);
 
     HeapDataOutputStream hdos = new HeapDataOutputStream(1024, null);
     LongUpdater lu = hdos.reserveLong();
@@ -323,9 +321,9 @@ public class CumulativeNonDistinctResults<E> implements SelectResults<E>, DataSe
       E data = iter.next();
       if (isStruct) {
         Object[] fields = ((Struct) data).getFieldValues();
-        DataSerializer.writeObjectArray(fields, out);
+        DataSerializer.writeObjectArray(fields, hdos);
       } else {
-        DataSerializer.writeObject(data, hdos);
+        context.getSerializer().writeObject(data, hdos);
       }
       ++numElements;
     }

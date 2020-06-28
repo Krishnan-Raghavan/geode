@@ -43,9 +43,10 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A message used for debugging purposes. For example if a test fails it can call
@@ -109,7 +110,6 @@ public class DumpB2NRegion extends PartitionMessage {
           Thread.sleep(2000);
         } catch (InterruptedException e) {
           interrupted = true;
-          pr.checkReadiness();
         } finally {
           if (interrupted)
             Thread.currentThread().interrupt();
@@ -148,20 +148,23 @@ public class DumpB2NRegion extends PartitionMessage {
     return false;
   }
 
+  @Override
   public int getDSFID() {
     return PR_DUMP_B2N_REGION_MSG;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = in.readInt();
     this.onlyReturnPrimaryInfo = in.readBoolean();
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.bucketId);
     out.writeBoolean(this.onlyReturnPrimaryInfo);
   }
@@ -221,14 +224,16 @@ public class DumpB2NRegion extends PartitionMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.primaryInfo = (PrimaryInfo) DataSerializer.readObject(in);
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeObject(this.primaryInfo, out);
     }
 
@@ -284,8 +289,7 @@ public class DumpB2NRegion extends PartitionMessage {
         logger.debug("B2NResponse got remote CacheException, throwing ForceReattemptException. {}",
             e.getMessage(), e);
         throw new ForceReattemptException(
-            LocalizedStrings.DumpB2NRegion_B2NRESPONSE_GOT_REMOTE_CACHEEXCEPTION_THROWING_FORCEREATTEMPTEXCEPTION
-                .toLocalizedString(),
+            "B2NResponse got remote CacheException, throwing ForceReattemptException.",
             e);
       }
       synchronized (this.primaryInfos) {

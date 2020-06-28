@@ -14,24 +14,24 @@
  */
 package org.apache.geode.connectors.jdbc.internal.cli;
 
-import static org.apache.geode.distributed.ConfigurationPersistenceService.CLUSTER_CONFIG;
 
-import java.util.Collection;
-import java.util.Set;
+import java.util.ArrayList;
 
+import org.springframework.shell.core.annotation.CliAvailabilityIndicator;
 import org.springframework.shell.core.annotation.CliCommand;
+import org.springframework.shell.core.annotation.CliOption;
 
 import org.apache.geode.annotations.Experimental;
 import org.apache.geode.cache.configuration.CacheConfig;
-import org.apache.geode.connectors.jdbc.internal.configuration.ConnectorService;
+import org.apache.geode.cache.configuration.RegionConfig;
+import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.distributed.ConfigurationPersistenceService;
-import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.management.cli.CliMetaData;
+import org.apache.geode.management.cli.ConverterHint;
 import org.apache.geode.management.cli.GfshCommand;
-import org.apache.geode.management.internal.cli.functions.CliFunctionResult;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
 import org.apache.geode.management.internal.cli.result.model.ResultModel;
 import org.apache.geode.management.internal.cli.result.model.TabularResultModel;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.management.internal.security.ResourceOperation;
 import org.apache.geode.security.ResourcePermission;
 
@@ -39,46 +39,36 @@ import org.apache.geode.security.ResourcePermission;
 public class ListMappingCommand extends GfshCommand {
   public static final String JDBC_MAPPINGS_SECTION = "jdbc-mappings";
   static final String LIST_MAPPING = "list jdbc-mappings";
-  static final String LIST_MAPPING__HELP = EXPERIMENTAL + "Display jdbc mappings for all members.";
+  static final String LIST_MAPPING__HELP = EXPERIMENTAL + "Display JDBC mappings for all members.";
+  static final String LIST_OF_MAPPINGS = "List of JDBC mappings";
+  static final String NO_MAPPINGS_FOUND = "No JDBC mappings found";
 
-  static final String LIST_OF_MAPPINGS = "List of mappings";
-  static final String NO_MAPPINGS_FOUND = "No mappings found";
-  static final String LIST_MAPPINGS_MEMBER__HELP =
-      "Member from which the jdbc mappings are retrieved.";
+  private static final String LIST_MAPPING__GROUPS_NAME__HELP =
+      "Server Group(s) of the JDBC mappings to list.";
 
   @CliCommand(value = LIST_MAPPING, help = LIST_MAPPING__HELP)
   @CliMetaData(relatedTopic = CliStrings.DEFAULT_TOPIC_GEODE)
   @ResourceOperation(resource = ResourcePermission.Resource.CLUSTER,
       operation = ResourcePermission.Operation.MANAGE)
-  public ResultModel listMapping() {
-    Collection<ConnectorService.RegionMapping> mappings = null;
+  public ResultModel listMapping(@CliOption(key = {CliStrings.GROUP, CliStrings.GROUPS},
+      optionContext = ConverterHint.MEMBERGROUP,
+      help = LIST_MAPPING__GROUPS_NAME__HELP) String[] groups) {
+    ArrayList<RegionMapping> mappings = new ArrayList<>();
 
-    // check if CC is available and use it to describe the connection
-    ConfigurationPersistenceService ccService = getConfigurationPersistenceService();
-    if (ccService != null) {
-      CacheConfig cacheConfig = ccService.getCacheConfig(CLUSTER_CONFIG);
-      if (cacheConfig != null) {
-        ConnectorService service =
-            cacheConfig.findCustomCacheElement("connector-service", ConnectorService.class);
-        if (service != null) {
-          mappings = service.getRegionMapping();
+    try {
+      ConfigurationPersistenceService configService = checkForClusterConfiguration();
+      if (groups == null) {
+        groups = new String[] {ConfigurationPersistenceService.CLUSTER_CONFIG};
+      }
+      for (String group : groups) {
+        CacheConfig cacheConfig = getCacheConfig(configService, group);
+        for (RegionConfig regionConfig : cacheConfig.getRegions()) {
+          mappings.addAll(
+              MappingCommandUtils.getMappingsFromRegionConfig(cacheConfig, regionConfig, group));
         }
       }
-    } else {
-      // otherwise get it from any member
-      Set<DistributedMember> members = findMembers(null, null);
-      if (members.size() > 0) {
-        DistributedMember targetMember = members.iterator().next();
-        CliFunctionResult result =
-            executeFunctionAndGetFunctionResult(new ListMappingFunction(), null, targetMember);
-        if (result != null) {
-          mappings = (Collection<ConnectorService.RegionMapping>) result.getResultObject();
-        }
-      }
-    }
-
-    if (mappings == null) {
-      return ResultModel.createInfo(EXPERIMENTAL + "\n" + "No mappings found");
+    } catch (PreconditionException ex) {
+      return ResultModel.createError(ex.getMessage());
     }
 
     // output
@@ -96,11 +86,40 @@ public class ListMappingCommand extends GfshCommand {
   /**
    * Returns true if any connections exist
    */
-  private boolean fillTabularResultData(Collection<ConnectorService.RegionMapping> mappings,
+  private boolean fillTabularResultData(ArrayList<RegionMapping> mappings,
       TabularResultModel tableModel) {
-    for (ConnectorService.RegionMapping mapping : mappings) {
+    if (mappings == null) {
+      return false;
+    }
+    for (RegionMapping mapping : mappings) {
       tableModel.accumulate(LIST_OF_MAPPINGS, mapping.getRegionName());
     }
     return !mappings.isEmpty();
+  }
+
+  private CacheConfig getCacheConfig(ConfigurationPersistenceService configService, String group)
+      throws PreconditionException {
+    CacheConfig result = configService.getCacheConfig(group);
+    if (result == null) {
+      throw new PreconditionException(
+          "Cache Configuration not found"
+              + ((group.equals(ConfigurationPersistenceService.CLUSTER_CONFIG)) ? "."
+                  : " for group " + group + "."));
+    }
+    return result;
+  }
+
+  private ConfigurationPersistenceService checkForClusterConfiguration()
+      throws PreconditionException {
+    ConfigurationPersistenceService result = getConfigurationPersistenceService();
+    if (result == null) {
+      throw new PreconditionException("Cluster Configuration must be enabled.");
+    }
+    return result;
+  }
+
+  @CliAvailabilityIndicator({LIST_MAPPING})
+  public boolean commandAvailable() {
+    return isOnlineCommandAvailable();
   }
 }

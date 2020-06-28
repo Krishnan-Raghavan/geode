@@ -24,7 +24,6 @@ import java.util.Set;
 
 import org.apache.logging.log4j.Logger;
 
-import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.EntryNotFoundException;
 import org.apache.geode.cache.Operation;
@@ -45,9 +44,10 @@ import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.internal.cache.PartitionedRegionHelper;
 import org.apache.geode.internal.cache.PrimaryBucketException;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is generated based on event received on GatewayReceiver for updating the time-stamp
@@ -90,7 +90,7 @@ public class PRUpdateEntryVersionMessage extends PartitionMessageWithDirectReply
   /*
    * (non-Javadoc)
    *
-   * @see org.apache.geode.internal.DataSerializableFixedID#getDSFID()
+   * @see org.apache.geode.internal.serialization.DataSerializableFixedID#getDSFID()
    */
   @Override
   public int getDSFID() {
@@ -168,21 +168,23 @@ public class PRUpdateEntryVersionMessage extends PartitionMessageWithDirectReply
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
-    this.key = DataSerializer.readObject(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
+    this.key = context.getDeserializer().readObject(in);
     this.op = Operation.fromOrdinal(in.readByte());
-    this.eventId = (EventID) DataSerializer.readObject(in);
-    this.versionTag = DataSerializer.readObject(in);
+    this.eventId = (EventID) context.getDeserializer().readObject(in);
+    this.versionTag = context.getDeserializer().readObject(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
-    DataSerializer.writeObject(getKey(), out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
+    context.getSerializer().writeObject(getKey(), out);
     out.writeByte(this.op.ordinal);
-    DataSerializer.writeObject(this.eventId, out);
-    DataSerializer.writeObject(this.versionTag, out);
+    context.getSerializer().writeObject(this.eventId, out);
+    context.getSerializer().writeObject(this.versionTag, out);
   }
 
   /**
@@ -261,7 +263,7 @@ public class PRUpdateEntryVersionMessage extends PartitionMessageWithDirectReply
     Set failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new ForceReattemptException(
-          LocalizedStrings.UpdateEntryVersionMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >.", m));
     }
     return p;
   }

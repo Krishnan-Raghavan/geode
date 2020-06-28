@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
@@ -56,15 +57,16 @@ import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.RegionNotFoundException;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.Struct;
+import org.apache.geode.cache.query.cq.internal.CqQueryImpl;
+import org.apache.geode.cache.query.cq.internal.CqQueryImpl.TestHook;
 import org.apache.geode.cache.query.data.Portfolio;
-import org.apache.geode.cache.query.internal.cq.CqQueryImpl;
-import org.apache.geode.cache.query.internal.cq.CqQueryImpl.TestHook;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.cache30.CertifiableTestCacheListener;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.PoolFactoryImpl;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -437,7 +439,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
     server1.invoke(new CacheSerializableRunnable("Load from second server") {
       @Override
       public void run2() throws CacheException {
-        Region region1 = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region1 =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= size; i++) {
           region1.get(CqQueryUsingPoolDUnitTest.KEY + i);
         }
@@ -484,7 +487,7 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
           Region region = createRegion(cqDUnitTest.regions[i], factory.createRegionAttributes());
           // Set CacheListener.
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         }
         Wait.pause(2000);
 
@@ -529,7 +532,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
     server1.invoke(new CacheSerializableRunnable("Load from second server") {
       @Override
       public void run2() throws CacheException {
-        Region region1 = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region1 =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= size; i++) {
           region1.get(CqQueryUsingPoolDUnitTest.KEY + i);
         }
@@ -643,7 +647,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Clearing the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryUsingPoolDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -658,7 +663,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Invalidate the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryUsingPoolDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -673,7 +679,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Destroying the region on the server ###");
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[1]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[1]);
         for (int i = 1; i <= 5; i++) {
           region.put(CqQueryUsingPoolDUnitTest.KEY + i, new Portfolio(i));
         }
@@ -721,7 +728,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
     server.invoke(new CacheSerializableRunnable("Update Region") {
       @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -748,12 +756,12 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
             try {
               cqResults = cq1.executeWithInitialResults();
             } catch (Exception ex) {
-              Assert.fail("CQ execution failed", ex);
+              fail("CQ execution failed", ex);
             }
 
             // Check num of events received during executeWithInitialResults.
             final TestHook testHook = CqQueryImpl.testHook;
-            Wait.waitForCriterion(new WaitCriterion() {
+            GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
               @Override
               public boolean done() {
@@ -764,7 +772,7 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
               public String description() {
                 return "No queued events found.";
               }
-            }, 3000, 5, true);
+            });
 
             getCache().getLogger().fine("Queued Events Size" + testHook.numQueuedEvents());
             // Make sure CQEvents are queued during execute with initial results.
@@ -823,7 +831,8 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
             testHook.ready();
           }
         });
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = numObjects + 1; i <= totalObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -950,13 +959,17 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         try {
           CqAttributesFactory cqAf = new CqAttributesFactory();
           CqAttributes attributes = cqAf.create();
-          queryService.newCq("client1DCQ1", "Select * From /root/" + regionName + " where id = 1",
+          queryService.newCq("client1DCQ1",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 1",
               attributes, true).execute();
-          queryService.newCq("client1DCQ2", "Select * From /root/" + regionName + " where id = 10",
+          queryService.newCq("client1DCQ2",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 10",
               attributes, true).execute();
-          queryService.newCq("client1NoDC1", "Select * From /root/" + regionName, attributes, false)
+          queryService.newCq("client1NoDC1",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName, attributes, false)
               .execute();
-          queryService.newCq("client1NoDC2", "Select * From /root/" + regionName + " where id = 3",
+          queryService.newCq("client1NoDC2",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 3",
               attributes, false).execute();
         } catch (CqException e) {
           fail("failed", e);
@@ -981,13 +994,17 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         try {
           CqAttributesFactory cqAf = new CqAttributesFactory();
           CqAttributes attributes = cqAf.create();
-          queryService.newCq("client2DCQ1", "Select * From /root/" + regionName + " where id = 1",
+          queryService.newCq("client2DCQ1",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 1",
               attributes, true).execute();
-          queryService.newCq("client2DCQ2", "Select * From /root/" + regionName + " where id = 10",
+          queryService.newCq("client2DCQ2",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 10",
               attributes, true).execute();
-          queryService.newCq("client2DCQ3", "Select * From /root/" + regionName, attributes, true)
+          queryService.newCq("client2DCQ3",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName, attributes, true)
               .execute();
-          queryService.newCq("client2DCQ4", "Select * From /root/" + regionName + " where id = 3",
+          queryService.newCq("client2DCQ4",
+              "Select * From " + SEPARATOR + "root" + SEPARATOR + regionName + " where id = 3",
               attributes, true).execute();
         } catch (CqException e) {
           fail("failed", e);
@@ -1262,13 +1279,18 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         CqAttributesFactory cqAf = new CqAttributesFactory();
         CqAttributes attributes = cqAf.create();
         try {
-          queryService.newCq("client1MoreDCQ1", "Select * From /" + regionName + " where id = 1",
-              attributes, true).execute();
-          queryService.newCq("client1MoreDCQ2", "Select * From /" + regionName + " where id = 10",
-              attributes, true).execute();
-          queryService.newCq("client1MoreNoDC1", "Select * From /" + regionName, attributes, false)
+          queryService
+              .newCq("client1MoreDCQ1", "Select * From " + SEPARATOR + regionName + " where id = 1",
+                  attributes, true)
               .execute();
-          queryService.newCq("client1MoreNoDC2", "Select * From /" + regionName + " where id = 3",
+          queryService.newCq("client1MoreDCQ2",
+              "Select * From " + SEPARATOR + regionName + " where id = 10",
+              attributes, true).execute();
+          queryService.newCq("client1MoreNoDC1", "Select * From " + SEPARATOR + regionName,
+              attributes, false)
+              .execute();
+          queryService.newCq("client1MoreNoDC2",
+              "Select * From " + SEPARATOR + regionName + " where id = 3",
               attributes, false).execute();
         } catch (RegionNotFoundException e) {
           fail("failed", e);
@@ -1288,14 +1310,20 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         CqAttributesFactory cqAf = new CqAttributesFactory();
         CqAttributes attributes = cqAf.create();
         try {
-          queryService.newCq("client2MoreDCQ1", "Select * From /" + regionName + " where id = 1",
-              attributes, true).execute();
-          queryService.newCq("client2MoreDCQ2", "Select * From /" + regionName + " where id = 10",
-              attributes, true).execute();
-          queryService.newCq("client2MoreDCQ3", "Select * From /" + regionName, attributes, true)
+          queryService
+              .newCq("client2MoreDCQ1", "Select * From " + SEPARATOR + regionName + " where id = 1",
+                  attributes, true)
               .execute();
-          queryService.newCq("client2MoreDCQ4", "Select * From /" + regionName + " where id = 3",
+          queryService.newCq("client2MoreDCQ2",
+              "Select * From " + SEPARATOR + regionName + " where id = 10",
               attributes, true).execute();
+          queryService
+              .newCq("client2MoreDCQ3", "Select * From " + SEPARATOR + regionName, attributes, true)
+              .execute();
+          queryService
+              .newCq("client2MoreDCQ4", "Select * From " + SEPARATOR + regionName + " where id = 3",
+                  attributes, true)
+              .execute();
         } catch (RegionNotFoundException e) {
           fail("failed", e);
         } catch (CqException e) {
@@ -1374,14 +1402,21 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         CqAttributesFactory cqAf = new CqAttributesFactory();
         CqAttributes attributes = cqAf.create();
         try {
-          queryService.newCq("client1DCQ1", "Select * From /" + regionName + " where id = 1",
-              attributes, true).execute();
-          queryService.newCq("client1DCQ2", "Select * From /" + regionName + " where id = 10",
-              attributes, true).execute();
-          queryService.newCq("client1NoDC1", "Select * From /" + regionName, attributes, false)
+          queryService
+              .newCq("client1DCQ1", "Select * From " + SEPARATOR + regionName + " where id = 1",
+                  attributes, true)
               .execute();
-          queryService.newCq("client1NoDC2", "Select * From /" + regionName + " where id = 3",
-              attributes, false).execute();
+          queryService
+              .newCq("client1DCQ2", "Select * From " + SEPARATOR + regionName + " where id = 10",
+                  attributes, true)
+              .execute();
+          queryService
+              .newCq("client1NoDC1", "Select * From " + SEPARATOR + regionName, attributes, false)
+              .execute();
+          queryService
+              .newCq("client1NoDC2", "Select * From " + SEPARATOR + regionName + " where id = 3",
+                  attributes, false)
+              .execute();
         } catch (RegionNotFoundException e) {
           fail("failed", e);
         } catch (CqException e) {
@@ -1402,14 +1437,21 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
         CqAttributesFactory cqAf = new CqAttributesFactory();
         CqAttributes attributes = cqAf.create();
         try {
-          queryService.newCq("client2DCQ1", "Select * From /" + regionName + " where id = 1",
-              attributes, true).execute();
-          queryService.newCq("client2DCQ2", "Select * From /" + regionName + " where id = 10",
-              attributes, true).execute();
-          queryService.newCq("client2DCQ3", "Select * From /" + regionName, attributes, true)
+          queryService
+              .newCq("client2DCQ1", "Select * From " + SEPARATOR + regionName + " where id = 1",
+                  attributes, true)
               .execute();
-          queryService.newCq("client2DCQ4", "Select * From /" + regionName + " where id = 3",
-              attributes, true).execute();
+          queryService
+              .newCq("client2DCQ2", "Select * From " + SEPARATOR + regionName + " where id = 10",
+                  attributes, true)
+              .execute();
+          queryService
+              .newCq("client2DCQ3", "Select * From " + SEPARATOR + regionName, attributes, true)
+              .execute();
+          queryService
+              .newCq("client2DCQ4", "Select * From " + SEPARATOR + regionName + " where id = 3",
+                  attributes, true)
+              .execute();
         } catch (RegionNotFoundException e) {
           fail("failed", e);
         } catch (CqException e) {
@@ -1459,7 +1501,7 @@ public class CqDataUsingPoolDUnitTest extends JUnit4CacheTestCase {
     QueryService queryService = CacheServerTestUtil.getCache().getQueryService();
     CqQuery query = null;
     try {
-      query = queryService.newCq(cqName, "Select * from /" + regionName, cqa);
+      query = queryService.newCq(cqName, "Select * from " + SEPARATOR + regionName, cqa);
       query.execute();
     } catch (CqExistsException e) {
       fail("Could not find specified region:" + regionName + ":", e);

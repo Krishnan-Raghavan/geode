@@ -14,23 +14,22 @@
  */
 package org.apache.geode.internal.cache.rollingupgrade;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.Version;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.version.VersionManager;
 
 public class RollingUpgradeTracePRQuery extends RollingUpgrade2DUnitTestBase {
 
@@ -58,7 +57,7 @@ public class RollingUpgradeTracePRQuery extends RollingUpgrade2DUnitTestBase {
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -66,8 +65,10 @@ public class RollingUpgradeTracePRQuery extends RollingUpgrade2DUnitTestBase {
       props.put(DistributionConfig.LOCATORS_NAME, serverHostName + "[" + port + "]");
       invokeRunnableInVMs(invokeCreateCache(props), currentServer1, currentServer2, oldServer);
 
-      currentServer1.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
-      currentServer2.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+      currentServer1
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
+      currentServer2
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
 
       // create region
       invokeRunnableInVMs(invokeCreateRegion(regionName, shortcut), currentServer1, currentServer2,
@@ -76,14 +77,15 @@ public class RollingUpgradeTracePRQuery extends RollingUpgrade2DUnitTestBase {
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
 
       putDataSerializableAndVerify(currentServer1, regionName, 0, 100, currentServer2, oldServer,
           oldServerAndLocator);
-      query("<trace> Select * from /" + regionName + " p where p.timeout > 0L", 99, currentServer1,
+      query("<trace> Select * from " + SEPARATOR + regionName + " p where p.timeout > 0L", 99,
+          currentServer1,
           currentServer2, oldServer, oldServerAndLocator);
 
     } finally {

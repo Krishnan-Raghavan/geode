@@ -16,15 +16,14 @@ package org.apache.geode.cache.lucene;
 
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.INDEX_NAME;
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.REGION_NAME;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -42,7 +41,7 @@ import org.apache.geode.cache.lucene.internal.LuceneServiceImpl;
 import org.apache.geode.cache.partition.PartitionMemberInfo;
 import org.apache.geode.cache.partition.PartitionRebalanceInfo;
 import org.apache.geode.cache.partition.PartitionRegionInfo;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.SerializableRunnable;
@@ -60,6 +59,7 @@ public class RebalanceWithRedundancyWithRegionCreatedBeforeReindexDUnitTest
   protected VM dataStore3;
   protected VM dataStore4;
 
+  @Override
   public void postSetUp() throws Exception {
     super.postSetUp();
     dataStore3 = Host.getHost(0).getVM(2);
@@ -94,6 +94,7 @@ public class RebalanceWithRedundancyWithRegionCreatedBeforeReindexDUnitTest
   }
 
   protected SerializableRunnable createIndex = new SerializableRunnable("createIndex") {
+    @Override
     public void run() {
       LuceneService luceneService = LuceneServiceProvider.get(getCache());
       ((LuceneIndexFactoryImpl) luceneService.createIndexFactory()).addField("text")
@@ -102,6 +103,7 @@ public class RebalanceWithRedundancyWithRegionCreatedBeforeReindexDUnitTest
   };
 
   protected SerializableRunnable rebalance = new SerializableRunnable("rebalance") {
+    @Override
     public void run() throws InterruptedException {
       Cache cache = getCache();
       cache.getRegion(REGION_NAME);
@@ -112,13 +114,14 @@ public class RebalanceWithRedundancyWithRegionCreatedBeforeReindexDUnitTest
       RebalanceResults rebalanceResults = null;
       RebalanceOperation rebalanceOp = factory.start();
       rebalanceResults = rebalanceOp.getResults();
-      Awaitility.await().atMost(60, TimeUnit.SECONDS).until(() -> rebalanceOp.isDone());
+      await().until(() -> rebalanceOp.isDone());
       logger.info("Rebalance completed: "
           + RebalanceResultsToString(rebalanceResults, "Rebalance completed"));
     }
   };
 
   protected SerializableRunnable doConcOps = new SerializableRunnable("doConcOps") {
+    @Override
     public void run() {
       putEntryInEachBucket(113);
     }

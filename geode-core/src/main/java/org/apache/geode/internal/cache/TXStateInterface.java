@@ -12,9 +12,6 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-/**
- * File comment
- */
 package org.apache.geode.internal.cache;
 
 import java.util.Collection;
@@ -101,6 +98,7 @@ public interface TXStateInterface extends Synchronization, InternalDataView {
 
   Collection<InternalRegion> getRegions();
 
+  @Override
   void invalidateExistingEntry(final EntryEventImpl event, boolean invokeCallbacks,
       boolean forceNewEntry);
 
@@ -108,14 +106,8 @@ public interface TXStateInterface extends Synchronization, InternalDataView {
    * @return a Region.Entry if it exists either in committed state or in transactional state,
    *         otherwise returns null
    */
+  @Override
   Entry getEntry(final KeyInfo keyInfo, final LocalRegion region, boolean allowTombstones);
-
-  /**
-   * @param updateStats TODO
-   */
-  Object getDeserializedValue(KeyInfo keyInfo, LocalRegion localRegion, boolean updateStats,
-      boolean disableCopyOnRead, boolean preferCD, EntryEventImpl clientEvent,
-      boolean returnTombstones, boolean retainResult);
 
   TXEvent getEvent();
 

@@ -46,8 +46,9 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
   /**
    * Returns the attributes of a region to be tested.
    */
-  protected RegionAttributes getRegionAttributes() {
-    AttributesFactory factory = new AttributesFactory();
+  @Override
+  protected <K, V> RegionAttributes<K, V> getRegionAttributes() {
+    AttributesFactory<K, V> factory = new AttributesFactory<>();
     factory.setScope(Scope.LOCAL);
     factory.setConcurrencyChecksEnabled(false);
     return factory.create();
@@ -115,6 +116,7 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
     final Object key = this.getUniqueName();
 
     TestCacheLoader loader = new TestCacheLoader() {
+      @Override
       public Object load2(LoaderHelper helper) throws CacheLoaderException {
 
         try {
@@ -139,7 +141,7 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
 
     } catch (CacheLoaderException ex) {
       String expected =
-          org.apache.geode.internal.cache.LoaderHelperImpl.NET_SEARCH_LOCAL.toLocalizedString();
+          org.apache.geode.internal.cache.LoaderHelperImpl.NET_SEARCH_LOCAL;
       String message = ex.getMessage();
       assertTrue("Unexpected message \"" + message + "\"", message.indexOf(expected) != -1);
     }
@@ -158,6 +160,7 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
     final Object two = "TWO";
 
     TestCacheLoader loader = new TestCacheLoader() {
+      @Override
       public Object load2(LoaderHelper helper) throws CacheLoaderException {
 
         Object[] array = (Object[]) helper.getArgument();
@@ -169,6 +172,7 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
     };
 
     TestCacheWriter writer = new TestCacheWriter() {
+      @Override
       public void beforeCreate2(EntryEvent event) throws CacheWriterException {
 
         Object[] array = (Object[]) event.getCallbackArgument();
@@ -200,6 +204,7 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
     final Object two = "TWO";
 
     TestCacheLoader loader = new TestCacheLoader() {
+      @Override
       public Object load2(LoaderHelper helper) throws CacheLoaderException {
 
         Object[] array = (Object[]) helper.getArgument();
@@ -211,10 +216,12 @@ public class LocalRegionDUnitTest extends CacheListenerTestCase {
     };
 
     TestCacheWriter writer = new TestCacheWriter() {
+      @Override
       public void beforeCreate2(EntryEvent event) throws CacheWriterException {
 
       }
 
+      @Override
       public void beforeUpdate2(EntryEvent event) throws CacheWriterException {
 
         Object[] array = (Object[]) event.getCallbackArgument();

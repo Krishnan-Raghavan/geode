@@ -26,6 +26,8 @@ import org.apache.geode.distributed.internal.PooledDistributionMessage;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.InternalStatisticsDisabledException;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * Sends the region name and key of the entry that we want the last access time for. If for any
@@ -60,32 +62,40 @@ public class LatestLastAccessTimeMessage<K> extends PooledDistributionMessage
   @Override
   protected void process(ClusterDistributionManager dm) {
     long latestLastAccessTime = 0L;
+    InternalCache cache = dm.getCache();
+    if (cache == null) {
+      return;
+    }
     InternalDistributedRegion region =
-        (InternalDistributedRegion) dm.getCache().getRegion(this.regionName);
-    if (region != null) {
-      RegionEntry entry = region.getRegionEntry(this.key);
-      if (entry != null) {
-        try {
-          latestLastAccessTime = entry.getLastAccessed();
-        } catch (InternalStatisticsDisabledException ignored) {
-          // last access time is not available
-        }
-      }
+        (InternalDistributedRegion) cache.getRegion(this.regionName);
+    if (region == null) {
+      return;
+    }
+    RegionEntry entry = region.getRegionEntry(this.key);
+    if (entry == null) {
+      return;
+    }
+    try {
+      latestLastAccessTime = entry.getLastAccessed();
+    } catch (InternalStatisticsDisabledException ignored) {
+      // last access time is not available
     }
     ReplyMessage.send(getSender(), this.processorId, latestLastAccessTime, dm);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.processorId = DataSerializer.readPrimitiveInt(in);
     this.regionName = DataSerializer.readString(in);
     this.key = DataSerializer.readObject(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writePrimitiveInt(this.processorId, out);
     DataSerializer.writeString(this.regionName, out);
     DataSerializer.writeObject(this.key, out);

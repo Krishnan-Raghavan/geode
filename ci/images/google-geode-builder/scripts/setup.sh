@@ -28,11 +28,13 @@ apt-get install -y --no-install-recommends \
   lsb-release
 
 echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
-echo "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+echo "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+echo "deb [arch=amd64] https://apt.bell-sw.com/ stable main" | sudo tee /etc/apt/sources.list.d/bellsoft.list
 curl -sSL https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
-curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+curl -fsSL https://download.bell-sw.com/pki/GPG-KEY-bellsoft | apt-key add -
 apt-get update
-apt-get purge -y google-cloud-sdk lxc-docker
+set +e && apt-get purge -y google-cloud-sdk lxc-docker && set -e
 apt-get install -y --no-install-recommends \
     aptitude \
     ca-certificates \
@@ -44,13 +46,22 @@ apt-get install -y --no-install-recommends \
     htop \
     jq \
     less \
-    openjdk-8-jdk-headless \
+    lsof \
+    net-tools \
     python3 \
     python3-pip \
     rsync \
     tmux \
     unzip \
     vim
+
+cp -R /etc/alternatives /etc/keep-alternatives
+apt-get install -y --no-install-recommends \
+    bellsoft-java11 \
+    bellsoft-java8
+rm -rf /etc/alternatives
+mv /etc/keep-alternatives /etc/alternatives
+
 pushd /tmp
   curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz
   tar xzf google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz -C /
@@ -78,6 +89,6 @@ ln -fs /opt/selenium/chromedriver-${CHROME_DRIVER_VERSION} /usr/bin/chromedriver
 adduser --disabled-password --gecos "" --uid ${LOCAL_UID} ${LOCAL_USER}
 usermod -G docker,google-sudoers -a ${LOCAL_USER}
 echo "export PATH=/google-cloud-sdk/bin:${PATH}" > /etc/profile.d/google_sdk_path.sh
-
+apt-get remove -y unattended-upgrades && apt-get -y autoremove
 apt-get clean
 rm -rf /var/lib/apt/lists/*

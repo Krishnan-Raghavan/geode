@@ -15,15 +15,14 @@
 
 package org.apache.geode.internal.cache.tier.sockets;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 import java.util.Properties;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -39,9 +38,9 @@ import org.apache.geode.cache.client.ClientRegionShortcut;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache.util.CacheWriterAdapter;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.internal.cache.InternalCacheServer;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
@@ -160,7 +159,7 @@ public class AcceptorImplDUnitTest extends JUnit4DistributedTestCase {
       assertTrue(cache.isServer());
       assertFalse(cache.isClosed());
 
-      Awaitility.await("Acceptor is up and running").atMost(10, SECONDS)
+      await("Acceptor is up and running")
           .until(() -> getAcceptorImplFromCache(cache) != null);
       AcceptorImpl acceptorImpl = getAcceptorImplFromCache(cache);
 
@@ -173,23 +172,24 @@ public class AcceptorImplDUnitTest extends JUnit4DistributedTestCase {
         clientCacheFactory.setPoolRetryAttempts(1);
         clientCacheFactory.setPoolMaxConnections(1);
         clientCacheFactory.setPoolFreeConnectionTimeout(1000);
+        clientCacheFactory.setPoolServerConnectionTimeout(1000);
         ClientCache clientCache = clientCacheFactory.create();
         Region<Object, Object> clientRegion1 =
             clientCache.createClientRegionFactory(ClientRegionShortcut.PROXY).create("region1");
         clientRegion1.put("foo", "bar");
       });
 
-      Awaitility.await("Cache writer starts").atMost(10, SECONDS)
+      await("Cache writer starts")
           .until(sleepyCacheWriter::isStarted);
 
       cache.close();
 
-      Awaitility.await("Cache writer interrupted").atMost(10, SECONDS)
+      await("Cache writer interrupted")
           .until(sleepyCacheWriter::isInterrupted);
 
       sleepyCacheWriter.stopWaiting();
 
-      Awaitility.await("Acceptor shuts down properly").atMost(10, SECONDS)
+      await("Acceptor shuts down properly")
           .until(() -> acceptorImpl.isShutdownProperly());
 
       ThreadUtils.dumpMyThreads(); // for debugging.
@@ -217,13 +217,13 @@ public class AcceptorImplDUnitTest extends JUnit4DistributedTestCase {
 
       assertTrue(cache.isServer());
       assertFalse(cache.isClosed());
-      Awaitility.await("Acceptor is up and running").atMost(10, SECONDS)
+      await("Acceptor is up and running")
           .until(() -> getAcceptorImplFromCache(cache) != null);
 
       AcceptorImpl acceptorImpl = getAcceptorImplFromCache(cache);
 
       cache.close();
-      Awaitility.await("Acceptor shuts down properly").atMost(10, SECONDS)
+      await("Acceptor shuts down properly")
           .until(acceptorImpl::isShutdownProperly);
 
       assertTrue(cache.isClosed());
@@ -242,7 +242,7 @@ public class AcceptorImplDUnitTest extends JUnit4DistributedTestCase {
       return null;
     }
 
-    CacheServerImpl cacheServerImpl = (CacheServerImpl) cacheServers.get(0);
-    return cacheServerImpl.getAcceptor();
+    InternalCacheServer cacheServer = (InternalCacheServer) cacheServers.get(0);
+    return (AcceptorImpl) cacheServer.getAcceptor();
   }
 }

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.partitioned;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER;
 import static org.apache.geode.test.dunit.Host.getHost;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
@@ -42,6 +43,8 @@ import org.apache.geode.cache.query.QueryException;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.internal.DefaultQuery;
+import org.apache.geode.cache.query.internal.ExecutionContext;
+import org.apache.geode.cache.query.internal.QueryExecutionContext;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionQueryEvaluator;
 import org.apache.geode.test.dunit.VM;
@@ -113,6 +116,7 @@ public class PRQueryDUnitTest extends CacheTestCase {
 
     DefaultQuery query = (DefaultQuery) getCache().getQueryService()
         .newQuery("select distinct * from " + region.getFullPath());
+    final ExecutionContext executionContext = new QueryExecutionContext(null, getCache(), query);
     SelectResults results =
         query.getSimpleSelect().getEmptyResultSet(EMPTY_PARAMETERS, getCache(), query);
 
@@ -124,6 +128,7 @@ public class PRQueryDUnitTest extends CacheTestCase {
     PartitionedRegion partitionedRegion = (PartitionedRegion) region;
     PartitionedRegionQueryEvaluator queryEvaluator =
         new PartitionedRegionQueryEvaluator(partitionedRegion.getSystem(), partitionedRegion, query,
+            executionContext,
             EMPTY_PARAMETERS, results, buckets);
 
     DisconnectingTestHook testHook = new DisconnectingTestHook();
@@ -155,22 +160,25 @@ public class PRQueryDUnitTest extends CacheTestCase {
         bucketsToQuery.add(i);
       }
 
-      String[] queries = new String[] {"select * from /" + regionName + " LIMIT " + LIMIT[0],
-          "select * from /" + regionName + " LIMIT " + LIMIT[1],
-          "select * from /" + regionName + " LIMIT " + LIMIT[2],
-          "select * from /" + regionName + " LIMIT " + LIMIT[3],
-          "select * from /" + regionName + " LIMIT " + LIMIT[4],
-          "select * from /" + regionName + " where ID > 10 LIMIT " + LIMIT[5],};
+      String[] queries =
+          new String[] {"select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[0],
+              "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[1],
+              "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[2],
+              "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[3],
+              "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[4],
+              "select * from " + SEPARATOR + regionName + " where ID > 10 LIMIT " + LIMIT[5],};
 
       for (int i = 0; i < queries.length; i++) {
         DefaultQuery query = (DefaultQuery) getCache().getQueryService().newQuery(queries[i]);
+        final ExecutionContext executionContext =
+            new QueryExecutionContext(null, getCache(), query);
         SelectResults results =
             query.getSimpleSelect().getEmptyResultSet(EMPTY_PARAMETERS, getCache(), query);
 
         PartitionedRegion partitionedRegion = (PartitionedRegion) region;
         PartitionedRegionQueryEvaluator queryEvaluator =
             new PartitionedRegionQueryEvaluator(partitionedRegion.getSystem(), partitionedRegion,
-                query, EMPTY_PARAMETERS, results, bucketsToQuery);
+                query, executionContext, EMPTY_PARAMETERS, results, bucketsToQuery);
 
         CollatingTestHook testHook = new CollatingTestHook(queryEvaluator);
         queryEvaluator.queryBuckets(testHook);
@@ -203,22 +211,24 @@ public class PRQueryDUnitTest extends CacheTestCase {
       buckets.add(i);
     }
 
-    String[] queries = new String[] {"select * from /" + regionName + " LIMIT " + LIMIT[0],
-        "select * from /" + regionName + " LIMIT " + LIMIT[1],
-        "select * from /" + regionName + " LIMIT " + LIMIT[2],
-        "select * from /" + regionName + " LIMIT " + LIMIT[3],
-        "select * from /" + regionName + " LIMIT " + LIMIT[4],
-        "select * from /" + regionName + " where ID > 10 LIMIT " + LIMIT[5],};
+    String[] queries =
+        new String[] {"select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[0],
+            "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[1],
+            "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[2],
+            "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[3],
+            "select * from " + SEPARATOR + regionName + " LIMIT " + LIMIT[4],
+            "select * from " + SEPARATOR + regionName + " where ID > 10 LIMIT " + LIMIT[5],};
 
     for (int i = 0; i < queries.length; i++) {
       DefaultQuery query = (DefaultQuery) getCache().getQueryService().newQuery(queries[i]);
+      final ExecutionContext executionContext = new QueryExecutionContext(null, getCache(), query);
       SelectResults results =
           query.getSimpleSelect().getEmptyResultSet(EMPTY_PARAMETERS, getCache(), query);
 
       PartitionedRegion partitionedRegion = (PartitionedRegion) region;
       PartitionedRegionQueryEvaluator queryEvaluator =
           new PartitionedRegionQueryEvaluator(partitionedRegion.getSystem(), partitionedRegion,
-              query, EMPTY_PARAMETERS, results, buckets);
+              query, executionContext, EMPTY_PARAMETERS, results, buckets);
 
       CollatingTestHook testHook = new CollatingTestHook(queryEvaluator);
       queryEvaluator.queryBuckets(testHook);
@@ -257,7 +267,8 @@ public class PRQueryDUnitTest extends CacheTestCase {
       region.put(1, "one");
 
       DefaultQuery query = (DefaultQuery) getCache().getQueryService()
-          .newQuery("select distinct * from /" + regionName);
+          .newQuery("select distinct * from " + SEPARATOR + regionName);
+      final ExecutionContext executionContext = new QueryExecutionContext(null, getCache(), query);
       SelectResults results =
           query.getSimpleSelect().getEmptyResultSet(EMPTY_PARAMETERS, getCache(), query);
 
@@ -270,7 +281,7 @@ public class PRQueryDUnitTest extends CacheTestCase {
       PartitionedRegion partitionedRegion = (PartitionedRegion) region;
       PartitionedRegionQueryEvaluator queryEvaluator =
           new PartitionedRegionQueryEvaluator(partitionedRegion.getSystem(), partitionedRegion,
-              query, EMPTY_PARAMETERS, results, buckets);
+              query, executionContext, EMPTY_PARAMETERS, results, buckets);
 
       assertThatThrownBy(() -> queryEvaluator.queryBuckets(null))
           .isInstanceOf(QueryException.class);

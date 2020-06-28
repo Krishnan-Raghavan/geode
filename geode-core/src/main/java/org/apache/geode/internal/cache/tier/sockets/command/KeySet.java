@@ -20,6 +20,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.TransactionException;
 import org.apache.geode.cache.operations.KeySetOperationContext;
@@ -32,8 +33,6 @@ import org.apache.geode.internal.cache.tier.sockets.ChunkedMessage;
 import org.apache.geode.internal.cache.tier.sockets.Message;
 import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.ServerConnection;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.security.AuthorizeRequest;
 import org.apache.geode.internal.security.AuthorizeRequestPP;
 import org.apache.geode.internal.security.SecurityService;
@@ -43,6 +42,7 @@ import org.apache.geode.security.ResourcePermission.Resource;
 
 public class KeySet extends BaseCommand {
 
+  @Immutable
   private static final KeySet singleton = new KeySet();
 
   public static Command getCommand() {
@@ -59,7 +59,7 @@ public class KeySet extends BaseCommand {
 
     // Retrieve the region name from the message parts
     regionNamePart = clientMessage.getPart(0);
-    regionName = regionNamePart.getString();
+    regionName = regionNamePart.getCachedString();
     ChunkedMessage chunkedResponseMsg = serverConnection.getChunkedResponseMessage();
     final boolean isDebugEnabled = logger.isDebugEnabled();
     if (isDebugEnabled) {
@@ -73,11 +73,10 @@ public class KeySet extends BaseCommand {
       String message = null;
       // if (regionName == null) (can only be null)
       {
-        message = LocalizedStrings.KeySet_0_THE_INPUT_REGION_NAME_FOR_THE_KEY_SET_REQUEST_IS_NULL
-            .toLocalizedString(serverConnection.getName());
-        logger.warn(LocalizedMessage.create(
-            LocalizedStrings.KeySet_0_THE_INPUT_REGION_NAME_FOR_THE_KEY_SET_REQUEST_IS_NULL,
-            serverConnection.getName()));
+        message = String.format("%s: The input region name for the key set request is null",
+            serverConnection.getName());
+        logger.warn("{}: The input region name for the key set request is null",
+            serverConnection.getName());
       }
       writeKeySetErrorResponse(clientMessage, MessageType.KEY_SET_DATA_ERROR, message,
           serverConnection);
@@ -87,8 +86,8 @@ public class KeySet extends BaseCommand {
 
     LocalRegion region = (LocalRegion) serverConnection.getCache().getRegion(regionName);
     if (region == null) {
-      String reason = LocalizedStrings.KeySet__0_WAS_NOT_FOUND_DURING_KEY_SET_REQUEST
-          .toLocalizedString(regionName);
+      String reason = String.format("%s was not found during key set request",
+          regionName);
       writeRegionDestroyedEx(clientMessage, regionName, reason, serverConnection);
       serverConnection.setAsTrue(RESPONDED);
       return;

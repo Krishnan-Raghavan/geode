@@ -28,7 +28,7 @@ import org.apache.lucene.document.Document;
 
 import org.apache.geode.cache.lucene.LuceneIndex;
 import org.apache.geode.cache.lucene.LuceneSerializer;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A lucene serializer that handles a single class and can map an instance of that class to a
@@ -41,8 +41,7 @@ class ReflectionLuceneSerializer implements LuceneSerializer {
   private static final Logger logger = LogService.getLogger();
 
   public ReflectionLuceneSerializer(Class<? extends Object> clazz, String[] indexedFields) {
-    Set<String> fieldSet = new HashSet<String>();
-    fieldSet.addAll(Arrays.asList(indexedFields));
+    Set<String> fieldSet = new HashSet<String>(Arrays.asList(indexedFields));
 
     // Iterate through all declared fields and save them
     // in a list if they are an indexed field and have the correct

@@ -16,8 +16,7 @@
 package org.apache.geode.internal;
 
 import org.apache.geode.InternalGemFireError;
-import org.apache.geode.distributed.internal.DistributionConfig;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Support for correctness assertions. "An assertion is a statement containing a boolean expression
@@ -57,8 +56,8 @@ public class Assert {
     }
   }
 
-  private static boolean debug =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "haltOnAssertFailure");
+  private static final boolean debug =
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "haltOnAssertFailure");
 
   public static void fail(Object message) {
     throwError(message);
@@ -69,7 +68,7 @@ public class Assert {
       System.out.flush();
       System.err.println("Assertion failure: " + message);
       try {
-        throw new Exception(LocalizedStrings.Assert_GET_STACK_TRACE.toLocalizedString());
+        throw new Exception("get Stack trace");
       } catch (Exception ex) {
         ex.printStackTrace();
       }

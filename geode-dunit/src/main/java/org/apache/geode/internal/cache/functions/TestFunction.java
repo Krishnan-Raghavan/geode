@@ -18,10 +18,12 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -53,7 +55,7 @@ import org.apache.geode.internal.cache.execute.InternalFunctionInvocationTargetE
 import org.apache.geode.internal.cache.execute.MyFunctionExecutionException;
 import org.apache.geode.internal.cache.execute.RegionFunctionContextImpl;
 import org.apache.geode.internal.cache.xmlcache.Declarable2;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class TestFunction<T> implements Function<T>, Declarable2, DataSerializable {
   public static final String TEST_FUNCTION10 = "TestFunction10";
@@ -203,7 +205,7 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
       logger.info("Exception in executeFunctionRunningForLongTime");
     }
 
-    context.getResultSender().lastResult("Ran executeFunctionRunningForLongTime for 10000000");
+    context.getResultSender().lastResult("Ran executeFunctionRunningForLongTime for 2000");
   }
 
   private void executeFunctionBucketFilter(FunctionContext context) {
@@ -211,17 +213,17 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
     // check if the node contains the bucket passed as filter
     RegionFunctionContextImpl rfc = (RegionFunctionContextImpl) context;
     PartitionedRegion pr = (PartitionedRegion) rfc.getDataSet();
-    Set<Integer> bucketIDs = rfc.getLocalBucketSet(pr);
-    pr.getGemFireCache().getLogger().fine("LOCAL BUCKETSET =" + bucketIDs);
+    int[] bucketIDs = rfc.getLocalBucketArray(pr);
+    pr.getGemFireCache().getLogger().fine("LOCAL BUCKETSET =" + Arrays.toString(bucketIDs));
     ResultSender<Integer> rs = context.<Integer>getResultSender();
     if (!pr.getDataStore().areAllBucketsHosted(bucketIDs)) {
-      throw new AssertionError("bucket IDs =" + bucketIDs + " not all hosted locally");
+      throw new AssertionError(
+          "bucket IDs =" + Arrays.toString(bucketIDs) + " not all hosted locally");
     } else {
-      Integer[] bucketIds = bucketIDs.toArray(new Integer[0]);
-      for (int i = 0; i < bucketIds.length - 1; ++i) {
-        rs.sendResult(bucketIds[i]);
+      for (int i = 1; i < bucketIDs[0]; ++i) {
+        rs.sendResult(bucketIDs[i]);
       }
-      rs.lastResult(bucketIds[bucketIds.length - 1]);
+      rs.lastResult(bucketIDs[bucketIDs[0]]);
     }
   }
 
@@ -549,7 +551,6 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
         }
       } else if (rfContext.getArguments() instanceof Set) {
         Set origKeys = (Set) rfContext.getArguments();
-        ArrayList vals = new ArrayList();
         for (Iterator i = origKeys.iterator(); i.hasNext();) {
           Object val;
           if (context instanceof RegionFunctionContext) {
@@ -564,9 +565,6 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
           else
             rfContext.getResultSender().lastResult(val);
 
-          if (val != null) {
-            vals.add(val);
-          }
         }
       } else if (rfContext.getArguments() instanceof HashMap) {
         HashMap putData = (HashMap) rfContext.getArguments();
@@ -1034,6 +1032,11 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
   }
 
   @Override
+  public int hashCode() {
+    return Objects.hash(props);
+  }
+
+  @Override
   public boolean hasResult() {
     return Boolean.valueOf(this.props.getProperty(HAVE_RESULTS));
   }
@@ -1043,6 +1046,7 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
    *
    * @see org.apache.geode.internal.cache.xmlcache.Declarable2#getConfig()
    */
+  @Override
   public Properties getConfig() {
     return this.props;
   }
@@ -1052,6 +1056,7 @@ public class TestFunction<T> implements Function<T>, Declarable2, DataSerializab
    *
    * @see org.apache.geode.cache.Declarable#init(java.util.Properties)
    */
+  @Override
   public void init(Properties props) {
     this.props.putAll(props);
   }

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -41,6 +42,7 @@ import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.internal.DefaultQuery;
 import org.apache.geode.cache.query.internal.DefaultQuery.TestHook;
+import org.apache.geode.cache.query.internal.ExecutionContext;
 import org.apache.geode.internal.cache.persistence.query.CloseableIterator;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
 
@@ -64,12 +66,12 @@ public class CompactRangeIndexJUnitTest {
   @Test
   public void testCompactRangeIndex() throws Exception {
     System.setProperty("index_elemarray_threshold", "3");
-    index = utils.createIndex("type", "\"type\"", "/exampleRegion");
+    index = utils.createIndex("type", "\"type\"", SEPARATOR + "exampleRegion");
     putValues(9);
     isUsingIndexElemArray("type1");
     putValues(10);
     isUsingConcurrentHashSet("type1");
-    utils.removeIndex("type", "/exampleRegion");
+    utils.removeIndex("type", SEPARATOR + "exampleRegion");
     executeQueryWithAndWithoutIndex(4);
     putOffsetValues(2);
     executeQueryWithCount();
@@ -84,7 +86,7 @@ public class CompactRangeIndexJUnitTest {
    */
   @Test
   public void testNullKeyCompactRangeIndex() throws Exception {
-    index = utils.createIndex("indexName", "status", "/exampleRegion");
+    index = utils.createIndex("indexName", "status", SEPARATOR + "exampleRegion");
     Region region = utils.getCache().getRegion("exampleRegion");
 
     // create objects
@@ -97,7 +99,7 @@ public class CompactRangeIndexJUnitTest {
     // execute query and check result size
     QueryService qs = utils.getCache().getQueryService();
     SelectResults results = (SelectResults) qs
-        .newQuery("Select * from /exampleRegion r where r.status = null").execute();
+        .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status = null").execute();
     assertEquals("Null matched Results expected", numObjects, results.size());
   }
 
@@ -106,7 +108,7 @@ public class CompactRangeIndexJUnitTest {
    */
   @Test
   public void testNullMapKeyCompactRangeIndex() throws Exception {
-    index = utils.createIndex("indexName", "positions[*]", "/exampleRegion");
+    index = utils.createIndex("indexName", "positions[*]", SEPARATOR + "exampleRegion");
     Region region = utils.getCache().getRegion("exampleRegion");
 
     // create objects
@@ -120,7 +122,9 @@ public class CompactRangeIndexJUnitTest {
     // execute query and check result size
     QueryService qs = utils.getCache().getQueryService();
     SelectResults results = (SelectResults) qs
-        .newQuery("Select * from /exampleRegion r where r.position[null] = something").execute();
+        .newQuery(
+            "Select * from " + SEPARATOR + "exampleRegion r where r.position[null] = something")
+        .execute();
     assertEquals("Null matched Results expected", numObjects, results.size());
   }
 
@@ -139,11 +143,13 @@ public class CompactRangeIndexJUnitTest {
       p.getPositions().put(null, "something");
       region.put("KEY-" + i, p);
     }
-    index = utils.createIndex("indexName", "positions[*]", "/exampleRegion");
+    index = utils.createIndex("indexName", "positions[*]", SEPARATOR + "exampleRegion");
     // execute query and check result size
     QueryService qs = utils.getCache().getQueryService();
     SelectResults results = (SelectResults) qs
-        .newQuery("Select * from /exampleRegion r where r.position[null] = something").execute();
+        .newQuery(
+            "Select * from " + SEPARATOR + "exampleRegion r where r.position[null] = something")
+        .execute();
     assertEquals("Null matched Results expected", numObjects, results.size());
   }
 
@@ -155,8 +161,8 @@ public class CompactRangeIndexJUnitTest {
   @Test
   public void testCompactRangeIndexMemoryIndexStoreMaintenance() throws Exception {
     try {
-      index = utils.createIndex("compact range index", "p.status", "/exampleRegion p");
-      final Region r = utils.getCache().getRegion("/exampleRegion");
+      index = utils.createIndex("compact range index", "p.status", SEPARATOR + "exampleRegion p");
+      final Region r = utils.getCache().getRegion(SEPARATOR + "exampleRegion");
       Portfolio p0 = new Portfolio(0);
       p0.status = "active";
       final Portfolio p1 = new Portfolio(1);
@@ -167,6 +173,7 @@ public class CompactRangeIndexJUnitTest {
       final CountDownLatch threadsDone = new CountDownLatch(2);
 
       Thread t1 = new Thread(new Runnable() {
+        @Override
         public void run() {
           r.put("1", p1);
           threadsDone.countDown();
@@ -175,6 +182,7 @@ public class CompactRangeIndexJUnitTest {
       t1.start();
 
       Thread t0 = new Thread(new Runnable() {
+        @Override
         public void run() {
           r.remove("0");
           threadsDone.countDown();
@@ -185,12 +193,14 @@ public class CompactRangeIndexJUnitTest {
       threadsDone.await(90, TimeUnit.SECONDS);
       QueryService qs = utils.getCache().getQueryService();
       SelectResults results = (SelectResults) qs
-          .newQuery("Select * from /exampleRegion r where r.status='active'").execute();
+          .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status='active'")
+          .execute();
       // the remove should have happened
       assertEquals(1, results.size());
 
       results = (SelectResults) qs
-          .newQuery("Select * from /exampleRegion r where r.status!='inactive'").execute();
+          .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status!='inactive'")
+          .execute();
       assertEquals(1, results.size());
 
       CompactRangeIndex cindex = (CompactRangeIndex) index;
@@ -216,8 +226,8 @@ public class CompactRangeIndexJUnitTest {
   public void testMemoryIndexStoreMaintenanceTransitionFromElemArrayToTokenToConcurrentHashSet()
       throws Exception {
     try {
-      index = utils.createIndex("compact range index", "p.status", "/exampleRegion p");
-      final Region r = utils.getCache().getRegion("/exampleRegion");
+      index = utils.createIndex("compact range index", "p.status", SEPARATOR + "exampleRegion p");
+      final Region r = utils.getCache().getRegion(SEPARATOR + "exampleRegion");
       Portfolio p0 = new Portfolio(0);
       p0.status = "active";
       Portfolio p1 = new Portfolio(1);
@@ -234,6 +244,7 @@ public class CompactRangeIndexJUnitTest {
       DefaultQuery.testHook = new MemoryIndexStoreIndexElemToTokenToConcurrentHashSetTestHook();
       final CountDownLatch threadsDone = new CountDownLatch(2);
       Thread t2 = new Thread(new Runnable() {
+        @Override
         public void run() {
           r.put("2", p2);
           threadsDone.countDown();
@@ -243,6 +254,7 @@ public class CompactRangeIndexJUnitTest {
       t2.start();
 
       Thread t0 = new Thread(new Runnable() {
+        @Override
         public void run() {
           r.remove("0");
           threadsDone.countDown();
@@ -253,12 +265,14 @@ public class CompactRangeIndexJUnitTest {
       threadsDone.await(90, TimeUnit.SECONDS);
       QueryService qs = utils.getCache().getQueryService();
       SelectResults results = (SelectResults) qs
-          .newQuery("Select * from /exampleRegion r where r.status='active'").execute();
+          .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status='active'")
+          .execute();
       // the remove should have happened
       assertEquals(3, results.size());
 
       results = (SelectResults) qs
-          .newQuery("Select * from /exampleRegion r where r.status!='inactive'").execute();
+          .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status!='inactive'")
+          .execute();
       assertEquals(3, results.size());
 
       CompactRangeIndex cindex = (CompactRangeIndex) index;
@@ -278,18 +292,20 @@ public class CompactRangeIndexJUnitTest {
 
   @Test
   public void testInvalidTokens() throws Exception {
-    final Region r = utils.getCache().getRegion("/exampleRegion");
+    final Region r = utils.getCache().getRegion(SEPARATOR + "exampleRegion");
     r.put("0", new Portfolio(0));
     r.invalidate("0");
-    index = utils.createIndex("compact range index", "p.status", "/exampleRegion p");
+    index = utils.createIndex("compact range index", "p.status", SEPARATOR + "exampleRegion p");
     QueryService qs = utils.getCache().getQueryService();
     SelectResults results = (SelectResults) qs
-        .newQuery("Select * from /exampleRegion r where r.status='active'").execute();
+        .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status='active'")
+        .execute();
     // the remove should have happened
     assertEquals(0, results.size());
 
     results = (SelectResults) qs
-        .newQuery("Select * from /exampleRegion r where r.status!='inactive'").execute();
+        .newQuery("Select * from " + SEPARATOR + "exampleRegion r where r.status!='inactive'")
+        .execute();
     assertEquals(0, results.size());
 
     CompactRangeIndex cindex = (CompactRangeIndex) index;
@@ -308,7 +324,8 @@ public class CompactRangeIndexJUnitTest {
       throws Exception {
     try {
       CompactRangeIndex.TEST_ALWAYS_UPDATE_IN_PROGRESS = true;
-      index = utils.createIndex("indexName", "getP1().getSharesOutstanding()", "/exampleRegion");
+      index = utils.createIndex("indexName", "getP1().getSharesOutstanding()",
+          SEPARATOR + "exampleRegion");
       Region region = utils.getCache().getRegion("exampleRegion");
 
       // create objects
@@ -322,7 +339,8 @@ public class CompactRangeIndexJUnitTest {
       QueryService qs = utils.getCache().getQueryService();
       SelectResults results = (SelectResults) qs
           .newQuery(
-              "<trace>SELECT DISTINCT e.key FROM /exampleRegion AS e WHERE e.ID = 1 AND e.getP1().getSharesOutstanding() >= -1 AND e.getP1().getSharesOutstanding() <= 1000 LIMIT 10 ")
+              "<trace>SELECT DISTINCT e.key FROM " + SEPARATOR
+                  + "exampleRegion AS e WHERE e.ID = 1 AND e.getP1().getSharesOutstanding() >= -1 AND e.getP1().getSharesOutstanding() <= 1000 LIMIT 10 ")
           .execute();
     } finally {
       CompactRangeIndex.TEST_ALWAYS_UPDATE_IN_PROGRESS = false;
@@ -341,30 +359,29 @@ public class CompactRangeIndexJUnitTest {
       readyToStartRemoveLatch = new CountDownLatch(1);
     }
 
-    public void doTestHook(int spot) {
-
-    }
-
-    public void doTestHook(String description) {
+    @Override
+    public void doTestHook(final SPOTS spot, final DefaultQuery _ignored,
+        final ExecutionContext executionContext) {
       try {
-        if (description.equals("ATTEMPT_REMOVE")) {
-          if (!readyToStartRemoveLatch.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError("Time ran out waiting for other thread to initiate put");
-          }
-        } else if (description.equals("TRANSITIONED_FROM_REGION_ENTRY_TO_ELEMARRAY")) {
-          readyToStartRemoveLatch.countDown();
-          if (!waitForRemoveLatch.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError("Time ran out waiting for other thread to initiate remove");
-          }
-        } else if (description.equals("BEGIN_REMOVE_FROM_ELEM_ARRAY")) {
-          waitForRemoveLatch.countDown();
-          if (waitForTransitioned.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError(
-                "Time ran out waiting for transition from region entry to elem array");
-          }
-        } else if (description.equals("TRANSITIONED_FROM_REGION_ENTRY_TO_ELEMARRAY")) {
-          waitForTransitioned.countDown();
-        } else if (description.equals("REMOVE_CALLED_FROM_ELEM_ARRAY")) {
+        switch (spot) {
+          case ATTEMPT_REMOVE:
+            if (!readyToStartRemoveLatch.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError("Time ran out waiting for other thread to initiate put");
+            }
+            break;
+          case TRANSITIONED_FROM_REGION_ENTRY_TO_ELEMARRAY:
+            readyToStartRemoveLatch.countDown();
+            if (!waitForRemoveLatch.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError("Time ran out waiting for other thread to initiate remove");
+            }
+            break;
+          case BEGIN_REMOVE_FROM_ELEM_ARRAY:
+            waitForRemoveLatch.countDown();
+            if (waitForTransitioned.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError(
+                  "Time ran out waiting for transition from region entry to elem array");
+            }
+            break;
         }
       } catch (InterruptedException e) {
         throw new AssertionError("Interrupted while waiting for test to complete");
@@ -377,7 +394,8 @@ public class CompactRangeIndexJUnitTest {
    * continue to set the token then continue and convert to chs while holding the lock to the elem
    * array still After the conversion of chs, the lock is released and then remove can proceed
    */
-  private class MemoryIndexStoreIndexElemToTokenToConcurrentHashSetTestHook implements TestHook {
+  private static class MemoryIndexStoreIndexElemToTokenToConcurrentHashSetTestHook
+      implements TestHook {
 
     private CountDownLatch waitForRemoveLatch;
     private CountDownLatch waitForTransitioned;
@@ -392,28 +410,31 @@ public class CompactRangeIndexJUnitTest {
     }
 
     @Override
-    public void doTestHook(int spot) {}
-
-    @Override
-    public void doTestHook(String description) {
+    public void doTestHook(final SPOTS spot, final DefaultQuery _ignored,
+        final ExecutionContext executionContext) {
       try {
-        if (description.equals("ATTEMPT_REMOVE")) {
-          if (!readyToStartRemoveLatch.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError("Time ran out waiting for other thread to initiate put");
-          }
-        } else if (description.equals("BEGIN_TRANSITION_FROM_ELEMARRAY_TO_CONCURRENT_HASH_SET")) {
-          readyToStartRemoveLatch.countDown();
-          if (!waitForRemoveLatch.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError("Time ran out waiting for other thread to initiate remove");
-          }
-        } else if (description.equals("BEGIN_REMOVE_FROM_ELEM_ARRAY")) {
-          waitForRemoveLatch.countDown();
-          if (!waitForTransitioned.await(21, TimeUnit.SECONDS)) {
-            throw new AssertionError(
-                "Time ran out waiting for transition from elem array to token");
-          }
-        } else if (description.equals("TRANSITIONED_FROM_ELEMARRAY_TO_TOKEN")) {
-          waitForTransitioned.countDown();
+        switch (spot) {
+          case ATTEMPT_REMOVE:
+            if (!readyToStartRemoveLatch.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError("Time ran out waiting for other thread to initiate put");
+            }
+            break;
+          case BEGIN_TRANSITION_FROM_ELEMARRAY_TO_CONCURRENT_HASH_SET:
+            readyToStartRemoveLatch.countDown();
+            if (!waitForRemoveLatch.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError("Time ran out waiting for other thread to initiate remove");
+            }
+            break;
+          case BEGIN_REMOVE_FROM_ELEM_ARRAY:
+            waitForRemoveLatch.countDown();
+            if (!waitForTransitioned.await(21, TimeUnit.SECONDS)) {
+              throw new AssertionError(
+                  "Time ran out waiting for transition from elem array to token");
+            }
+            break;
+          case TRANSITIONED_FROM_ELEMARRAY_TO_TOKEN:
+            waitForTransitioned.countDown();
+            break;
         }
       } catch (InterruptedException e) {
         throw new AssertionError("Interrupted while waiting for test to complete");
@@ -483,13 +504,13 @@ public class CompactRangeIndexJUnitTest {
     } catch (Exception e) {
       fail("Query execution failed. : " + e);
     }
-    index = utils.createIndex("type", "\"type\"", "/exampleRegion");
+    index = utils.createIndex("type", "\"type\"", SEPARATOR + "exampleRegion");
     try {
       executeSimpleQuery(expectedResults);
     } catch (Exception e) {
       fail("Query execution failed. : " + e);
     }
-    utils.removeIndex("type", "/exampleRegion");
+    utils.removeIndex("type", SEPARATOR + "exampleRegion");
   }
 
   private int executeSimpleQuery(int expResults) throws Exception {

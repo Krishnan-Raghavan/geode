@@ -25,7 +25,6 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -36,7 +35,7 @@ import org.junit.rules.TestName;
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.Statistics;
 import org.apache.geode.StatisticsType;
-import org.apache.geode.internal.net.SocketCreator;
+import org.apache.geode.internal.inet.LocalHostUtil;
 import org.apache.geode.internal.stats50.VMStats50;
 import org.apache.geode.test.junit.categories.StatisticsTest;
 
@@ -99,9 +98,8 @@ public class SimpleStatSamplerIntegrationTest extends StatSamplerTestCase {
 
     assertTrue(statsCount > 0);
 
-    Assert.assertEquals(getStatisticsManager().getId(), statSampler.getSystemId());
     assertTrue(statSampler.getSystemStartTime() <= System.currentTimeMillis());
-    assertEquals(SocketCreator.getHostName(SocketCreator.getLocalHost()),
+    assertEquals(LocalHostUtil.getLocalHostName(),
         statSampler.getSystemDirectoryPath());
 
     VMStatsContract vmStats = statSampler.getVMStats();
@@ -335,10 +333,12 @@ public class SimpleStatSamplerIntegrationTest extends StatSamplerTestCase {
 
   private void initStatisticsFactory() {
     CancelCriterion stopper = new CancelCriterion() {
+      @Override
       public String cancelInProgress() {
         return null;
       }
 
+      @Override
       public RuntimeException generateCancelledException(Throwable e) {
         return null;
       }

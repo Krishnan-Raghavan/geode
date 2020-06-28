@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertNotNull;
@@ -118,6 +119,7 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
     // wait till all the duplicates are received by client
     client1.invoke(new CacheSerializableRunnable("waitForPutToComplete") {
 
+      @Override
       public void run2() throws CacheException {
         synchronized (dummyObj) {
           while (waitFlag) {
@@ -136,6 +138,7 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
 
     // validate the duplicates received by client
     client1.invoke(new CacheSerializableRunnable("validateDuplicates") {
+      @Override
       public void run2() throws CacheException {
         if (!isEventDuplicate)
           fail(" Not all duplicates received");
@@ -153,8 +156,9 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
     createClientServerConfiguration();
     server1.invoke(new CacheSerializableRunnable("putKey") {
 
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         region.put("key1", "value1");
 
@@ -167,8 +171,9 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
 
     CacheSerializableRunnable putforknownkeys = new CacheSerializableRunnable("putforknownkeys") {
 
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         for (int i = 0; i < NO_OF_PUTS; i++) {
           region.put("key" + i, "value" + i);
@@ -184,6 +189,7 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
   private CacheSerializableRunnable stopServer() {
 
     CacheSerializableRunnable stopserver = new CacheSerializableRunnable("stopServer") {
+      @Override
       public void run2() throws CacheException {
         server.stop();
       }
@@ -258,7 +264,7 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
 
     RegionAttributes attrs = factory.create();
     cache.createRegion(REGION_NAME, attrs);
-    Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region region = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(region);
     region.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
 
@@ -270,33 +276,32 @@ public class HADuplicateDUnitTest extends JUnit4DistributedTestCase {
       cache.getDistributedSystem().disconnect();
     }
   }
-}
 
-// TODO: move these classes to be inner static classes
-
-
-// Listener class for the validation purpose
-class HAValidateDuplicateListener extends CacheListenerAdapter {
-  public void afterCreate(EntryEvent event) {
-    System.out.println("After Create");
-    HADuplicateDUnitTest.storeEvents.put(event.getKey(), event.getNewValue());
-  }
-
-  public void afterUpdate(EntryEvent event) {
-    Object value = HADuplicateDUnitTest.storeEvents.get(event.getKey());
-    if (value == null)
-      HADuplicateDUnitTest.isEventDuplicate = false;
-    synchronized (HADuplicateDUnitTest.dummyObj) {
-      try {
-        HADuplicateDUnitTest.put_counter++;
-        if (HADuplicateDUnitTest.put_counter == HADuplicateDUnitTest.NO_OF_PUTS) {
-          HADuplicateDUnitTest.waitFlag = false;
-          HADuplicateDUnitTest.dummyObj.notifyAll();
-        }
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
+  // Listener class for the validation purpose
+  private static class HAValidateDuplicateListener extends CacheListenerAdapter {
+    @Override
+    public void afterCreate(EntryEvent event) {
+      System.out.println("After Create");
+      storeEvents.put(event.getKey(), event.getNewValue());
     }
 
+    @Override
+    public void afterUpdate(EntryEvent event) {
+      Object value = storeEvents.get(event.getKey());
+      if (value == null)
+        isEventDuplicate = false;
+      synchronized (dummyObj) {
+        try {
+          put_counter++;
+          if (put_counter == NO_OF_PUTS) {
+            waitFlag = false;
+            dummyObj.notifyAll();
+          }
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+      }
+
+    }
   }
 }

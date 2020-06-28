@@ -14,9 +14,10 @@
  */
 package org.apache.geode.distributed;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.geode.internal.DistributionLocator.TEST_OVERRIDE_DEFAULT_PORT_PROPERTY;
 import static org.apache.geode.internal.process.ProcessUtils.isProcessAlive;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
@@ -33,9 +34,9 @@ import org.junit.Before;
 import org.apache.geode.distributed.AbstractLauncher.Status;
 import org.apache.geode.distributed.LocatorLauncher.Builder;
 import org.apache.geode.distributed.LocatorLauncher.Command;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.process.ProcessStreamReader;
 import org.apache.geode.internal.process.ProcessStreamReader.InputListener;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Abstract base class for integration tests of {@link LocatorLauncher} as an application main in a
@@ -60,7 +61,7 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
   }
 
   @After
-  public void tearDownAbstractLocatorLauncherRemoteIntegrationTestCase() throws Exception {
+  public void tearDownAbstractLocatorLauncherRemoteIntegrationTestCase() {
     if (process != null) {
       process.destroy();
     }
@@ -75,9 +76,8 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
   @Override
   public List<String> getJvmArguments() {
     List<String> jvmArguments = new ArrayList<>();
-    jvmArguments.add("-D" + DistributionConfig.GEMFIRE_PREFIX + "log-level=config");
-    jvmArguments
-        .add("-D" + TEST_OVERRIDE_DEFAULT_PORT_PROPERTY + "=" + String.valueOf(defaultLocatorPort));
+    jvmArguments.add("-D" + GeodeGlossary.GEMFIRE_PREFIX + "log-level=config");
+    jvmArguments.add("-D" + TEST_OVERRIDE_DEFAULT_PORT_PROPERTY + "=" + defaultLocatorPort);
     return jvmArguments;
   }
 
@@ -87,7 +87,9 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
   }
 
   protected void assertStopOf(final Process process) {
-    await().untilAsserted(() -> assertThat(process.isAlive()).isFalse());
+    await()
+        .atMost(AWAIT_MILLIS, MILLISECONDS)
+        .untilAsserted(() -> assertThat(process.isAlive()).isFalse());
   }
 
   /**
@@ -106,6 +108,7 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
     assertThat(process.isAlive()).isFalse();
   }
 
+  @Override
   protected LocatorLauncher givenRunningLocator() {
     return givenRunningLocator(new LocatorCommand(this).withCommand(Command.START));
   }
@@ -154,7 +157,6 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
   protected void startLocatorShouldFail(final LocatorCommand command) throws InterruptedException {
     awaitStartFail(command, createBindExceptionListener("sysout", threwBindException),
         createBindExceptionListener("syserr", threwBindException));
-
   }
 
   protected void startLocatorShouldFail() throws InterruptedException {
@@ -168,7 +170,7 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
   private void awaitStartFail(final LocatorCommand command, final InputListener outListener,
       final InputListener errListener) throws InterruptedException {
     executeCommandWithReaders(command.create(), outListener, errListener);
-    process.waitFor(2, MINUTES);
+    process.waitFor(AWAIT_MILLIS, MILLISECONDS);
     assertThatProcessIsNotAlive();
     assertThat(process.exitValue()).isEqualTo(1);
   }
@@ -193,9 +195,27 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
 
   @Override
   protected LocatorLauncher awaitStart(final LocatorLauncher launcher) {
-    await().untilAsserted(() -> assertThat(launcher.status().getStatus()).isEqualTo(Status.ONLINE));
+    await()
+        .atMost(AWAIT_MILLIS, MILLISECONDS)
+        .untilAsserted(() -> {
+          try {
+            assertThat(launcher.status().getStatus()).isEqualTo(Status.ONLINE);
+          } catch (Error | Exception e) {
+            throw new AssertionError(statusFailedWithException(e), e);
+          }
+        });
     assertThat(process.isAlive()).isTrue();
     return launcher;
+  }
+
+  protected String statusFailedWithException(Throwable cause) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("Status failed with exception: ");
+    sb.append("process.isAlive()=").append(process.isAlive());
+    sb.append(", processErrReader").append(processErrReader);
+    sb.append(", processOutReader").append(processOutReader);
+    sb.append(", message").append(cause.getMessage());
+    return sb.toString();
   }
 
   private InputListener createBindExceptionListener(final String name,
@@ -207,9 +227,13 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
     try {
       process = new ProcessBuilder(command).directory(getWorkingDirectory()).start();
       processOutReader = new ProcessStreamReader.Builder(process)
-          .inputStream(process.getInputStream()).build().start();
+          .inputStream(process.getInputStream())
+          .build()
+          .start();
       processErrReader = new ProcessStreamReader.Builder(process)
-          .inputStream(process.getErrorStream()).build().start();
+          .inputStream(process.getErrorStream())
+          .build()
+          .start();
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -220,9 +244,15 @@ public abstract class LocatorLauncherRemoteIntegrationTestCase
     try {
       process = new ProcessBuilder(command).directory(getWorkingDirectory()).start();
       processOutReader = new ProcessStreamReader.Builder(process)
-          .inputStream(process.getInputStream()).inputListener(outListener).build().start();
+          .inputStream(process.getInputStream())
+          .inputListener(outListener)
+          .build()
+          .start();
       processErrReader = new ProcessStreamReader.Builder(process)
-          .inputStream(process.getErrorStream()).inputListener(errListener).build().start();
+          .inputStream(process.getErrorStream())
+          .inputListener(errListener)
+          .build()
+          .start();
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }

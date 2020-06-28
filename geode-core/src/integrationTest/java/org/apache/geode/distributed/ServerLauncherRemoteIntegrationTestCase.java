@@ -14,12 +14,13 @@
  */
 package org.apache.geode.distributed;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
-import static org.apache.geode.distributed.internal.DistributionConfig.GEMFIRE_PREFIX;
 import static org.apache.geode.internal.cache.AbstractCacheServer.TEST_OVERRIDE_DEFAULT_PORT_PROPERTY;
 import static org.apache.geode.internal.process.ProcessUtils.isProcessAlive;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.util.internal.GeodeGlossary.GEMFIRE_PREFIX;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
@@ -36,6 +37,7 @@ import org.junit.Before;
 import org.apache.geode.distributed.AbstractLauncher.Status;
 import org.apache.geode.internal.process.ProcessStreamReader;
 import org.apache.geode.internal.process.ProcessStreamReader.InputListener;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 
 /**
  * Abstract base class for integration tests of {@link ServerLauncher} as an application main in a
@@ -45,6 +47,8 @@ import org.apache.geode.internal.process.ProcessStreamReader.InputListener;
  */
 public abstract class ServerLauncherRemoteIntegrationTestCase
     extends ServerLauncherIntegrationTestCase implements UsesServerCommand {
+
+  private static final long TIMEOUT_MILLIS = GeodeAwaitility.getTimeout().toMillis();
 
   private final AtomicBoolean threwBindException = new AtomicBoolean();
 
@@ -62,7 +66,7 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
   @After
   public void tearDownServerLauncherRemoteIntegrationTestCase() {
     if (process != null) {
-      process.destroy();
+      process.destroyForcibly();
       process = null;
     }
     if (processOutReader != null && processOutReader.isRunning()) {
@@ -75,7 +79,7 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
 
   @Override
   public boolean getDisableDefaultServer() {
-    return false;
+    return true;
   }
 
   @Override
@@ -83,8 +87,7 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
     List<String> jvmArguments = new ArrayList<>();
     jvmArguments.add("-D" + GEMFIRE_PREFIX + LOG_LEVEL + "=config");
     jvmArguments.add("-D" + GEMFIRE_PREFIX + MCAST_PORT + "=0");
-    jvmArguments
-        .add("-D" + TEST_OVERRIDE_DEFAULT_PORT_PROPERTY + "=" + String.valueOf(defaultServerPort));
+    jvmArguments.add("-D" + TEST_OVERRIDE_DEFAULT_PORT_PROPERTY + "=" + defaultServerPort);
     return jvmArguments;
   }
 
@@ -106,6 +109,7 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
     assertThat(isProcessAlive(pid)).isTrue();
   }
 
+  @Override
   protected ServerLauncher givenRunningServer() {
     return givenRunningServer(serverCommand);
   }
@@ -127,9 +131,8 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
     return awaitStart(command);
   }
 
-  protected ServerLauncher startServer(final ServerCommand command,
-      final ProcessStreamReader.InputListener outListener,
-      final ProcessStreamReader.InputListener errListener) throws IOException {
+  protected ServerLauncher startServer(final ServerCommand command, final InputListener outListener,
+      final InputListener errListener) throws IOException {
     executeCommandWithReaders(command.create(), outListener, errListener);
     ServerLauncher launcher = awaitStart(getWorkingDirectory());
     assertThat(process.isAlive()).isTrue();
@@ -137,17 +140,26 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
   }
 
   protected void startServerShouldFail() throws IOException, InterruptedException {
-    startServerShouldFail(serverCommand);
+    startServerShouldFail(serverCommand.disableDefaultServer(false));
   }
 
   protected void startServerShouldFail(final ServerCommand command)
       throws IOException, InterruptedException {
-    startServerShouldFail(command, createBindExceptionListener("sysout", threwBindException),
+    startServerShouldFail(command,
+        createBindExceptionListener("sysout", threwBindException),
         createBindExceptionListener("syserr", threwBindException));
   }
 
   protected ServerCommand addJvmArgument(final String arg) {
     return serverCommand.addJvmArgument(arg);
+  }
+
+  protected ServerCommand withDefaultServer() {
+    return withDisableDefaultServer(false);
+  }
+
+  protected ServerCommand withDefaultServer(final boolean value) {
+    return withDisableDefaultServer(value);
   }
 
   protected ServerCommand withDisableDefaultServer() {
@@ -167,13 +179,14 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
   }
 
   protected ServerCommand withServerPort(final int port) {
-    return serverCommand.withServerPort(port);
+    return serverCommand.disableDefaultServer(false).withServerPort(port);
   }
 
   private ServerLauncher awaitStart(final File workingDirectory) {
     try {
       launcher = new ServerLauncher.Builder()
-          .setWorkingDirectory(workingDirectory.getCanonicalPath()).build();
+          .setWorkingDirectory(workingDirectory.getCanonicalPath())
+          .build();
       awaitStart(launcher);
       assertThat(process.isAlive()).isTrue();
       return launcher;
@@ -195,9 +208,25 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
 
   @Override
   protected ServerLauncher awaitStart(final ServerLauncher launcher) {
-    await().untilAsserted(() -> assertThat(launcher.status().getStatus()).isEqualTo(Status.ONLINE));
+    await().untilAsserted(() -> {
+      try {
+        assertThat(launcher.status().getStatus()).isEqualTo(Status.ONLINE);
+      } catch (Exception e) {
+        throw new AssertionError(statusFailedWithException(e), e);
+      }
+    });
     assertThat(process.isAlive()).isTrue();
     return launcher;
+  }
+
+  private String statusFailedWithException(Exception e) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("Status failed with exception: ");
+    sb.append("process.isAlive()=").append(process.isAlive());
+    sb.append(", processErrReader").append(processErrReader);
+    sb.append(", processOutReader").append(processOutReader);
+    sb.append(", message").append(e.getMessage());
+    return sb.toString();
   }
 
   private InputListener createBindExceptionListener(final String name,
@@ -208,18 +237,28 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
   private void executeCommandWithReaders(final List<String> command) throws IOException {
     process = new ProcessBuilder(command).directory(getWorkingDirectory()).start();
     processOutReader = new ProcessStreamReader.Builder(process)
-        .inputStream(process.getInputStream()).build().start();
+        .inputStream(process.getInputStream())
+        .build()
+        .start();
     processErrReader = new ProcessStreamReader.Builder(process)
-        .inputStream(process.getErrorStream()).build().start();
+        .inputStream(process.getErrorStream())
+        .build()
+        .start();
   }
 
   private void executeCommandWithReaders(final List<String> command,
       final InputListener outListener, final InputListener errListener) throws IOException {
     process = new ProcessBuilder(command).directory(getWorkingDirectory()).start();
     processOutReader = new ProcessStreamReader.Builder(process)
-        .inputStream(process.getInputStream()).inputListener(outListener).build().start();
+        .inputStream(process.getInputStream())
+        .inputListener(outListener)
+        .build()
+        .start();
     processErrReader = new ProcessStreamReader.Builder(process)
-        .inputStream(process.getErrorStream()).inputListener(errListener).build().start();
+        .inputStream(process.getErrorStream())
+        .inputListener(errListener)
+        .build()
+        .start();
   }
 
   private void executeCommandWithReaders(final ServerCommand command) throws IOException {
@@ -229,7 +268,7 @@ public abstract class ServerLauncherRemoteIntegrationTestCase
   private void startServerShouldFail(final ServerCommand command, final InputListener outListener,
       final InputListener errListener) throws IOException, InterruptedException {
     executeCommandWithReaders(command.create(), outListener, errListener);
-    process.waitFor(2, MINUTES);
+    process.waitFor(TIMEOUT_MILLIS, MILLISECONDS);
     assertThat(process.isAlive()).isFalse();
     assertThat(process.exitValue()).isEqualTo(1);
   }

@@ -1,25 +1,30 @@
 
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work for additional information regarding
+ * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 package org.apache.geode.cache.configuration;
 
+import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
@@ -27,7 +32,12 @@ import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlType;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.apache.commons.lang3.StringUtils;
+
 import org.apache.geode.annotations.Experimental;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.management.configuration.ClassName;
 
 
 /**
@@ -333,20 +343,20 @@ import org.apache.geode.annotations.Experimental;
         "partitionAttributes", "membershipAttributes", "subscriptionAttributes", "cacheLoader",
         "cacheWriter", "cacheListeners", "compressor", "evictionAttributes"})
 @Experimental
-public class RegionAttributesType {
+public class RegionAttributesType implements Serializable {
 
   @XmlElement(name = "key-constraint", namespace = "http://geode.apache.org/schema/cache")
-  protected Object keyConstraint;
+  protected String keyConstraint;
   @XmlElement(name = "value-constraint", namespace = "http://geode.apache.org/schema/cache")
   protected String valueConstraint;
   @XmlElement(name = "region-time-to-live", namespace = "http://geode.apache.org/schema/cache")
-  protected RegionAttributesType.RegionTimeToLive regionTimeToLive;
+  protected ExpirationAttributesType regionTimeToLive;
   @XmlElement(name = "region-idle-time", namespace = "http://geode.apache.org/schema/cache")
-  protected RegionAttributesType.RegionIdleTime regionIdleTime;
+  protected ExpirationAttributesType regionIdleTime;
   @XmlElement(name = "entry-time-to-live", namespace = "http://geode.apache.org/schema/cache")
-  protected RegionAttributesType.EntryTimeToLive entryTimeToLive;
+  protected ExpirationAttributesType entryTimeToLive;
   @XmlElement(name = "entry-idle-time", namespace = "http://geode.apache.org/schema/cache")
-  protected RegionAttributesType.EntryIdleTime entryIdleTime;
+  protected ExpirationAttributesType entryIdleTime;
   @XmlElement(name = "disk-write-attributes", namespace = "http://geode.apache.org/schema/cache")
   protected RegionAttributesType.DiskWriteAttributes diskWriteAttributes;
   @XmlElement(name = "disk-dirs", namespace = "http://geode.apache.org/schema/cache")
@@ -431,7 +441,7 @@ public class RegionAttributesType {
    * {@link Object }
    *
    */
-  public Object getKeyConstraint() {
+  public String getKeyConstraint() {
     return keyConstraint;
   }
 
@@ -442,7 +452,7 @@ public class RegionAttributesType {
    * {@link Object }
    *
    */
-  public void setKeyConstraint(Object value) {
+  public void setKeyConstraint(String value) {
     this.keyConstraint = value;
   }
 
@@ -472,10 +482,10 @@ public class RegionAttributesType {
    * Gets the value of the regionTimeToLive property.
    *
    * possible object is
-   * {@link RegionAttributesType.RegionTimeToLive }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public RegionAttributesType.RegionTimeToLive getRegionTimeToLive() {
+  public ExpirationAttributesType getRegionTimeToLive() {
     return regionTimeToLive;
   }
 
@@ -483,21 +493,35 @@ public class RegionAttributesType {
    * Sets the value of the regionTimeToLive property.
    *
    * allowed object is
-   * {@link RegionAttributesType.RegionTimeToLive }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public void setRegionTimeToLive(RegionAttributesType.RegionTimeToLive value) {
+  public void setRegionTimeToLive(ExpirationAttributesType value) {
     this.regionTimeToLive = value;
+  }
+
+  /**
+   * update the region time to live using timeout, action or expiry. If all three are null, there
+   * would be no update to the existing value
+   *
+   * @param timeout could be null
+   * @param action could be null
+   * @param expiry could be null
+   */
+  public void updateRegionTimeToLive(Integer timeout,
+      String action, ClassName expiry) {
+    regionTimeToLive = ExpirationAttributesType.combine(regionTimeToLive,
+        ExpirationAttributesType.generate(timeout, action, expiry));
   }
 
   /**
    * Gets the value of the regionIdleTime property.
    *
    * possible object is
-   * {@link RegionAttributesType.RegionIdleTime }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public RegionAttributesType.RegionIdleTime getRegionIdleTime() {
+  public ExpirationAttributesType getRegionIdleTime() {
     return regionIdleTime;
   }
 
@@ -505,21 +529,36 @@ public class RegionAttributesType {
    * Sets the value of the regionIdleTime property.
    *
    * allowed object is
-   * {@link RegionAttributesType.RegionIdleTime }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public void setRegionIdleTime(RegionAttributesType.RegionIdleTime value) {
+  public void setRegionIdleTime(ExpirationAttributesType value) {
     this.regionIdleTime = value;
   }
+
+  /**
+   * update the region idle time using timeout, action or expiry. If all three are null, there
+   * would be no update to the existing value
+   *
+   * @param timeout could be null
+   * @param action could be null
+   * @param expiry could be null
+   */
+  public void updateRegionIdleTime(Integer timeout,
+      String action, ClassName expiry) {
+    regionIdleTime = ExpirationAttributesType.combine(regionIdleTime,
+        ExpirationAttributesType.generate(timeout, action, expiry));
+  }
+
 
   /**
    * Gets the value of the entryTimeToLive property.
    *
    * possible object is
-   * {@link RegionAttributesType.EntryTimeToLive }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public RegionAttributesType.EntryTimeToLive getEntryTimeToLive() {
+  public ExpirationAttributesType getEntryTimeToLive() {
     return entryTimeToLive;
   }
 
@@ -527,21 +566,35 @@ public class RegionAttributesType {
    * Sets the value of the entryTimeToLive property.
    *
    * allowed object is
-   * {@link RegionAttributesType.EntryTimeToLive }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public void setEntryTimeToLive(RegionAttributesType.EntryTimeToLive value) {
+  public void setEntryTimeToLive(ExpirationAttributesType value) {
     this.entryTimeToLive = value;
+  }
+
+  /**
+   * update the entry time to live using timeout, action or expiry. If all three are null, there
+   * would be no update to the existing value
+   *
+   * @param timeout could be null
+   * @param action could be null
+   * @param expiry could be null
+   */
+  public void updateEntryTimeToLive(Integer timeout,
+      String action, ClassName expiry) {
+    entryTimeToLive = ExpirationAttributesType.combine(entryTimeToLive,
+        ExpirationAttributesType.generate(timeout, action, expiry));
   }
 
   /**
    * Gets the value of the entryIdleTime property.
    *
    * possible object is
-   * {@link RegionAttributesType.EntryIdleTime }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public RegionAttributesType.EntryIdleTime getEntryIdleTime() {
+  public ExpirationAttributesType getEntryIdleTime() {
     return entryIdleTime;
   }
 
@@ -549,11 +602,25 @@ public class RegionAttributesType {
    * Sets the value of the entryIdleTime property.
    *
    * allowed object is
-   * {@link RegionAttributesType.EntryIdleTime }
+   * {@link RegionAttributesType.ExpirationAttributesType }
    *
    */
-  public void setEntryIdleTime(RegionAttributesType.EntryIdleTime value) {
+  public void setEntryIdleTime(ExpirationAttributesType value) {
     this.entryIdleTime = value;
+  }
+
+  /**
+   * update the entry idle time using timeout, action or expiry. If all three are null, there
+   * would be no update to the existing value
+   *
+   * @param timeout could be null
+   * @param action could be null
+   * @param expiry could be null
+   */
+  public void updateEntryIdleTime(Integer timeout,
+      String action, ClassName expiry) {
+    entryIdleTime = ExpirationAttributesType.combine(entryIdleTime,
+        ExpirationAttributesType.generate(timeout, action, expiry));
   }
 
   /**
@@ -928,6 +995,19 @@ public class RegionAttributesType {
   }
 
   /**
+   * turn the comma separated ids into a set of id
+   */
+  @JsonIgnore
+  public Set<String> getGatewaySenderIdsAsSet() {
+    if (gatewaySenderIds == null) {
+      return null;
+    }
+    return Arrays.stream(gatewaySenderIds.split(","))
+        .filter(StringUtils::isNotBlank)
+        .collect(Collectors.toSet());
+  }
+
+  /**
    * Sets the value of the gatewaySenderIds property.
    *
    * allowed object is
@@ -947,6 +1027,19 @@ public class RegionAttributesType {
    */
   public String getAsyncEventQueueIds() {
     return asyncEventQueueIds;
+  }
+
+  /**
+   * turn the comma separated id into a set of ids
+   */
+  @JsonIgnore
+  public Set<String> getAsyncEventQueueIdsAsSet() {
+    if (asyncEventQueueIds == null) {
+      return null;
+    }
+    return Arrays.stream(asyncEventQueueIds.split(","))
+        .filter(StringUtils::isNotBlank)
+        .collect(Collectors.toSet());
   }
 
   /**
@@ -1404,6 +1497,37 @@ public class RegionAttributesType {
     this.offHeap = value;
   }
 
+  public void setLruHeapPercentageEvictionAction(EnumActionDestroyOverflow action) {
+    if (evictionAttributes == null) {
+      evictionAttributes = new EvictionAttributes();
+    }
+    EvictionAttributes.LruHeapPercentage lruHeapPercentage =
+        new EvictionAttributes.LruHeapPercentage();
+    lruHeapPercentage.setAction(action);
+    evictionAttributes.setLruHeapPercentage(lruHeapPercentage);
+  }
+
+  public void setInterestPolicy(String interestPolicy) {
+    if (subscriptionAttributes == null) {
+      subscriptionAttributes = new SubscriptionAttributes();
+    }
+    subscriptionAttributes.setInterestPolicy(interestPolicy);
+  }
+
+  public void setRedundantCopy(String copies) {
+    if (partitionAttributes == null) {
+      partitionAttributes = new PartitionAttributes();
+    }
+    partitionAttributes.setRedundantCopies(copies);
+  }
+
+  public void setLocalMaxMemory(String maxMemory) {
+    if (partitionAttributes == null) {
+      partitionAttributes = new PartitionAttributes();
+    }
+    partitionAttributes.setLocalMaxMemory(maxMemory);
+  }
+
 
   /**
    * <p>
@@ -1440,7 +1564,7 @@ public class RegionAttributesType {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"asynchronousWrites", "synchronousWrites"})
-  public static class DiskWriteAttributes {
+  public static class DiskWriteAttributes implements Serializable {
 
     @XmlElement(name = "asynchronous-writes", namespace = "http://geode.apache.org/schema/cache")
     protected RegionAttributesType.DiskWriteAttributes.AsynchronousWrites asynchronousWrites;
@@ -1615,7 +1739,6 @@ public class RegionAttributesType {
       }
 
     }
-
   }
 
 
@@ -1642,90 +1765,230 @@ public class RegionAttributesType {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"expirationAttributes"})
-  public static class EntryIdleTime {
+  public static class ExpirationAttributesType implements Serializable {
 
     @XmlElement(name = "expiration-attributes", namespace = "http://geode.apache.org/schema/cache",
         required = true)
-    protected ExpirationAttributesType expirationAttributes;
+    protected ExpirationAttributesDetail expirationAttributes = new ExpirationAttributesDetail();
 
-    /**
-     * Gets the value of the expirationAttributes property.
-     *
-     * possible object is
-     * {@link ExpirationAttributesType }
-     *
-     */
-    public ExpirationAttributesType getExpirationAttributes() {
-      return expirationAttributes;
+    public ExpirationAttributesType() {}
+
+    public ExpirationAttributesType(Integer timeout, String action, String expiry,
+        Properties iniProps) {
+      expirationAttributes.setTimeout(Objects.toString(timeout, null));
+      if (action != null) {
+        expirationAttributes.setAction(action);
+      }
+      if (expiry != null) {
+        expirationAttributes.setCustomExpiry(new DeclarableType(expiry, iniProps));
+      }
+    }
+
+    public static ExpirationAttributesType generate(Integer timeout,
+        String action, ClassName expiry) {
+      if (timeout == null && action == null && expiry == null) {
+        return null;
+      }
+      if (expiry != null) {
+        return new ExpirationAttributesType(timeout, action,
+            expiry.getClassName(), expiry.getInitProperties());
+      } else {
+        return new ExpirationAttributesType(timeout, action, null, null);
+      }
+    }
+
+    // this is a helper method to combine the existing with the delta ExpirationAttributesType
+    public static ExpirationAttributesType combine(ExpirationAttributesType existing,
+        ExpirationAttributesType delta) {
+      if (delta == null) {
+        return existing;
+      }
+
+      if (existing == null) {
+        existing = new ExpirationAttributesType();
+        existing.setAction("invalidate");
+        existing.setTimeout("0");
+      }
+
+      if (delta.getTimeout() != null) {
+        existing.setTimeout(delta.getTimeout());
+      }
+      if (delta.getAction() != null) {
+        existing.setAction(delta.getAction());
+      }
+      if (delta.getCustomExpiry() != null) {
+        if (delta.getCustomExpiry().equals(DeclarableType.EMPTY)) {
+          existing.setCustomExpiry(null);
+        } else {
+          existing.setCustomExpiry(delta.getCustomExpiry());
+        }
+      }
+      return existing;
     }
 
     /**
-     * Sets the value of the expirationAttributes property.
+     * @return true if timeout or action is specified
+     */
+    public boolean hasTimoutOrAction() {
+      return (getTimeout() != null || getAction() != null);
+    }
+
+    /**
+     * @return true if custom expiry class is specified
+     */
+    public boolean hasCustomExpiry() {
+      return getCustomExpiry() != null;
+    }
+
+    /**
+     * @return the custom expiry declarable
+     */
+    public DeclarableType getCustomExpiry() {
+      return expirationAttributes.getCustomExpiry();
+    }
+
+    /**
+     * Sets the value of the customExpiry property.
      *
      * allowed object is
-     * {@link ExpirationAttributesType }
+     * {@link DeclarableType }
      *
      */
-    public void setExpirationAttributes(ExpirationAttributesType value) {
-      this.expirationAttributes = value;
+    public void setCustomExpiry(DeclarableType value) {
+      expirationAttributes.setCustomExpiry(value);
+    }
+
+    /**
+     * Gets the value of the action property.
+     *
+     * possible object is
+     * {@link String }
+     *
+     */
+    public String getAction() {
+      return expirationAttributes.getAction();
+    }
+
+    /**
+     * Sets the value of the action property.
+     *
+     * allowed object is
+     * {@link String }
+     *
+     */
+    public void setAction(String value) {
+      expirationAttributes.setAction(value);
+    }
+
+    /**
+     * Gets the value of the timeout property.
+     *
+     * possible object is
+     * {@link String }
+     *
+     */
+    public String getTimeout() {
+      return expirationAttributes.getTimeout();
+    }
+
+    /**
+     * Sets the value of the timeout property.
+     *
+     * allowed object is
+     * {@link String }
+     *
+     */
+    public void setTimeout(String value) {
+      expirationAttributes.setTimeout(value);
     }
 
   }
 
-
-  /**
-   * <p>
-   * Java class for anonymous complex type.
-   *
-   * <p>
-   * The following schema fragment specifies the expected content contained within this class.
-   *
-   * <pre>
-   * &lt;complexType>
-   *   &lt;complexContent>
-   *     &lt;restriction base="{http://www.w3.org/2001/XMLSchema}anyType">
-   *       &lt;sequence>
-   *         &lt;element name="expiration-attributes" type="{http://geode.apache.org/schema/cache}expiration-attributes-type"/>
-   *       &lt;/sequence>
-   *     &lt;/restriction>
-   *   &lt;/complexContent>
-   * &lt;/complexType>
-   * </pre>
-   *
-   *
-   */
   @XmlAccessorType(XmlAccessType.FIELD)
-  @XmlType(name = "", propOrder = {"expirationAttributes"})
-  public static class EntryTimeToLive {
+  @XmlType(name = "expiration-attributes-type", namespace = "http://geode.apache.org/schema/cache",
+      propOrder = {"customExpiry"})
+  @Experimental
+  public static class ExpirationAttributesDetail implements Serializable {
+    @XmlElement(name = "custom-expiry", namespace = "http://geode.apache.org/schema/cache")
+    protected DeclarableType customExpiry;
+    @XmlAttribute(name = "action")
+    protected String action;
+    @XmlAttribute(name = "timeout", required = true)
+    protected String timeout;
 
-    @XmlElement(name = "expiration-attributes", namespace = "http://geode.apache.org/schema/cache",
-        required = true)
-    protected ExpirationAttributesType expirationAttributes;
+    @Immutable
+    private static final List<String> ALLOWED_ACTIONS = Collections.unmodifiableList(
+        Arrays.asList("invalidate", "destroy", "local-invalidate", "local-destroy"));
 
     /**
-     * Gets the value of the expirationAttributes property.
+     * Gets the value of the customExpiry property.
      *
      * possible object is
-     * {@link ExpirationAttributesType }
+     * {@link DeclarableType }
      *
      */
-    public ExpirationAttributesType getExpirationAttributes() {
-      return expirationAttributes;
+    public DeclarableType getCustomExpiry() {
+      return customExpiry;
     }
 
     /**
-     * Sets the value of the expirationAttributes property.
+     * Sets the value of the customExpiry property.
      *
      * allowed object is
-     * {@link ExpirationAttributesType }
+     * {@link DeclarableType }
      *
      */
-    public void setExpirationAttributes(ExpirationAttributesType value) {
-      this.expirationAttributes = value;
+    public void setCustomExpiry(DeclarableType value) {
+      this.customExpiry = value;
     }
 
-  }
+    /**
+     * Gets the value of the action property.
+     *
+     * possible object is
+     * {@link String }
+     *
+     */
+    public String getAction() {
+      return action;
+    }
 
+    /**
+     * Sets the value of the action property.
+     *
+     * allowed object is
+     * {@link String }
+     *
+     */
+    public void setAction(String value) {
+      if (!ALLOWED_ACTIONS.contains(value)) {
+        throw new IllegalArgumentException("invalid expiration action: " + value);
+      }
+      this.action = value;
+    }
+
+    /**
+     * Gets the value of the timeout property.
+     *
+     * possible object is
+     * {@link String }
+     *
+     */
+    public String getTimeout() {
+      return timeout;
+    }
+
+    /**
+     * Sets the value of the timeout property.
+     *
+     * allowed object is
+     * {@link String }
+     *
+     */
+    public void setTimeout(String value) {
+      this.timeout = value;
+    }
+  }
 
   /**
    * <p>
@@ -1786,7 +2049,7 @@ public class RegionAttributesType {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"lruEntryCount", "lruHeapPercentage", "lruMemorySize"})
-  public static class EvictionAttributes {
+  public static class EvictionAttributes implements Serializable {
 
     @XmlElement(name = "lru-entry-count", namespace = "http://geode.apache.org/schema/cache")
     protected RegionAttributesType.EvictionAttributes.LruEntryCount lruEntryCount;
@@ -1794,6 +2057,56 @@ public class RegionAttributesType {
     protected RegionAttributesType.EvictionAttributes.LruHeapPercentage lruHeapPercentage;
     @XmlElement(name = "lru-memory-size", namespace = "http://geode.apache.org/schema/cache")
     protected RegionAttributesType.EvictionAttributes.LruMemorySize lruMemorySize;
+
+    public static EvictionAttributes generate(String evictionAction,
+        Integer maxMemory, Integer maxEntryCount,
+        ClassName objectSizer) {
+      if (evictionAction == null && maxMemory == null && maxEntryCount == null
+          && objectSizer == null) {
+        return null;
+      }
+
+      RegionAttributesType.EvictionAttributes evictionAttributes =
+          new RegionAttributesType.EvictionAttributes();
+      EnumActionDestroyOverflow action = EnumActionDestroyOverflow.fromValue(evictionAction);
+
+      if (maxMemory == null && maxEntryCount == null) {
+        LruHeapPercentage heapPercentage =
+            new LruHeapPercentage();
+        heapPercentage.setAction(action);
+        if (objectSizer != null) {
+          heapPercentage.setClassName(objectSizer.getClassName());
+          heapPercentage.setParameters(objectSizer.getInitProperties());
+        }
+        evictionAttributes.setLruHeapPercentage(heapPercentage);
+      } else if (maxMemory != null) {
+        LruMemorySize memorySize =
+            new LruMemorySize();
+        memorySize.setAction(action);
+        if (objectSizer != null) {
+          memorySize.setClassName(objectSizer.getClassName());
+          memorySize.setParameters(objectSizer.getInitProperties());
+        }
+        memorySize.setMaximum(maxMemory.toString());
+        evictionAttributes.setLruMemorySize(memorySize);
+      } else {
+        LruEntryCount entryCount =
+            new LruEntryCount();
+        entryCount.setAction(action);
+        entryCount.setMaximum(maxEntryCount.toString());
+        evictionAttributes.setLruEntryCount(entryCount);
+      }
+      return evictionAttributes;
+    }
+
+    public static EvictionAttributes generate(String evictionAction,
+        Integer maxMemory, Integer maxEntryCount,
+        String objectSizer) {
+      if (objectSizer == null) {
+        return generate(evictionAction, maxMemory, maxEntryCount, (ClassName) null);
+      }
+      return generate(evictionAction, maxMemory, maxEntryCount, new ClassName(objectSizer));
+    }
 
     /**
      * Gets the value of the lruEntryCount property.
@@ -1885,7 +2198,7 @@ public class RegionAttributesType {
      */
     @XmlAccessorType(XmlAccessType.FIELD)
     @XmlType(name = "")
-    public static class LruEntryCount {
+    public static class LruEntryCount implements Serializable {
 
       @XmlAttribute(name = "action")
       protected EnumActionDestroyOverflow action;
@@ -2097,10 +2410,10 @@ public class RegionAttributesType {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"requiredRoles"})
-  public static class MembershipAttributes {
+  public static class MembershipAttributes implements Serializable {
 
     @XmlElement(name = "required-role", namespace = "http://geode.apache.org/schema/cache")
-    protected List<RegionAttributesType.MembershipAttributes.RequiredRole> requiredRoles;
+    protected List<RequiredRole> requiredRoles;
     @XmlAttribute(name = "loss-action")
     protected String lossAction;
     @XmlAttribute(name = "resumption-action")
@@ -2129,9 +2442,9 @@ public class RegionAttributesType {
      *
      *
      */
-    public List<RegionAttributesType.MembershipAttributes.RequiredRole> getRequiredRoles() {
+    public List<RequiredRole> getRequiredRoles() {
       if (requiredRoles == null) {
-        requiredRoles = new ArrayList<RegionAttributesType.MembershipAttributes.RequiredRole>();
+        requiredRoles = new ArrayList<RequiredRole>();
       }
       return this.requiredRoles;
     }
@@ -2300,7 +2613,7 @@ public class RegionAttributesType {
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "",
       propOrder = {"partitionResolver", "partitionListeners", "fixedPartitionAttributes"})
-  public static class PartitionAttributes {
+  public static class PartitionAttributes implements Serializable {
 
     @XmlElement(name = "partition-resolver", namespace = "http://geode.apache.org/schema/cache")
     protected DeclarableType partitionResolver;
@@ -2308,7 +2621,7 @@ public class RegionAttributesType {
     protected List<DeclarableType> partitionListeners;
     @XmlElement(name = "fixed-partition-attributes",
         namespace = "http://geode.apache.org/schema/cache")
-    protected List<RegionAttributesType.PartitionAttributes.FixedPartitionAttributes> fixedPartitionAttributes;
+    protected List<FixedPartitionAttributes> fixedPartitionAttributes;
     @XmlAttribute(name = "local-max-memory")
     protected String localMaxMemory;
     @XmlAttribute(name = "recovery-delay")
@@ -2323,6 +2636,96 @@ public class RegionAttributesType {
     protected String totalNumBuckets;
     @XmlAttribute(name = "colocated-with")
     protected String colocatedWith;
+
+    public static PartitionAttributes generate(String partitionResolver,
+        List<String> partitionListeners, Integer localMaxMemory,
+        Long recoveryDelay, Integer redundantCopies,
+        Long startupRecoveryDelay, Long totalMaxMemory,
+        Integer totalNumBuckets, String colocatedWith) {
+      if (partitionResolver == null &&
+          (partitionListeners == null || partitionListeners.isEmpty()) &&
+          localMaxMemory == null &&
+          recoveryDelay == null &&
+          redundantCopies == null &&
+          startupRecoveryDelay == null &&
+          totalMaxMemory == null &&
+          totalNumBuckets == null &&
+          colocatedWith == null) {
+        return null;
+      }
+
+      RegionAttributesType.PartitionAttributes partitionAttributes =
+          new RegionAttributesType.PartitionAttributes();
+      partitionAttributes.setColocatedWith(colocatedWith);
+      partitionAttributes.setLocalMaxMemory(Objects.toString(localMaxMemory, null));
+      partitionAttributes.setTotalMaxMemory(Objects.toString(totalMaxMemory, null));
+      partitionAttributes.setRecoveryDelay(Objects.toString(recoveryDelay, null));
+      partitionAttributes.setRedundantCopies(Objects.toString(redundantCopies, null));
+      partitionAttributes.setStartupRecoveryDelay(Objects.toString(startupRecoveryDelay, null));
+      partitionAttributes.setTotalNumBuckets(Objects.toString(totalNumBuckets, null));
+      if (partitionResolver != null) {
+        partitionAttributes.setPartitionResolver(new DeclarableType(partitionResolver));
+      }
+
+      if (partitionListeners != null) {
+        partitionListeners.stream().map(DeclarableType::new)
+            .forEach(partitionAttributes.getPartitionListeners()::add);
+      }
+      return partitionAttributes;
+    }
+
+    public static PartitionAttributes combine(PartitionAttributes existing,
+        PartitionAttributes delta) {
+      if (existing == null) {
+        return delta;
+      }
+      if (delta == null) {
+        return existing;
+      }
+
+      if (delta.getRedundantCopies() != null) {
+        existing.setRedundantCopies(delta.getRedundantCopies());
+      }
+
+      if (delta.getPartitionListeners() != null) {
+        existing.getPartitionListeners().clear();
+        existing.getPartitionListeners().addAll(delta.getPartitionListeners());
+      }
+
+      if (delta.getColocatedWith() != null) {
+        existing.setColocatedWith(delta.getColocatedWith());
+      }
+
+      if (delta.getLocalMaxMemory() != null) {
+        existing.setLocalMaxMemory(delta.getLocalMaxMemory());
+      }
+
+      if (delta.getPartitionResolver() != null) {
+        existing.setPartitionResolver(delta.getPartitionResolver());
+      }
+
+      if (delta.getRecoveryDelay() != null) {
+        existing.setRecoveryDelay(delta.getRecoveryDelay());
+      }
+
+      if (delta.getStartupRecoveryDelay() != null) {
+        existing.setStartupRecoveryDelay(delta.getStartupRecoveryDelay());
+      }
+
+      if (delta.getTotalMaxMemory() != null) {
+        existing.setTotalMaxMemory(delta.getTotalMaxMemory());
+      }
+
+      if (delta.getTotalNumBuckets() != null) {
+        existing.setTotalNumBuckets(delta.getTotalNumBuckets());
+      }
+
+      if (delta.getFixedPartitionAttributes() != null) {
+        existing.getFixedPartitionAttributes().clear();
+        existing.getFixedPartitionAttributes().addAll(delta.getFixedPartitionAttributes());
+      }
+      return existing;
+    }
 
     /**
      * Gets the value of the partitionResolver property.
@@ -2399,10 +2802,10 @@ public class RegionAttributesType {
      *
      *
      */
-    public List<RegionAttributesType.PartitionAttributes.FixedPartitionAttributes> getFixedPartitionAttributes() {
+    public List<FixedPartitionAttributes> getFixedPartitionAttributes() {
       if (fixedPartitionAttributes == null) {
         fixedPartitionAttributes =
-            new ArrayList<RegionAttributesType.PartitionAttributes.FixedPartitionAttributes>();
+            new ArrayList<FixedPartitionAttributes>();
       }
       return this.fixedPartitionAttributes;
     }
@@ -2663,115 +3066,6 @@ public class RegionAttributesType {
     }
   }
 
-
-  /**
-   * <p>
-   * Java class for anonymous complex type.
-   *
-   * <p>
-   * The following schema fragment specifies the expected content contained within this class.
-   *
-   * <pre>
-   * &lt;complexType>
-   *   &lt;complexContent>
-   *     &lt;restriction base="{http://www.w3.org/2001/XMLSchema}anyType">
-   *       &lt;sequence>
-   *         &lt;element name="expiration-attributes" type="{http://geode.apache.org/schema/cache}expiration-attributes-type"/>
-   *       &lt;/sequence>
-   *     &lt;/restriction>
-   *   &lt;/complexContent>
-   * &lt;/complexType>
-   * </pre>
-   *
-   *
-   */
-  @XmlAccessorType(XmlAccessType.FIELD)
-  @XmlType(name = "", propOrder = {"expirationAttributes"})
-  public static class RegionIdleTime {
-
-    @XmlElement(name = "expiration-attributes", namespace = "http://geode.apache.org/schema/cache",
-        required = true)
-    protected ExpirationAttributesType expirationAttributes;
-
-    /**
-     * Gets the value of the expirationAttributes property.
-     *
-     * possible object is
-     * {@link ExpirationAttributesType }
-     *
-     */
-    public ExpirationAttributesType getExpirationAttributes() {
-      return expirationAttributes;
-    }
-
-    /**
-     * Sets the value of the expirationAttributes property.
-     *
-     * allowed object is
-     * {@link ExpirationAttributesType }
-     *
-     */
-    public void setExpirationAttributes(ExpirationAttributesType value) {
-      this.expirationAttributes = value;
-    }
-
-  }
-
-
-  /**
-   * <p>
-   * Java class for anonymous complex type.
-   *
-   * <p>
-   * The following schema fragment specifies the expected content contained within this class.
-   *
-   * <pre>
-   * &lt;complexType>
-   *   &lt;complexContent>
-   *     &lt;restriction base="{http://www.w3.org/2001/XMLSchema}anyType">
-   *       &lt;sequence>
-   *         &lt;element name="expiration-attributes" type="{http://geode.apache.org/schema/cache}expiration-attributes-type"/>
-   *       &lt;/sequence>
-   *     &lt;/restriction>
-   *   &lt;/complexContent>
-   * &lt;/complexType>
-   * </pre>
-   *
-   *
-   */
-  @XmlAccessorType(XmlAccessType.FIELD)
-  @XmlType(name = "", propOrder = {"expirationAttributes"})
-  public static class RegionTimeToLive {
-
-    @XmlElement(name = "expiration-attributes", namespace = "http://geode.apache.org/schema/cache",
-        required = true)
-    protected ExpirationAttributesType expirationAttributes;
-
-    /**
-     * Gets the value of the expirationAttributes property.
-     *
-     * possible object is
-     * {@link ExpirationAttributesType }
-     *
-     */
-    public ExpirationAttributesType getExpirationAttributes() {
-      return expirationAttributes;
-    }
-
-    /**
-     * Sets the value of the expirationAttributes property.
-     *
-     * allowed object is
-     * {@link ExpirationAttributesType }
-     *
-     */
-    public void setExpirationAttributes(ExpirationAttributesType value) {
-      this.expirationAttributes = value;
-    }
-
-  }
-
-
   /**
    * <p>
    * Java class for anonymous complex type.
@@ -2800,7 +3094,7 @@ public class RegionAttributesType {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "")
-  public static class SubscriptionAttributes {
+  public static class SubscriptionAttributes implements Serializable {
 
     @XmlAttribute(name = "interest-policy")
     protected String interestPolicy;

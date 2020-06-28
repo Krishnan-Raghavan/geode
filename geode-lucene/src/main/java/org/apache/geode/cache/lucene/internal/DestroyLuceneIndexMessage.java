@@ -14,6 +14,8 @@
  */
 package org.apache.geode.cache.lucene.internal;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -22,7 +24,6 @@ import java.util.Collection;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.DataSerializer;
-import org.apache.geode.cache.Region;
 import org.apache.geode.cache.lucene.LuceneServiceProvider;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.MessageWithReply;
@@ -30,8 +31,9 @@ import org.apache.geode.distributed.internal.PooledDistributionMessage;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class DestroyLuceneIndexMessage extends PooledDistributionMessage
     implements MessageWithReply {
@@ -78,9 +80,9 @@ public class DestroyLuceneIndexMessage extends PooledDistributionMessage
         } catch (IllegalArgumentException e) {
           // If the IllegalArgumentException is index not found, then its ok; otherwise rethrow it.
           String fullRegionPath =
-              regionPath.startsWith(Region.SEPARATOR) ? regionPath : Region.SEPARATOR + regionPath;
-          String indexNotFoundMessage = LocalizedStrings.LuceneService_INDEX_0_NOT_FOUND_IN_REGION_1
-              .toLocalizedString(this.indexName, fullRegionPath);
+              regionPath.startsWith(SEPARATOR) ? regionPath : SEPARATOR + regionPath;
+          String indexNotFoundMessage = String.format("Lucene index %s was not found in region %s",
+              this.indexName, fullRegionPath);
           if (!e.getLocalizedMessage().equals(indexNotFoundMessage)) {
             throw e;
           }
@@ -111,16 +113,18 @@ public class DestroyLuceneIndexMessage extends PooledDistributionMessage
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.processorId);
     DataSerializer.writeString(this.regionPath, out);
     DataSerializer.writeString(this.indexName, out);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.processorId = in.readInt();
     this.regionPath = DataSerializer.readString(in);
     this.indexName = DataSerializer.readString(in);

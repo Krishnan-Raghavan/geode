@@ -47,7 +47,7 @@ import org.apache.geode.rest.internal.web.util.JsonWriter;
 @XmlType(name = "org.gopivotal.app.web.controllers.support.RegionData")
 public class RegionData<T> implements Iterable<T>, JsonSerializable {
 
-  private final List<T> data = new ArrayList<T>();
+  private final List<T> data = new ArrayList<>();
 
   private String regionNamePath;
 
@@ -58,7 +58,7 @@ public class RegionData<T> implements Iterable<T>, JsonSerializable {
   }
 
   public String getRegionNamePath() {
-    Assert.state(StringUtils.hasText(this.regionNamePath),
+    Assert.state(StringUtils.hasText(regionNamePath),
         "The Region name/path was not properly initialized!");
     return regionNamePath;
   }
@@ -73,7 +73,8 @@ public class RegionData<T> implements Iterable<T>, JsonSerializable {
     return this;
   }
 
-  public RegionData<T> add(final T... data) {
+  @SafeVarargs
+  public final RegionData<T> add(final T... data) {
     for (final T element : data) {
       if (element != null) {
         add(element);
@@ -96,25 +97,27 @@ public class RegionData<T> implements Iterable<T>, JsonSerializable {
   }
 
   public boolean isEmpty() {
-    return this.data.isEmpty();
+    return data.isEmpty();
   }
 
+  @Override
   public Iterator<T> iterator() {
     return list().iterator();
   }
 
   public List<T> list() {
-    return Collections.unmodifiableList(this.data);
+    return Collections.unmodifiableList(data);
   }
 
   public int size() {
-    return this.data.size();
+    return data.size();
   }
 
   protected String convertToJson(final PdxInstance pdxObj) {
     return (pdxObj != null ? JSONFormatter.toJSON(pdxObj) : null);
   }
 
+  @Override
   public void serialize(final JsonGenerator jsonGenerator,
       final SerializerProvider serializerProvider) throws IOException {
 
@@ -129,6 +132,7 @@ public class RegionData<T> implements Iterable<T>, JsonSerializable {
     jsonGenerator.writeEndObject();
   }
 
+  @Override
   public void serializeWithType(final JsonGenerator jsonGenerator,
       final SerializerProvider serializerProvider, final TypeSerializer typeSerializer)
       throws IOException {

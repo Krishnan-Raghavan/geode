@@ -17,7 +17,7 @@ package org.apache.geode.test.junit.assertions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.assertj.core.api.ListAssert;
+import java.util.List;
 
 import org.apache.geode.management.internal.cli.result.model.TabularResultModel;
 
@@ -28,28 +28,56 @@ public class TabularResultModelAssert
     super(resultModel, TabularResultModelAssert.class);
   }
 
+  /**
+   * verifies that the table has the expected number of rows
+   */
   public TabularResultModelAssert hasRowSize(int expectedSize) {
     assertThat(actual.getRowSize()).isEqualTo(expectedSize);
     return this;
   }
 
-
+  /**
+   * verifies that the table has the expected number of columns
+   */
   public TabularResultModelAssert hasColumnSize(int expectedSize) {
     assertThat(actual.getColumnSize()).isEqualTo(expectedSize);
     return this;
   }
 
   /**
-   * return a ListAssert for a column of values
+   * verifies that the table is empty
    */
-  public ListAssert<String> hasColumn(String header) {
-    return assertThat(actual.getValuesInColumn(header));
+  public void isEmpty() {
+    hasRowSize(0);
   }
 
   /**
-   * return a ListAssert for a row of values
+   * return a ListAssert-like handle to assert on the header row
    */
-  public ListAssert<String> hasRow(int rowIndex) {
-    return assertThat(actual.getValuesInRow(rowIndex));
+  public TabularResultModelRowAssert<String> hasColumns() {
+    return new TabularResultModelRowAssert<>(this, actual.getHeaders());
+  }
+
+  /**
+   * return a ListAssert-like handle to assert on the values of a named column
+   */
+  public TabularResultModelColumnAssert<String> hasColumn(String header) {
+    List<String> values = actual.getValuesInColumn(header);
+    assertThat(values).withFailMessage("Column not found: %s", header).isNotNull();
+    return new TabularResultModelColumnAssert<>(this, values);
+  }
+
+  /**
+   * return a ListAssert-like handle to assert on a specific row
+   */
+  public TabularResultModelRowAssert<String> hasRow(int rowIndex) {
+    return new TabularResultModelRowAssert<>(this, actual.getValuesInRow(rowIndex));
+  }
+
+  /**
+   * return a ListAssert-like handle to assert on any row
+   */
+  public TabularResultModelAnyRowAssert<String> hasAnyRow() {
+    return new TabularResultModelAnyRowAssert<>(this);
   }
 }

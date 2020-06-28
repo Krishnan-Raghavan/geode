@@ -19,14 +19,19 @@ import java.io.Serializable;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.rmi.AlreadyBoundException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.RMIClientSocketFactory;
 import java.rmi.server.RMIServerSocketFactory;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -43,19 +48,16 @@ import javax.management.remote.rmi.RMIJRMPServerImpl;
 import javax.management.remote.rmi.RMIServerImpl;
 
 import com.healthmarketscience.rmiio.exporter.RemoteStreamExporter;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
 
 import org.apache.geode.GemFireConfigException;
-import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.distributed.internal.ClusterDistributionManager;
+import org.apache.geode.cache.internal.HttpService;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.GemFireVersion;
 import org.apache.geode.internal.admin.SSLConfig;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.inet.LocalHostUtil;
 import org.apache.geode.internal.net.SSLConfigurationFactory;
 import org.apache.geode.internal.net.SocketCreator;
 import org.apache.geode.internal.net.SocketCreatorFactory;
@@ -63,6 +65,7 @@ import org.apache.geode.internal.security.SecurableCommunicationChannel;
 import org.apache.geode.internal.security.SecurityService;
 import org.apache.geode.internal.security.shiro.JMXShiroAuthenticator;
 import org.apache.geode.internal.tcp.TCPConduit;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.management.ManagementException;
 import org.apache.geode.management.ManagementService;
 import org.apache.geode.management.ManagerMXBean;
@@ -71,6 +74,7 @@ import org.apache.geode.management.internal.security.AccessControlMBean;
 import org.apache.geode.management.internal.security.MBeanServerWrapper;
 import org.apache.geode.management.internal.security.ResourceConstants;
 import org.apache.geode.management.internal.unsafe.ReadOpFileAccessController;
+import org.apache.geode.security.AuthTokenEnabledComponents;
 
 /**
  * Agent implementation that controls the JMX server end points for JMX clients to connect, such as
@@ -84,6 +88,7 @@ import org.apache.geode.management.internal.unsafe.ReadOpFileAccessController;
 public class ManagementAgent {
 
   private static final Logger logger = LogService.getLogger();
+  public static final String SPRING_PROFILES_ACTIVE = "spring.profiles.active";
 
   /**
    * True if running. Protected by synchronizing on this Manager instance. I used synchronization
@@ -97,7 +102,7 @@ public class ManagementAgent {
   private JMXShiroAuthenticator shiroAuthenticator;
   private final DistributionConfig config;
   private final SecurityService securityService;
-  private boolean isHttpServiceRunning = false;
+  private final InternalCache cache;
   private RMIClientSocketFactory rmiClientSocketFactory;
   private RMIServerSocketFactory rmiServerSocketFactory;
   private int port;
@@ -113,47 +118,19 @@ public class ManagementAgent {
   private static final String PULSE_USESSL_MANAGER = "pulse.useSSL.manager";
   private static final String PULSE_USESSL_LOCATOR = "pulse.useSSL.locator";
 
-  public ManagementAgent(DistributionConfig config, SecurityService securityService) {
+  public ManagementAgent(DistributionConfig config, InternalCache cache) {
     this.config = config;
-    this.securityService = securityService;
+    this.cache = cache;
+    this.securityService = cache.getSecurityService();
   }
 
   public synchronized boolean isRunning() {
     return this.running;
   }
 
-  synchronized boolean isHttpServiceRunning() {
-    return isHttpServiceRunning;
-  }
 
-  private synchronized void setHttpServiceRunning(boolean isHttpServiceRunning) {
-    this.isHttpServiceRunning = isHttpServiceRunning;
-  }
-
-  private boolean isAPIRestServiceRunning(InternalCache cache) {
-    return (cache != null && cache.getRestAgent() != null && cache.getRestAgent().isRunning());
-  }
-
-  private boolean isServerNode(InternalCache cache) {
-    return (cache.getInternalDistributedSystem().getDistributedMember()
-        .getVmKind() != ClusterDistributionManager.LOCATOR_DM_TYPE
-        && cache.getInternalDistributedSystem().getDistributedMember()
-            .getVmKind() != ClusterDistributionManager.ADMIN_ONLY_DM_TYPE
-        && !cache.isClient());
-  }
-
-  public synchronized void startAgent(InternalCache cache) {
-    // Do not start Management REST service if developer REST service is already
-    // started.
-
-    if (!isAPIRestServiceRunning(cache)) {
-      startHttpService(isServerNode(cache));
-    } else {
-      if (logger.isDebugEnabled()) {
-        logger.debug(
-            "Developer REST APIs webapp is already running, Not Starting M&M REST and pulse!");
-      }
-    }
+  public synchronized void startAgent() {
+    loadWebApplications();
 
     if (!this.running && this.config.getJmxManagerPort() != 0) {
       try {
@@ -166,8 +143,6 @@ public class ManagementAgent {
   }
 
   public synchronized void stopAgent() {
-    stopHttpService();
-
     if (!this.running) {
       return;
     }
@@ -185,104 +160,77 @@ public class ManagementAgent {
     this.running = false;
   }
 
-  private Server httpServer;
   private final String GEMFIRE_VERSION = GemFireVersion.getGemFireVersion();
   private final AgentUtil agentUtil = new AgentUtil(GEMFIRE_VERSION);
 
-  private void startHttpService(boolean isServer) {
+  private void loadWebApplications() {
     final SystemManagementService managementService = (SystemManagementService) ManagementService
-        .getManagementService(CacheFactory.getAnyInstance());
+        .getManagementService(cache);
 
     final ManagerMXBean managerBean = managementService.getManagerMXBean();
 
-    if (this.config.getHttpServicePort() != 0) {
+    if (this.config.getHttpServicePort() == 0) {
+      setStatusMessage(managerBean,
+          "Embedded HTTP server configured not to start (http-service-port=0) or (jmx-manager-http-port=0)");
+      return;
+    }
+
+    // Find the Management rest WAR file
+    final URI adminRestWar = agentUtil.findWarLocation("geode-web");
+    if (adminRestWar == null) {
       if (logger.isDebugEnabled()) {
-        logger.debug("Attempting to start HTTP service on port ({}) at bind-address ({})...",
-            this.config.getHttpServicePort(), this.config.getHttpServiceBindAddress());
+        logger.debug(
+            "Unable to find Geode V1 Management REST API WAR file; the Management REST Interface for Geode will not be accessible.");
       }
+    }
 
-      // Find the Management WAR file
-      final String gemfireWar = agentUtil.findWarLocation("geode-web");
-      if (gemfireWar == null) {
-        if (logger.isDebugEnabled()) {
-          logger.debug(
-              "Unable to find GemFire Management REST API WAR file; the Management REST Interface for GemFire will not be accessible.");
-        }
+    // Find the Pulse WAR file
+    final URI pulseWar = agentUtil.findWarLocation("geode-pulse");
+
+    if (pulseWar == null) {
+      final String message =
+          "Unable to find Pulse web application WAR file; Pulse for Geode will not be accessible";
+      setStatusMessage(managerBean, message);
+      if (logger.isDebugEnabled()) {
+        logger.debug(message);
       }
-
-      // Find the Pulse WAR file
-      final String pulseWar = agentUtil.findWarLocation("geode-pulse");
-
-      if (pulseWar == null) {
-        final String message =
-            "Unable to find Pulse web application WAR file; Pulse for GemFire will not be accessible";
-        setStatusMessage(managerBean, message);
-        if (logger.isDebugEnabled()) {
-          logger.debug(message);
+    } else {
+      String pwFile = this.config.getJmxManagerPasswordFile();
+      if (securityService.isIntegratedSecurity()) {
+        String[] authTokenEnabledComponents = config.getSecurityAuthTokenEnabledComponents();
+        boolean pulseOauth = Arrays.stream(authTokenEnabledComponents)
+            .anyMatch(AuthTokenEnabledComponents::hasPulse);
+        if (pulseOauth) {
+          System.setProperty(SPRING_PROFILES_ACTIVE, "pulse.authentication.oauth");
+        } else {
+          System.setProperty(SPRING_PROFILES_ACTIVE, "pulse.authentication.gemfire");
         }
-      } else {
-        String pwFile = this.config.getJmxManagerPasswordFile();
-        if (securityService.isIntegratedSecurity() || StringUtils.isNotBlank(pwFile)) {
-          System.setProperty("spring.profiles.active", "pulse.authentication.gemfire");
-        }
+      } else if (StringUtils.isNotBlank(pwFile)) {
+        System.setProperty(SPRING_PROFILES_ACTIVE, "pulse.authentication.gemfire");
       }
+    }
 
-      // Find developer REST WAR file
-      final String gemfireAPIWar = agentUtil.findWarLocation("geode-web-api");
-      if (gemfireAPIWar == null) {
-        final String message =
-            "Unable to find GemFire Developer REST API WAR file; the Developer REST Interface for GemFire will not be accessible.";
-        setStatusMessage(managerBean, message);
-        if (logger.isDebugEnabled()) {
-          logger.debug(message);
+    try {
+      HttpService httpService = cache.getService(HttpService.class);
+      if (httpService != null && agentUtil.isAnyWarFileAvailable(adminRestWar, pulseWar)) {
+
+        final String bindAddress = this.config.getHttpServiceBindAddress();
+        final int port = this.config.getHttpServicePort();
+
+        Map<String, Object> serviceAttributes = new HashMap<>();
+        serviceAttributes.put(HttpService.SECURITY_SERVICE_SERVLET_CONTEXT_PARAM,
+            securityService);
+
+        // if jmx manager is running, admin rest should be available, either on locator or server
+        if (agentUtil.isAnyWarFileAvailable(adminRestWar)) {
+          Path adminRestWarPath = Paths.get(adminRestWar);
+          httpService.addWebApplication("/gemfire", adminRestWarPath, serviceAttributes);
+          httpService.addWebApplication("/geode-mgmt", adminRestWarPath, serviceAttributes);
         }
-      }
 
-      try {
-        if (agentUtil.isWebApplicationAvailable(gemfireWar, pulseWar, gemfireAPIWar)) {
-
-          final String bindAddress = this.config.getHttpServiceBindAddress();
-          final int port = this.config.getHttpServicePort();
-
-          boolean isRestWebAppAdded = false;
-
-          this.httpServer = JettyHelper.initJetty(bindAddress, port, SSLConfigurationFactory
-              .getSSLConfigForComponent(config, SecurableCommunicationChannel.WEB));
-
-          if (agentUtil.isWebApplicationAvailable(gemfireWar)) {
-            this.httpServer = JettyHelper.addWebApplication(this.httpServer, "/gemfire", gemfireWar,
-                securityService, null);
-            this.httpServer = JettyHelper.addWebApplication(this.httpServer, "/geode-mgmt",
-                gemfireWar, securityService, null);
-          }
-
-          if (agentUtil.isWebApplicationAvailable(pulseWar)) {
-            this.httpServer = JettyHelper.addWebApplication(this.httpServer, "/pulse", pulseWar,
-                securityService, createSslProps());
-          }
-
-          if (isServer && this.config.getStartDevRestApi()) {
-            if (agentUtil.isWebApplicationAvailable(gemfireAPIWar)) {
-              this.httpServer = JettyHelper.addWebApplication(this.httpServer, "/geode",
-                  gemfireAPIWar, securityService, null);
-              this.httpServer = JettyHelper.addWebApplication(this.httpServer, "/gemfire-api",
-                  gemfireAPIWar, securityService, null);
-              isRestWebAppAdded = true;
-            }
-          } else {
-            final String message =
-                "Developer REST API web application will not start when start-dev-rest-api is not set and node is not server";
-            setStatusMessage(managerBean, message);
-            if (logger.isDebugEnabled()) {
-              logger.debug(message);
-            }
-          }
-
-          if (logger.isDebugEnabled()) {
-            logger.debug("Starting HTTP embedded server on port ({}) at bind-address ({})...",
-                ((ServerConnector) this.httpServer.getConnectors()[0]).getPort(), bindAddress);
-          }
-
+        // if jmx manager is running, pulse should be available, either on locator or server
+        // we need to pass in the sllConfig to pulse because it needs it to make jmx connection
+        if (agentUtil.isAnyWarFileAvailable(pulseWar)) {
           System.setProperty(PULSE_EMBEDDED_PROP, "true");
           System.setProperty(PULSE_HOST_PROP, "" + config.getJmxManagerBindAddress());
           System.setProperty(PULSE_PORT_PROP, "" + config.getJmxManagerPort());
@@ -291,42 +239,22 @@ public class ManagementAgent {
               SocketCreatorFactory.getSocketCreatorForComponent(SecurableCommunicationChannel.JMX);
           final SocketCreator locatorSocketCreator = SocketCreatorFactory
               .getSocketCreatorForComponent(SecurableCommunicationChannel.LOCATOR);
-          System.setProperty(PULSE_USESSL_MANAGER, jmxSocketCreator.useSSL() + "");
-          System.setProperty(PULSE_USESSL_LOCATOR, locatorSocketCreator.useSSL() + "");
+          System.setProperty(PULSE_USESSL_MANAGER, jmxSocketCreator.forClient().useSSL() + "");
+          System.setProperty(PULSE_USESSL_LOCATOR, locatorSocketCreator.forClient().useSSL() + "");
 
-          this.httpServer = JettyHelper.startJetty(this.httpServer);
+          serviceAttributes.put(HttpService.GEODE_SSLCONFIG_SERVLET_CONTEXT_PARAM,
+              createSslProps());
 
-          // now, that Tomcat has been started, we can set the URL used by web
-          // clients to connect to Pulse
-          if (agentUtil.isWebApplicationAvailable(pulseWar)) {
-            managerBean.setPulseURL("http://".concat(getHost(bindAddress)).concat(":")
-                .concat(String.valueOf(port)).concat("/pulse/"));
-          }
+          httpService.addWebApplication("/pulse", Paths.get(pulseWar), serviceAttributes);
 
-          // set cache property for developer REST service running
-          if (isRestWebAppAdded) {
-            InternalCache cache = (InternalCache) CacheFactory.getAnyInstance();
-            cache.setRESTServiceRunning(true);
-
-            // create region to hold query information (queryId, queryString).
-            // Added for the developer REST APIs
-            RestAgent.createParameterizedQueryRegion();
-          }
-
-          // set true for HTTP service running
-          setHttpServiceRunning(true);
+          managerBean.setPulseURL("http://".concat(getHost(bindAddress)).concat(":")
+              .concat(String.valueOf(port)).concat("/pulse/"));
         }
-      } catch (Exception e) {
-        stopHttpService();// Jetty needs to be stopped even if it has failed to
-        // start. Some of the threads are left behind even if
-        // server.start() fails due to an exception
-        setStatusMessage(managerBean, "HTTP service failed to start with "
-            + e.getClass().getSimpleName() + " '" + e.getMessage() + "'");
-        throw new ManagementException("HTTP service failed to start", e);
       }
-    } else {
-      setStatusMessage(managerBean,
-          "Embedded HTTP server configured not to start (http-service-port=0) or (jmx-manager-http-port=0)");
+    } catch (Throwable e) {
+      setStatusMessage(managerBean, "HTTP service failed to start with "
+          + e.getClass().getSimpleName() + " '" + e.getMessage() + "'");
+      throw new ManagementException("HTTP service failed to start", e);
     }
   }
 
@@ -373,37 +301,13 @@ public class ManagementAgent {
     } else if (StringUtils.isNotBlank(bindAddress)) {
       return InetAddress.getByName(bindAddress).getHostAddress();
     } else {
-      return SocketCreator.getLocalHost().getHostAddress();
+      return LocalHostUtil.getLocalHost().getHostAddress();
     }
   }
 
   private void setStatusMessage(ManagerMXBean mBean, String message) {
     mBean.setPulseURL("");
     mBean.setStatusMessage(message);
-  }
-
-  private void stopHttpService() {
-    if (this.httpServer != null) {
-      if (logger.isDebugEnabled()) {
-        logger.debug("Stopping the HTTP service...");
-      }
-      try {
-        this.httpServer.stop();
-      } catch (Exception e) {
-        logger.warn("Failed to stop the HTTP service because: {}", e.getMessage(), e);
-      } finally {
-        try {
-          this.httpServer.destroy();
-        } catch (Exception ignore) {
-          logger.error("Failed to properly release resources held by the HTTP service: {}",
-              ignore.getMessage(), ignore);
-        } finally {
-          this.httpServer = null;
-          System.clearProperty("catalina.base");
-          System.clearProperty("catalina.home");
-        }
-      }
-    }
   }
 
   /**
@@ -419,7 +323,7 @@ public class ManagementAgent {
     final String hostname;
     final InetAddress bindAddr;
     if (StringUtils.isBlank(this.config.getJmxManagerBindAddress())) {
-      hostname = SocketCreator.getLocalHost().getHostName();
+      hostname = LocalHostUtil.getLocalHostName();
       bindAddr = null;
     } else {
       hostname = this.config.getJmxManagerBindAddress();
@@ -434,7 +338,7 @@ public class ManagementAgent {
     final SocketCreator socketCreator =
         SocketCreatorFactory.getSocketCreatorForComponent(SecurableCommunicationChannel.JMX);
 
-    final boolean ssl = socketCreator.useSSL();
+    final boolean ssl = socketCreator.forClient().useSSL();
 
     if (logger.isDebugEnabled()) {
       logger.debug("Starting jmx manager agent on port {}{}", port,
@@ -458,8 +362,14 @@ public class ManagementAgent {
     // Retrieve the PlatformMBeanServer.
     MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
 
-    // Environment map. why is this declared as HashMap?
+    // Environment map
     final HashMap<String, Object> env = new HashMap<>();
+
+    // this makes sure the credentials passed to make the connection has to be in the form of String
+    // or String[]. Other form of credentials will not get de-serialized
+    env.put("jmx.remote.rmi.server.credential.types", new String[] {
+        String[].class.getName(),
+        String.class.getName()});
 
     // Manually creates and binds a JMX RMI Connector Server stub with the
     // registry created above: the port we pass here is the port that can
@@ -505,12 +415,12 @@ public class ManagementAgent {
 
           @Override
           public synchronized void start() throws IOException {
+            super.start();
             try {
-              registry.bind("jmxrmi", stub);
+              registry.bind("jmxrmi", stub.toStub());
             } catch (AlreadyBoundException x) {
               throw new IOException(x.getMessage(), x);
             }
-            super.start();
           }
         };
 
@@ -520,8 +430,7 @@ public class ManagementAgent {
       jmxConnectorServer.addNotificationListener(shiroAuthenticator, null,
           jmxConnectorServer.getAttributes());
       // always going to assume authorization is needed as well, if no custom AccessControl, then
-      // the CustomAuthRealm
-      // should take care of that
+      // the CustomAuthRealm should take care of that
       MBeanServerWrapper mBeanServerWrapper = new MBeanServerWrapper(this.securityService);
       jmxConnectorServer.setMBeanServerForwarder(mBeanServerWrapper);
     } else {
@@ -536,6 +445,10 @@ public class ManagementAgent {
         // Rewire the mbs hierarchy to set accessController
         ReadOpFileAccessController controller = new ReadOpFileAccessController(accessFile);
         controller.setMBeanServer(mbs);
+        jmxConnectorServer.setMBeanServerForwarder(controller);
+      } else {
+        // if no access control, do not allow mbean creation to prevent Mlet attack
+        jmxConnectorServer.setMBeanServerForwarder(new BlockMBeanCreationController());
       }
     }
     registerAccessControlMBean();
@@ -612,7 +525,7 @@ public class ManagementAgent {
 
     @Override
     public ServerSocket createServerSocket(int port) throws IOException {
-      return this.sc.createServerSocket(port, TCPConduit.getBackLog(), this.bindAddr);
+      return this.sc.forCluster().createServerSocket(port, TCPConduit.getBackLog(), this.bindAddr);
     }
   }
 }

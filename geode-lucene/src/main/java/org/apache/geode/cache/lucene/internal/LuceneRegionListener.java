@@ -14,29 +14,27 @@
  */
 package org.apache.geode.cache.lucene.internal;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.Analyzer;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.cache.lucene.LuceneIndexDestroyedException;
 import org.apache.geode.cache.lucene.LuceneSerializer;
-import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.InternalRegionArguments;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.RegionListener;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.cache.xmlcache.RegionAttributesCreation;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class LuceneRegionListener implements RegionListener {
 
   private final LuceneServiceImpl service;
-
-  private final InternalCache cache;
 
   private final String indexName;
 
@@ -58,11 +56,10 @@ public class LuceneRegionListener implements RegionListener {
 
   private static final Logger logger = LogService.getLogger();
 
-  public LuceneRegionListener(LuceneServiceImpl service, InternalCache cache, String indexName,
+  public LuceneRegionListener(LuceneServiceImpl service, String indexName,
       String regionPath, String[] fields, Analyzer analyzer, Map<String, Analyzer> fieldAnalyzers,
       LuceneSerializer serializer) {
     this.service = service;
-    this.cache = cache;
     this.indexName = indexName;
     this.regionPath = regionPath;
     this.fields = fields;
@@ -83,7 +80,8 @@ public class LuceneRegionListener implements RegionListener {
   public RegionAttributes beforeCreate(Region parent, String regionName, RegionAttributes attrs,
       InternalRegionArguments internalRegionArgs) {
     RegionAttributes updatedRA = attrs;
-    String path = parent == null ? "/" + regionName : parent.getFullPath() + "/" + regionName;
+    String path =
+        parent == null ? SEPARATOR + regionName : parent.getFullPath() + SEPARATOR + regionName;
 
     if (path.equals(this.regionPath) && this.beforeCreateInvoked.compareAndSet(false, true)) {
 
@@ -91,9 +89,10 @@ public class LuceneRegionListener implements RegionListener {
 
       String aeqId = LuceneServiceImpl.getUniqueIndexName(this.indexName, this.regionPath);
       if (!attrs.getAsyncEventQueueIds().contains(aeqId)) {
-        AttributesFactory af = new AttributesFactory(attrs);
-        af.addAsyncEventQueueId(aeqId);
-        updatedRA = af.create();
+        RegionAttributesCreation regionAttributesCreation =
+            new RegionAttributesCreation(attrs, false);
+        regionAttributesCreation.addAsyncEventQueueId(aeqId);
+        updatedRA = regionAttributesCreation;
       }
 
       // Add index creation profile
@@ -116,8 +115,8 @@ public class LuceneRegionListener implements RegionListener {
       try {
         this.service.afterDataRegionCreated(this.luceneIndex);
       } catch (LuceneIndexDestroyedException e) {
-        logger.warn(LocalizedStrings.LuceneIndexCreation_INDEX_WAS_DESTROYED_WHILE_BEING_CREATED
-            .toString(indexName, regionPath));
+        logger.warn(String.format("Lucene index %s on region %s was destroyed while being created",
+            indexName, regionPath));
         return;
       }
       this.service.createLuceneIndexOnDataRegion((PartitionedRegion) region, luceneIndex);

@@ -35,6 +35,7 @@ import org.apache.geode.cache.query.Struct;
 import org.apache.geode.cache.query.internal.types.ObjectTypeImpl;
 import org.apache.geode.cache.query.types.ObjectType;
 import org.apache.geode.cache.query.types.StructType;
+import org.apache.geode.internal.InternalDataSerializer;
 
 /**
  * Test ResultsBag Limit behaviour
@@ -323,13 +324,13 @@ public class ResultsBagLimitBehaviourJUnitTest {
     assertEquals(9, toBag.size());
     ByteArrayOutputStream baos = new ByteArrayOutputStream(10240);
     DataOutputStream dos = new DataOutputStream(baos);
-    toBag.toData(dos);
+    toBag.toData(dos, InternalDataSerializer.createSerializationContext(dos));
     byte[] data = baos.toByteArray();
     ByteArrayInputStream bis = new ByteArrayInputStream(data);
     DataInputStream dis = new DataInputStream(bis);
     // Create a From ResultBag
     ResultsBag fromBag = getBagObject(String.class);
-    fromBag.fromData(dis);
+    fromBag.fromData(dis, InternalDataSerializer.createDeserializationContext(dis));
     assertEquals(toBag.size(), fromBag.size());
     assertEquals(toBag.occurrences(wrap(null, toBag.getCollectionType().getElementType())),
         fromBag.occurrences(wrap(null, fromBag.getCollectionType().getElementType())));

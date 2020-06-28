@@ -44,10 +44,8 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.ByteArrayDataInput;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.NanoTimer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.DataLocationException;
 import org.apache.geode.internal.cache.DistributedPutAllOperation;
@@ -67,10 +65,15 @@ import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
 import org.apache.geode.internal.cache.versions.ConcurrentCacheModificationException;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A Partitioned Region update message. Meant to be sent only to a bucket's primary owner. In
@@ -210,13 +213,15 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
     this.bridgeContext = contx;
   }
 
+  @Override
   public int getDSFID() {
     return PR_PUTALL_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = (int) InternalDataSerializer.readSignedVL(in);
     if ((flags & HAS_BRIDGE_CONTEXT) != 0) {
       this.bridgeContext = DataSerializer.readObject(in);
@@ -225,10 +230,10 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
     this.putAllPRDataSize = (int) InternalDataSerializer.readUnsignedVL(in);
     this.putAllPRData = new PutAllEntryData[putAllPRDataSize];
     if (this.putAllPRDataSize > 0) {
-      final Version version = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+      final Version version = StaticSerialization.getVersionForDataStreamOrNull(in);
       final ByteArrayDataInput bytesIn = new ByteArrayDataInput();
       for (int i = 0; i < this.putAllPRDataSize; i++) {
-        this.putAllPRData[i] = new PutAllEntryData(in, null, i, version, bytesIn);
+        this.putAllPRData[i] = new PutAllEntryData(in, context, null, i, version, bytesIn);
       }
 
       boolean hasTags = in.readBoolean();
@@ -243,9 +248,10 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
 
-    super.toData(out);
+    super.toData(out, context);
     if (bucketId == null) {
       InternalDataSerializer.writeSignedVL(-1, out);
     } else {
@@ -269,7 +275,7 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
         VersionTag<?> tag = putAllPRData[i].versionTag;
         versionTags.add(tag);
         putAllPRData[i].versionTag = null;
-        putAllPRData[i].toData(out);
+        putAllPRData[i].toData(out, context);
         putAllPRData[i].versionTag = tag;
         // PutAllEntryData's toData did not serialize eventID to save
         // performance for DR, but in PR,
@@ -294,8 +300,9 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
   }
 
   @Override
-  protected void setBooleans(short s, DataInput in) throws IOException, ClassNotFoundException {
-    super.setBooleans(s, in);
+  protected void setBooleans(short s, DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.setBooleans(s, in, context);
     this.skipCallbacks = ((s & SKIP_CALLBACKS) != 0);
   }
 
@@ -408,14 +415,9 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
         dpao = new DistributedPutAllOperation(baseEvent, putAllPRDataSize, false);
       }
 
-      // Fix the updateMsg misorder issue
-      // Lock the keys when doing postPutAll
-      Object keys[] = new Object[putAllPRDataSize];
-      for (int i = 0; i < putAllPRDataSize; ++i) {
-        keys[i] = putAllPRData[i].getKey();
-      }
-
+      Object[] keys = getKeysToBeLocked();
       if (!notificationOnly) {
+        boolean locked = false;
         try {
           if (putAllPRData.length > 0) {
             if (this.posDup && bucketRegion.getConcurrencyChecksEnabled()) {
@@ -440,7 +442,7 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
                 new ThreadIdentifier(eventID.getMembershipID(), eventID.getThreadID());
             bucketRegion.recordBulkOpStart(membershipID, eventID);
           }
-          bucketRegion.waitUntilLocked(keys);
+          locked = bucketRegion.waitUntilLocked(keys);
           boolean lockedForPrimary = false;
           final HashMap succeeded = new HashMap();
           PutAllPartialResult partialKeys = new PutAllPartialResult(putAllPRDataSize);
@@ -507,17 +509,7 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
             // encounter cacheWriter exception
             partialKeys.saveFailedKey(key, cwe);
           } finally {
-            try {
-              // Only PutAllPRMessage knows if the thread id is fake. Event has no idea.
-              // So we have to manually set useFakeEventId for this DPAO
-              dpao.setUseFakeEventId(true);
-              r.checkReadiness();
-              bucketRegion.getDataView().postPutAll(dpao, this.versions, bucketRegion);
-            } finally {
-              if (lockedForPrimary) {
-                bucketRegion.doUnlockForPrimary();
-              }
-            }
+            doPostPutAll(r, dpao, bucketRegion, lockedForPrimary);
           }
           if (partialKeys.hasFailure()) {
             partialKeys.addKeysAndVersions(this.versions);
@@ -531,7 +523,9 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
         } catch (RegionDestroyedException e) {
           ds.checkRegionDestroyedOnBucket(bucketRegion, true, e);
         } finally {
-          bucketRegion.removeAndNotifyKeys(keys);
+          if (locked) {
+            bucketRegion.removeAndNotifyKeys(keys);
+          }
         }
       } else {
         for (int i = 0; i < putAllPRDataSize; i++) {
@@ -557,6 +551,32 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
     }
 
     return true;
+  }
+
+  Object[] getKeysToBeLocked() {
+    // Fix the updateMsg misorder issue
+    // Lock the keys when doing postPutAll
+    Object keys[] = new Object[putAllPRDataSize];
+    for (int i = 0; i < putAllPRDataSize; ++i) {
+      keys[i] = putAllPRData[i].getKey();
+    }
+    return keys;
+  }
+
+  void doPostPutAll(PartitionedRegion r, DistributedPutAllOperation dpao,
+      BucketRegion bucketRegion, boolean lockedForPrimary) {
+    try {
+      // Only PutAllPRMessage knows if the thread id is fake. Event has no idea.
+      // So we have to manually set useFakeEventId for this DPAO
+      dpao.setUseFakeEventId(true);
+      r.checkReadiness();
+      bucketRegion.getDataView().postPutAll(dpao, this.versions, bucketRegion);
+      r.checkReadiness();
+    } finally {
+      if (lockedForPrimary) {
+        bucketRegion.doUnlockForPrimary();
+      }
+    }
   }
 
   public VersionedObjectList getVersions() {
@@ -673,8 +693,8 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
   }
 
   @Override
-  protected boolean mayAddToMultipleSerialGateways(ClusterDistributionManager dm) {
-    return _mayAddToMultipleSerialGateways(dm);
+  protected boolean mayNotifySerialGatewaySender(ClusterDistributionManager dm) {
+    return notifiesSerialGatewaySender(dm);
   }
 
   @Override
@@ -777,15 +797,17 @@ public class PutAllPRMessage extends PartitionMessageWithDirectReply {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.result = in.readBoolean();
       this.versions = (VersionedObjectList) DataSerializer.readObject(in);
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.result);
       DataSerializer.writeObject(this.versions, out);
     }

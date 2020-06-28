@@ -28,7 +28,6 @@ import org.apache.geode.cache.execute.ResultCollector;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 public class SecureFunctionServiceImpl implements SecureFunctionService {
 
@@ -44,16 +43,18 @@ public class SecureFunctionServiceImpl implements SecureFunctionService {
   public List<Object> executeFunctionOnRegion(String functionID, String regionName,
       Object arguments, Set<?> keyFilter) {
 
-    Function function = authorizeAndGetFunction(regionName, functionID);
-    Region region = getRegion(regionName);
-    Execution execution = FunctionService.onRegion(region);
+    Function<Object> function = authorizeAndGetFunction(regionName, functionID, arguments);
+    Region<?, ?> region = getRegion(regionName);
+    @SuppressWarnings("unchecked")
+    Execution<Object, Object, List<Object>> execution = FunctionService.onRegion(region);
     if (keyFilter != null) {
       execution = execution.withFilter(keyFilter);
     }
     return executeFunction(execution, functionID, function, arguments);
   }
 
-  private List<Object> executeFunction(Execution execution, String functionID, Function function,
+  private List<Object> executeFunction(Execution<Object, Object, List<Object>> execution,
+      String functionID, Function<Object> function,
       Object arguments) {
     if (arguments != null) {
       execution = execution.setArguments(arguments);
@@ -66,15 +67,17 @@ public class SecureFunctionServiceImpl implements SecureFunctionService {
     }
   }
 
-  private Function<?> authorizeAndGetFunction(String regionName, String functionID) {
-    final Function<?> function = FunctionService.getFunction(functionID);
+  private <T> Function<T> authorizeAndGetFunction(String regionName, String functionID,
+      Object arguments) {
+    @SuppressWarnings("unchecked")
+    final Function<T> function = FunctionService.getFunction(functionID);
     if (function == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.ExecuteFunction_FUNCTION_NAMED_0_IS_NOT_REGISTERED
-              .toLocalizedString(functionID));
+          String.format("Function named %s is not registered to FunctionService",
+              functionID));
     }
 
-    function.getRequiredPermissions(regionName).forEach(security::authorize);
+    function.getRequiredPermissions(regionName, arguments).forEach(security::authorize);
     return function;
   }
 
@@ -82,16 +85,20 @@ public class SecureFunctionServiceImpl implements SecureFunctionService {
   public List<Object> executeFunctionOnMember(String functionID, Object arguments,
       List<String> memberNameList) {
 
-    Function function = authorizeAndGetFunction(null, functionID);
-    Execution execution = FunctionService.onMembers(getMemberIDs(functionID, memberNameList));
+    Function<Object> function = authorizeAndGetFunction(null, functionID, arguments);
+    @SuppressWarnings("unchecked")
+    Execution<Object, Object, List<Object>> execution =
+        FunctionService.onMembers(getMemberIDs(functionID, memberNameList));
     return executeFunction(execution, functionID, function, arguments);
   }
 
   @Override
   public List<Object> executeFunctionOnGroups(String functionID, Object arguments,
       List<String> groupNameList) {
-    Function function = authorizeAndGetFunction(null, functionID);
-    Execution execution = FunctionService.onMember(groupNameList.toArray(new String[0]));
+    Function<Object> function = authorizeAndGetFunction(null, functionID, arguments);
+    @SuppressWarnings("unchecked")
+    Execution<Object, Object, List<Object>> execution =
+        FunctionService.onMember(groupNameList.toArray(new String[0]));
     return executeFunction(execution, functionID, function, arguments);
   }
 

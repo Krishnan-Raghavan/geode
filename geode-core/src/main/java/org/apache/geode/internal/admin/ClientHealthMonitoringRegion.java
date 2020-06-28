@@ -14,25 +14,28 @@
  */
 package org.apache.geode.internal.admin;
 
-import org.apache.geode.cache.AttributesFactory;
+import org.apache.logging.log4j.Logger;
+
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.CacheListener;
 import org.apache.geode.cache.ExpirationAction;
 import org.apache.geode.cache.ExpirationAttributes;
 import org.apache.geode.cache.Region;
-import org.apache.geode.cache.RegionAttributes;
-import org.apache.geode.cache.Scope;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.util.CacheListenerAdapter;
+import org.apache.geode.internal.admin.remote.ClientHealthStats;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.cache.InternalRegionArguments;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.cache.InternalRegionFactory;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This is an admin (meta) region used by the client health monitoring service to publish the client
  * health details to the cache-server.
  */
 public class ClientHealthMonitoringRegion {
+  private static final Logger logger = LogService.getLogger();
 
-  static final String ADMIN_REGION_NAME = "__ADMIN_CLIENT_HEALTH_MONITORING__";
+  public static final String ADMIN_REGION_NAME = "__ADMIN_CLIENT_HEALTH_MONITORING__";
 
   static final int ADMIN_REGION_EXPIRY_INTERVAL = 20;
 
@@ -41,6 +44,7 @@ public class ClientHealthMonitoringRegion {
    * <p>
    * GuardedBy ClientHealthMonitoringRegion.class
    */
+  @MakeNotStatic
   private static Region currentInstance;
 
   /**
@@ -70,23 +74,19 @@ public class ClientHealthMonitoringRegion {
    */
   private static void initialize(InternalCache cache) {
     try {
-      AttributesFactory factory = new AttributesFactory();
-      factory.setScope(Scope.LOCAL);
+      InternalRegionFactory factory = cache.createInternalRegionFactory(RegionShortcut.LOCAL);
       factory.setEntryTimeToLive(
           new ExpirationAttributes(ADMIN_REGION_EXPIRY_INTERVAL, ExpirationAction.DESTROY));
-      cache.getLogger().fine("ClientHealthMonitoringRegion, setting TTL for entry....");
+      if (logger.isDebugEnabled()) {
+        logger.debug("ClientHealthMonitoringRegion, setting TTL for entry....");
+      }
       factory.addCacheListener(prepareCacheListener());
+      factory.setValueConstraint(ClientHealthStats.class);
       factory.setStatisticsEnabled(true);
-      RegionAttributes regionAttrs = factory.create();
-
-      InternalRegionArguments internalArgs = new InternalRegionArguments();
-      internalArgs.setIsUsedForMetaRegion(true);
-      internalArgs.setIsUsedForPartitionedRegionAdmin(false);
-
-      currentInstance = cache.createVMRegion(ADMIN_REGION_NAME, regionAttrs, internalArgs);
+      factory.setIsUsedForMetaRegion(true).setIsUsedForPartitionedRegionAdmin(false);
+      currentInstance = factory.create(ADMIN_REGION_NAME);
     } catch (Exception ex) {
-      cache.getLoggerI18n().error(
-          LocalizedStrings.ClientHealthMonitoringRegion_ERROR_WHILE_CREATING_AN_ADMIN_REGION, ex);
+      logger.error("Error while creating an admin region", ex);
     }
   }
 

@@ -12,6 +12,7 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
+
 package org.apache.geode.cache.client;
 
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
@@ -26,13 +27,16 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionExistsException;
 import org.apache.geode.cache.TimeoutException;
 import org.apache.geode.cache.client.internal.InternalClientCache;
+import org.apache.geode.cache.client.proxy.ProxySocketFactories;
 import org.apache.geode.cache.server.CacheServer;
-import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.GemFireVersion;
 import org.apache.geode.internal.cache.CacheConfig;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.cache.InternalCacheBuilder;
+import org.apache.geode.metrics.internal.InternalDistributedSystemMetricsService;
+import org.apache.geode.metrics.internal.MetricsService;
+import org.apache.geode.net.SSLParameterExtension;
 import org.apache.geode.pdx.PdxInstance;
 import org.apache.geode.pdx.PdxSerializer;
 import org.apache.geode.security.AuthenticationFailedException;
@@ -155,7 +159,7 @@ public class ClientCacheFactory {
    * Creates a new client cache factory.
    */
   public ClientCacheFactory() {
-    this.dsProps = new Properties();
+    dsProps = new Properties();
   }
 
   /**
@@ -169,7 +173,7 @@ public class ClientCacheFactory {
     if (props == null) {
       props = new Properties();
     }
-    this.dsProps = props;
+    dsProps = props;
   }
 
   /**
@@ -181,7 +185,7 @@ public class ClientCacheFactory {
    * @return a reference to this ClientCacheFactory object
    */
   public ClientCacheFactory set(String name, String value) {
-    this.dsProps.setProperty(name, value);
+    dsProps.setProperty(name, value);
     return this;
   }
 
@@ -214,12 +218,17 @@ public class ClientCacheFactory {
     return basicCreate();
   }
 
+  @SuppressWarnings("deprecation")
+  private static InternalClientCache getInternalClientCache() {
+    return GemFireCacheImpl.getInstance();
+  }
+
   private ClientCache basicCreate() {
     synchronized (ClientCacheFactory.class) {
-      InternalClientCache instance = GemFireCacheImpl.getInstance();
+      InternalClientCache instance = getInternalClientCache();
 
       {
-        String propValue = this.dsProps.getProperty(MCAST_PORT);
+        String propValue = dsProps.getProperty(MCAST_PORT);
         if (propValue != null) {
           int mcastPort = Integer.parseInt(propValue);
           if (mcastPort != 0) {
@@ -230,17 +239,17 @@ public class ClientCacheFactory {
         }
       }
       {
-        String propValue = this.dsProps.getProperty(LOCATORS);
+        String propValue = dsProps.getProperty(LOCATORS);
         if (propValue != null && !propValue.isEmpty()) {
           throw new IllegalStateException(
-              "On a client cache the locators property must be set to an empty string or not set. It was set to \""
+              "On a client cache the locators property must be set to an empty string or not set."
+                  + " It was set to \""
                   + propValue + "\".");
         }
       }
-      this.dsProps.setProperty(MCAST_PORT, "0");
-      this.dsProps.setProperty(LOCATORS, "");
-      InternalDistributedSystem system =
-          (InternalDistributedSystem) DistributedSystem.connect(this.dsProps);
+      dsProps.setProperty(MCAST_PORT, "0");
+      dsProps.setProperty(LOCATORS, "");
+      InternalDistributedSystem system = connectInternalDistributedSystem();
 
       if (instance != null && !instance.isClosed()) {
         // this is ok; just make sure it is a client cache
@@ -250,23 +259,34 @@ public class ClientCacheFactory {
         }
 
         // check if pool is compatible
-        instance.validatePoolFactory(this.pf);
+        instance.validatePoolFactory(pf);
 
         // Check if cache configuration matches.
         cacheConfig.validateCacheConfig(instance);
 
         return instance;
       } else {
-        return GemFireCacheImpl.createClient(system, this.pf, cacheConfig);
+
+        return (InternalClientCache) new InternalCacheBuilder(cacheConfig)
+            .setIsClient(true)
+            .setPoolFactory(pf)
+            .create(system);
       }
     }
   }
 
+  private InternalDistributedSystem connectInternalDistributedSystem() {
+    MetricsService.Builder metricsServiceBuilder =
+        new InternalDistributedSystemMetricsService.Builder()
+            .setIsClient(true);
+    return InternalDistributedSystem.connectInternal(dsProps, null, metricsServiceBuilder);
+  }
+
   private PoolFactory getPoolFactory() {
-    if (this.pf == null) {
-      this.pf = PoolManager.createFactory();
+    if (pf == null) {
+      pf = PoolManager.createFactory();
     }
-    return this.pf;
+    return pf;
   }
 
   /**
@@ -299,6 +319,25 @@ public class ClientCacheFactory {
    */
   public ClientCacheFactory setPoolFreeConnectionTimeout(int connectionTimeout) {
     getPoolFactory().setFreeConnectionTimeout(connectionTimeout);
+    return this;
+  }
+
+  /**
+   * Sets the server connection timeout for this pool. If the pool has a max connections setting,
+   * operations will block if there is no free connections toward designated server. The server
+   * connection timeout
+   * specifies how long those operations will block waiting for a connection toward server before
+   * receiving an {@link AllConnectionsInUseException}. If max connections is not set this setting
+   * has no effect.
+   *
+   * @param connectionTimeout the connection timeout in milliseconds
+   * @return a reference to <code>this</code>
+   * @throws IllegalArgumentException if <code>connectionTimeout</code> is less than
+   *         <code>0</code>.
+   * @see #setPoolMaxConnections(int)
+   */
+  public ClientCacheFactory setPoolServerConnectionTimeout(int connectionTimeout) {
+    getPoolFactory().setServerConnectionTimeout(connectionTimeout);
     return this;
   }
 
@@ -348,7 +387,10 @@ public class ClientCacheFactory {
    *
    * @param threadLocalConnections if <code>true</code> then enable thread local connections.
    * @return a reference to <code>this</code>
+   * @deprecated Since Geode 1.10.0. Thread local connections are ignored. Will be removed in future
+   *             major release.
    */
+  @Deprecated
   public ClientCacheFactory setPoolThreadLocalConnections(boolean threadLocalConnections) {
     getPoolFactory().setThreadLocalConnections(threadLocalConnections);
     return this;
@@ -392,6 +434,7 @@ public class ClientCacheFactory {
    * @throws IllegalArgumentException if <code>maxConnections</code> is less than
    *         <code>minConnections</code>.
    * @see #setPoolFreeConnectionTimeout(int)
+   * @see #setPoolServerConnectionTimeout(int)
    */
   public ClientCacheFactory setPoolMaxConnections(int maxConnections) {
     getPoolFactory().setMaxConnections(maxConnections);
@@ -574,6 +617,30 @@ public class ClientCacheFactory {
   }
 
   /**
+   * Set the socket factory used by this pool to create connections to both locators (if
+   * configured using {@link #addPoolLocator(String, int)} (String, int)}) and servers.
+   *
+   * Sockets returned by this factory will have the rest of the configuration options
+   * specified on this pool and on the {@link ClientCache} applied to them. In particular,
+   * sockets returned by this factory will be wrapped with SSLSockets if ssl is enabled
+   * for this client cache.
+   *
+   * This factory can be used for configuring a proxy, or overriding various socket settings.
+   * For modifying SSL settings, see {@link SSLParameterExtension}
+   *
+   * See {@link ProxySocketFactories}
+   *
+   * @param socketFactory The {@link SocketFactory} to use
+   * @return a reference to <code> this </code>
+   * @see PoolFactory#setSocketFactory(SocketFactory)
+   * @since Geode 1.13
+   */
+  public ClientCacheFactory setPoolSocketFactory(SocketFactory socketFactory) {
+    getPoolFactory().setSocketFactory(socketFactory);
+    return this;
+  }
+
+  /**
    * Sets the interval in milliseconds to wait before sending acknowledgements to the cache server
    * for events received from the server subscriptions.
    *
@@ -644,10 +711,10 @@ public class ClientCacheFactory {
    *         ClientCacheFactory
    */
   public static synchronized ClientCache getAnyInstance() {
-    InternalClientCache instance = GemFireCacheImpl.getInstance();
+    InternalClientCache instance = getInternalClientCache();
     if (instance == null) {
       throw new CacheClosedException(
-          LocalizedStrings.CacheFactory_A_CACHE_HAS_NOT_YET_BEEN_CREATED.toLocalizedString());
+          "A cache has not yet been created.");
     } else {
       if (!instance.isClient()) {
         throw new IllegalStateException(
@@ -672,11 +739,11 @@ public class ClientCacheFactory {
    *
    * @param pdxReadSerialized true to prefer PdxInstance
    * @return this ClientCacheFactory
-   * @since GemFire 6.6
    * @see org.apache.geode.pdx.PdxInstance
+   * @since GemFire 6.6
    */
   public ClientCacheFactory setPdxReadSerialized(boolean pdxReadSerialized) {
-    this.cacheConfig.setPdxReadSerialized(pdxReadSerialized);
+    cacheConfig.setPdxReadSerialized(pdxReadSerialized);
     return this;
   }
 
@@ -687,11 +754,11 @@ public class ClientCacheFactory {
    *
    * @param serializer the serializer to use
    * @return this ClientCacheFactory
-   * @since GemFire 6.6
    * @see PdxSerializer
+   * @since GemFire 6.6
    */
   public ClientCacheFactory setPdxSerializer(PdxSerializer serializer) {
-    this.cacheConfig.setPdxSerializer(serializer);
+    cacheConfig.setPdxSerializer(serializer);
     return this;
   }
 
@@ -705,9 +772,12 @@ public class ClientCacheFactory {
    * @param diskStoreName the name of the disk store to use for the PDX metadata.
    * @return this ClientCacheFactory
    * @since GemFire 6.6
+   * @deprecated Pdx Persistence is not supported on client side. Even when set, it's internally
+   *             ignored.
    */
+  @Deprecated
   public ClientCacheFactory setPdxDiskStore(String diskStoreName) {
-    this.cacheConfig.setPdxDiskStore(diskStoreName);
+    cacheConfig.setPdxDiskStore(diskStoreName);
     return this;
   }
 
@@ -719,9 +789,12 @@ public class ClientCacheFactory {
    * @param isPersistent true if the metadata should be persistent
    * @return this ClientCacheFactory
    * @since GemFire 6.6
+   * @deprecated Pdx Persistence is not supported on client side. Even when set, it's internally
+   *             ignored.
    */
+  @Deprecated
   public ClientCacheFactory setPdxPersistent(boolean isPersistent) {
-    this.cacheConfig.setPdxPersistent(isPersistent);
+    cacheConfig.setPdxPersistent(isPersistent);
     return this;
   }
 
@@ -740,8 +813,7 @@ public class ClientCacheFactory {
    * @since GemFire 6.6
    */
   public ClientCacheFactory setPdxIgnoreUnreadFields(boolean ignore) {
-    this.cacheConfig.setPdxIgnoreUnreadFields(ignore);
+    cacheConfig.setPdxIgnoreUnreadFields(ignore);
     return this;
   }
-
 }

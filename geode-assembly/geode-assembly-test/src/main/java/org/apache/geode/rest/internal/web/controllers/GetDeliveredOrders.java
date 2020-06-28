@@ -14,6 +14,8 @@
  */
 package org.apache.geode.rest.internal.web.controllers;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -38,6 +40,7 @@ import org.apache.geode.cache.query.TypeMismatchException;
  */
 
 public class GetDeliveredOrders implements Function {
+  @Override
   public void execute(FunctionContext context) {
 
     Cache c = null;
@@ -50,7 +53,8 @@ public class GetDeliveredOrders implements Function {
     }
 
     String oql =
-        "SELECT o.purchaseOrderNo, o.deliveryDate  FROM /orders o WHERE o.deliveryDate != NULL";
+        "SELECT o.purchaseOrderNo, o.deliveryDate  FROM " + SEPARATOR
+            + "orders o WHERE o.deliveryDate != NULL";
     final Query query = c.getQueryService().newQuery(oql);
 
     SelectResults result = null;
@@ -91,6 +95,7 @@ public class GetDeliveredOrders implements Function {
     context.getResultSender().lastResult(vals);
   }
 
+  @Override
   public String getId() {
     return "GetDeliveredOrders";
   }

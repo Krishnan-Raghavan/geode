@@ -22,9 +22,8 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.distributed.LeaseExpiredException;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A DistributedLockService contains a collection of DLockToken instances, one for each name in that
@@ -262,7 +261,7 @@ public class DLockToken {
     if (this.expiredLeases.containsKey(Thread.currentThread())) {
       this.expiredLeases.remove(Thread.currentThread());
       throw new LeaseExpiredException(
-          LocalizedStrings.DLockToken_THIS_THREADS_LEASE_EXPIRED_FOR_THIS_LOCK.toLocalizedString());
+          "This thread's lease expired for this lock");
     }
   }
 
@@ -300,7 +299,6 @@ public class DLockToken {
    * @param newLeaseId uniquely identifies the lease for this thread
    * @param newRecursion recursion count if lock has been re-entered
    * @param remoteThread identity of the leasing thread
-   * @return true if lease for this lock token is successfully granted
    */
   synchronized void grantLock(long newLeaseExpireTime, int newLeaseId, int newRecursion,
       RemoteThread remoteThread) {
@@ -501,7 +499,7 @@ public class DLockToken {
   private void checkDestroyed() {
     if (this.destroyed) {
       IllegalStateException e = new IllegalStateException(
-          LocalizedStrings.DLockToken_ATTEMPTING_TO_USE_DESTROYED_TOKEN_0.toLocalizedString(this));
+          String.format("Attempting to use destroyed token: %s", this));
       throw e;
     }
   }

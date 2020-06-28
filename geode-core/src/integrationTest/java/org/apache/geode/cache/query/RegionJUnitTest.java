@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
@@ -35,6 +36,7 @@ import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.internal.cache.EntrySnapshot;
 import org.apache.geode.internal.cache.LocalRegion;
+import org.apache.geode.internal.cache.NonTXEntry;
 import org.apache.geode.internal.cache.RegionEntry;
 import org.apache.geode.test.junit.categories.OQLQueryTest;
 
@@ -61,10 +63,10 @@ public class RegionJUnitTest {
 
   @Test
   public void regionQueryWithFullQueryShouldNotFail() throws Exception {
-    SelectResults results = region.query("SeLeCt * FROM /pos where ID = 1");
+    SelectResults results = region.query("SeLeCt * FROM " + SEPARATOR + "pos where ID = 1");
     assertEquals(1, results.size());
 
-    results = region.query("SELECT * FROM /pos");
+    results = region.query("SELECT * FROM " + SEPARATOR + "pos");
     assertEquals(4 /* num entries added in setup */, results.size());
   }
 
@@ -72,14 +74,15 @@ public class RegionJUnitTest {
   public void regionQueryExecuteWithFullQueryWithDifferentRegionShouldFail() throws Exception {
     expectedException.expect(QueryInvalidException.class);
     cache.createRegionFactory(RegionShortcut.REPLICATE).create("otherRegion");
-    SelectResults results = region.query("select * FROM /otherRegion where ID = 1");
+    SelectResults results = region.query("select * FROM " + SEPARATOR + "otherRegion where ID = 1");
   }
 
   @Test
   public void regionQueryExecuteWithMulipleRegionsInFullQueryShouldFail() throws Exception {
     expectedException.expect(QueryInvalidException.class);
     cache.createRegionFactory(RegionShortcut.REPLICATE).create("otherRegion");
-    SelectResults results = region.query("select * FROM /pos, /otherRegion where ID = 1");
+    SelectResults results = region
+        .query("select * FROM " + SEPARATOR + "pos, " + SEPARATOR + "otherRegion where ID = 1");
   }
 
 
@@ -93,7 +96,7 @@ public class RegionJUnitTest {
   @Test
   public void testQueryServiceInterface() throws Exception {
     for (int i = 0; i < queries.length; i++) {
-      Query q = qs.newQuery("select distinct * from /pos where " + queries[i]);
+      Query q = qs.newQuery("select distinct * from " + SEPARATOR + "pos where " + queries[i]);
       Object r = q.execute();
     }
   }
@@ -101,7 +104,7 @@ public class RegionJUnitTest {
 
   @Test
   public void testParameterBinding() throws Exception {
-    Query q = qs.newQuery("select distinct * from /pos where ID = $1");
+    Query q = qs.newQuery("select distinct * from " + SEPARATOR + "pos where ID = $1");
     Object[] params = new Object[] {new Integer(0)};// {"active"};
     Object r = q.execute(params);
 
@@ -114,10 +117,10 @@ public class RegionJUnitTest {
 
   @Test
   public void testQRegionInterface() throws Exception {
-    String queries[] = {"select distinct * from /pos.keys where toString = '1'",
-        "select distinct * from /pos.values where status = 'active'",
-        "select distinct * from /pos.entries where key = '1'",
-        "select distinct * from /pos.entries where value.status = 'active'"};
+    String queries[] = {"select distinct * from " + SEPARATOR + "pos.keys where toString = '1'",
+        "select distinct * from " + SEPARATOR + "pos.values where status = 'active'",
+        "select distinct * from " + SEPARATOR + "pos.entries where key = '1'",
+        "select distinct * from " + SEPARATOR + "pos.entries where value.status = 'active'"};
 
     for (int i = 0; i < queries.length; i++) {
       Query q = qs.newQuery(queries[i]);
@@ -130,7 +133,7 @@ public class RegionJUnitTest {
   public void testInvalidEntries() throws Exception {
     region.invalidate("1");
     region.invalidate("3");
-    Query q = qs.newQuery("select distinct * from /pos");
+    Query q = qs.newQuery("select distinct * from " + SEPARATOR + "pos");
     SelectResults results = (SelectResults) q.execute();
     assertEquals(2, results.size()); // should not include NULLs
   }
@@ -141,8 +144,8 @@ public class RegionJUnitTest {
     while (entriesIter.hasNext()) {
       Region.Entry entry = (Region.Entry) entriesIter.next();
       RegionEntry regionEntry = null;
-      if (entry instanceof LocalRegion.NonTXEntry) {
-        regionEntry = ((LocalRegion.NonTXEntry) entry).getRegionEntry();
+      if (entry instanceof NonTXEntry) {
+        regionEntry = ((NonTXEntry) entry).getRegionEntry();
       } else {
         regionEntry = ((EntrySnapshot) entry).getRegionEntry();
       }
@@ -156,8 +159,8 @@ public class RegionJUnitTest {
       Object key = keysIterator.next();
       Region.Entry rEntry = lRegion.getEntry(key);
       RegionEntry regionEntry = null;
-      if (rEntry instanceof LocalRegion.NonTXEntry) {
-        regionEntry = ((LocalRegion.NonTXEntry) rEntry).getRegionEntry();
+      if (rEntry instanceof NonTXEntry) {
+        regionEntry = ((NonTXEntry) rEntry).getRegionEntry();
       } else {
         regionEntry = ((EntrySnapshot) rEntry).getRegionEntry();
       }
@@ -168,7 +171,8 @@ public class RegionJUnitTest {
   @Test
   public void testRegionNames() {
     String queryStrs[] =
-        new String[] {"SELECT * FROM /pos", "SELECT * FROM /pos where status='active'"};
+        new String[] {"SELECT * FROM " + SEPARATOR + "pos",
+            "SELECT * FROM " + SEPARATOR + "pos where status='active'"};
 
     CacheUtils.startCache();
     cache = CacheUtils.getCache();

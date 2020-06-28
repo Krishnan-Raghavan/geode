@@ -15,6 +15,7 @@
 package org.apache.geode.internal.cache.ha;
 
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -100,7 +101,8 @@ public class HARegionJUnitTest {
     });
     RegionAttributes ra = factory.create();
     Region region =
-        HARegion.getInstance("HARegionJUnitTest_region", (GemFireCacheImpl) cache, null, ra);
+        HARegion.getInstance("HARegionJUnitTest_region", (GemFireCacheImpl) cache, null, ra,
+            disabledClock());
     region.getAttributesMutator().setEntryTimeToLive(ea);
     return region;
   }
@@ -142,6 +144,7 @@ public class HARegionJUnitTest {
     AttributesFactory factory = new AttributesFactory();
 
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterDestroy(EntryEvent event) {
         assertTrue("eventId has not been set for " + event,
             ((EntryEventImpl) event).getEventId() != null);

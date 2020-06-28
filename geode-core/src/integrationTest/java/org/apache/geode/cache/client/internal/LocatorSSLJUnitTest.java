@@ -21,6 +21,7 @@ import static org.apache.geode.distributed.ConfigurationProperties.SSL_KEYSTORE_
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_KEYSTORE_TYPE;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE;
 import static org.apache.geode.distributed.ConfigurationProperties.SSL_TRUSTSTORE_PASSWORD;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -30,21 +31,16 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.distributed.Locator;
-import org.apache.geode.internal.net.SSLConfigurationFactory;
 import org.apache.geode.test.junit.categories.ClientServerTest;
-import org.apache.geode.util.test.TestUtil;
 
 @Category({ClientServerTest.class})
 public class LocatorSSLJUnitTest {
-  private final String SERVER_KEY_STORE =
-      TestUtil.getResourcePath(LocatorSSLJUnitTest.class, "cacheserver.keystore");
-  private final String SERVER_TRUST_STORE =
-      TestUtil.getResourcePath(LocatorSSLJUnitTest.class, "cacheserver.truststore");
+  private final String KEY_STORE =
+      createTempFileFromResource(LocatorSSLJUnitTest.class, "default.keystore")
+          .getAbsolutePath();
 
   @After
-  public void tearDownTest() {
-    SSLConfigurationFactory.close();
-  }
+  public void tearDownTest() {}
 
   @Test
   public void canStopLocatorWithSSL() throws IOException {
@@ -52,9 +48,9 @@ public class LocatorSSLJUnitTest {
     properties.setProperty(MCAST_PORT, "0");
     properties.put(SSL_ENABLED_COMPONENTS, "all");
     properties.put(SSL_KEYSTORE_TYPE, "jks");
-    properties.put(SSL_KEYSTORE, SERVER_KEY_STORE);
+    properties.put(SSL_KEYSTORE, KEY_STORE);
     properties.put(SSL_KEYSTORE_PASSWORD, "password");
-    properties.put(SSL_TRUSTSTORE, SERVER_TRUST_STORE);
+    properties.put(SSL_TRUSTSTORE, KEY_STORE);
     properties.put(SSL_TRUSTSTORE_PASSWORD, "password");
 
     Locator locator = Locator.startLocatorAndDS(0, null, properties);

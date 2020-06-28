@@ -16,6 +16,7 @@ package org.apache.geode.internal.datasource;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
@@ -40,8 +41,7 @@ import org.junit.Test;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.util.test.TestUtil;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class ConnectionPoolingJUnitTest {
   private static final Logger logger = LogService.getLogger();
@@ -61,7 +61,9 @@ public class ConnectionPoolingJUnitTest {
     encounteredException = false;
     props = new Properties();
     props.setProperty(MCAST_PORT, "0");
-    String path = TestUtil.getResourcePath(ConnectionPoolingJUnitTest.class, "/jta/cachejta.xml");
+    String path =
+        createTempFileFromResource(ConnectionPoolingJUnitTest.class, "/jta/cachejta.xml")
+            .getAbsolutePath();
     props.setProperty(CACHE_XML_FILE, path);
     ds1 = DistributedSystem.connect(props);
     cache = CacheFactory.create(ds1);
@@ -93,7 +95,7 @@ public class ConnectionPoolingJUnitTest {
   @Test
   public void testConnectionPoolFunctions() throws Exception {
     Context ctx = cache.getJNDIContext();
-    ds = (GemFireConnPooledDataSource) ctx.lookup("java:/PooledDataSource");
+    ds = (DataSource) ctx.lookup("java:/PooledDataSource");
     PoolClient_1 clientA = new PoolClient_1();
     ThreadA = new Thread(clientA, "ThreadA");
     PoolClient_2 clientB = new PoolClient_2();
@@ -135,6 +137,7 @@ public class ConnectionPoolingJUnitTest {
         th[i] = new Thread(new Runnable() {
           private int key = threadID;
 
+          @Override
           public void run() {
             try {
               Context ctx = cache.getJNDIContext();
@@ -220,6 +223,7 @@ public class ConnectionPoolingJUnitTest {
   }
 
   private class PoolClient_1 implements Runnable {
+    @Override
     public void run() {
       String threadName = Thread.currentThread().getName();
       logger.debug(" Inside Run method of " + threadName);
@@ -283,6 +287,7 @@ public class ConnectionPoolingJUnitTest {
 
     List poolConnlist = new ArrayList();
 
+    @Override
     public void run() {
       try {
         String threadName = Thread.currentThread().getName();

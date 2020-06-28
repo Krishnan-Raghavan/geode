@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Random;
 import java.util.Set;
 
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
@@ -27,14 +28,13 @@ import org.apache.geode.internal.cache.partitioned.FetchKeysMessage;
 import org.apache.geode.internal.cache.partitioned.FetchKeysMessage.FetchKeysResponse;
 import org.apache.geode.internal.cache.partitioned.PRLocallyDestroyedException;
 import org.apache.geode.internal.cache.tier.InterestType;
-import org.apache.geode.internal.logging.LogService;
 
 /**
- * Extracted from {@link PartitionedRegion}. This is a utility used by Hydra test code only.
+ * Extracted from {@link PartitionedRegion}. This is a utility used by test code only.
  */
 public class PartitionedRegionGetSomeKeys {
 
-  private static final Logger logger = LogService.getLogger();
+  private static final Logger logger = LogManager.getLogger();
 
   /**
    * Test Method: Get a random set of keys from a randomly selected bucket using the provided
@@ -55,10 +55,6 @@ public class PartitionedRegionGetSomeKeys {
       for (int i = 0; i < bucketIds.length; i++) {
         try {
           int whichBucket = random.nextInt(bucketIds.length);
-          if (whichBucket >= bucketIds.length) {
-            // The GSRandom.nextInt(int) may return a value that includes the maximum.
-            whichBucket = bucketIds.length - 1;
-          }
           bucketId = (Integer) bucketIds[whichBucket];
 
           InternalDistributedMember member = partitionedRegion.getNodeForBucketRead(bucketId);

@@ -17,6 +17,8 @@ package org.apache.geode.internal.cache.ha;
 import static junit.framework.TestCase.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
@@ -31,6 +33,10 @@ import org.apache.geode.CancelCriterion;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.HARegion;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
+import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl;
+import org.apache.geode.internal.cache.tier.sockets.HAEventWrapper;
+import org.apache.geode.internal.statistics.StatisticsClock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 
@@ -64,7 +70,24 @@ public class HARegionQueueTest {
     when(haRegion.getGemFireCache()).thenReturn(internalCache);
     haRegionQueue = new HARegionQueue("haRegion", haRegion, internalCache,
         new HAContainerMap(new ConcurrentHashMap()), null, (byte) 1, true,
-        mock(HARegionQueueStats.class), giiLock, rwLock, mock(CancelCriterion.class), false);
+        mock(HARegionQueueStats.class), giiLock, rwLock, mock(CancelCriterion.class), false,
+        mock(StatisticsClock.class));
+
+    CacheClientNotifier.resetInstance();
+  }
+
+  @Test
+  public void whenProxyIDisNullThenItIsNotAddedToClientInterestList() {
+    ClientUpdateMessageImpl clientUpdateMessage = mock(ClientUpdateMessageImpl.class);
+    HAEventWrapper haEventWrapper = mock(HAEventWrapper.class);
+    HAContainerWrapper haContainerWrapper = mock(HAContainerWrapper.class);
+    String regionName = "mockRegion";
+    when(haContainerWrapper.getProxyID(any())).thenReturn(null);
+    haRegionQueue.addClientCQsAndInterestList(clientUpdateMessage, haEventWrapper,
+        haContainerWrapper, regionName);
+    verify(haEventWrapper, times(0)).getClientCqs();
+    verify(haEventWrapper, times(0)).getClientUpdateMessage();
+
   }
 
   @Test

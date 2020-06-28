@@ -14,9 +14,11 @@
  */
 package org.apache.geode.cache.lucene;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.INDEX_NAME;
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.REGION_NAME;
 import static org.apache.geode.internal.Assert.fail;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -29,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 
 import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -42,7 +43,6 @@ import org.apache.geode.cache.lucene.test.TestObject;
 import org.apache.geode.cache.snapshot.RegionSnapshotService;
 import org.apache.geode.cache.snapshot.SnapshotOptions;
 import org.apache.geode.internal.cache.LocalRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
@@ -73,6 +73,9 @@ public class LuceneIndexDestroyDUnitTest extends LuceneDUnitTest {
   public void postSetUp() throws Exception {
     super.postSetUp();
     accessor = Host.getHost(0).getVM(3);
+
+    // Add ignored exceptions to ignore IllegalArgumentException from MemoryUsage java obj
+    IgnoredException.addIgnoredException("committed = 538968064 should be < max = 536870912");
   }
 
   private Object[] parametersForIndexDestroys() {
@@ -514,7 +517,7 @@ public class LuceneIndexDestroyDUnitTest extends LuceneDUnitTest {
   @Test
   @Parameters(method = "getListOfRegionTestTypes")
   public void verifyCreateDestroyDefinedIndex(RegionTestableType regionType) {
-    String[] regionNames = {REGION_NAME, "/" + REGION_NAME};
+    String[] regionNames = {REGION_NAME, SEPARATOR + REGION_NAME};
     for (String regionName : regionNames) {
       dataStore1.invoke(createIndex(INDEX_NAME, regionName, "field1"));
       dataStore1.invoke(() -> verifyDefinedIndexCreated(INDEX_NAME, regionName));
@@ -632,12 +635,12 @@ public class LuceneIndexDestroyDUnitTest extends LuceneDUnitTest {
   }
 
   private void waitUntilPutsHaveStarted() {
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+    await()
         .until(() -> getCache().getRegion(REGION_NAME).size() > 0);
   }
 
   private void waitUntilQueriesHaveStarted() {
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS).until(() -> NUM_QUERIES_COMPLETED > 0);
+    await().until(() -> NUM_QUERIES_COMPLETED > 0);
   }
 
   private void executeQuery(String indexName, String queryString, String field,
@@ -669,8 +672,9 @@ public class LuceneIndexDestroyDUnitTest extends LuceneDUnitTest {
             builder.append(',');
           }
         }
-        assertEquals(LocalizedStrings.LuceneServiceImpl_REGION_0_CANNOT_BE_DESTROYED
-            .toLocalizedString(region.getFullPath(), builder.toString()), e.getLocalizedMessage());
+        assertEquals(String.format(
+            "Region %s cannot be destroyed because it defines Lucene index(es) [%s]. Destroy all Lucene indexes before destroying the region.",
+            region.getFullPath(), builder.toString()), e.getLocalizedMessage());
       }
     }
   }

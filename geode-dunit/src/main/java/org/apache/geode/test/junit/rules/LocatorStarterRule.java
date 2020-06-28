@@ -15,18 +15,19 @@
 package org.apache.geode.test.junit.rules;
 
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_CLUSTER_CONFIGURATION;
+import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_MANAGEMENT_REST_SERVICE;
 import static org.apache.geode.distributed.Locator.startLocatorAndDS;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
-
+import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 
 /**
  * This is a rule to start up a locator in your current VM. It's useful for your Integration Tests.
@@ -52,10 +53,15 @@ import org.apache.geode.internal.cache.InternalCache;
  *
  * <p>
  * If you need a rule to start a server/locator in different VMs for Distributed tests, You should
- * use {@code LocatorServerStartupRule}.
+ * use {@code ClusterStartupRule}.
  */
 public class LocatorStarterRule extends MemberStarterRule<LocatorStarterRule> implements Locator {
   private transient InternalLocator locator;
+
+  public LocatorStarterRule() {
+    // in test environment, enable management request/response logging
+    withSystemProperty("geode.management.request.logging", "true");
+  }
 
   @Override
   public void before() {
@@ -97,7 +103,7 @@ public class LocatorStarterRule extends MemberStarterRule<LocatorStarterRule> im
     httpPort = config.getHttpServicePort();
 
     if (config.getEnableClusterConfiguration()) {
-      Awaitility.await().atMost(65, TimeUnit.SECONDS)
+      await()
           .untilAsserted(() -> assertTrue(locator.isSharedConfigurationRunning()));
     }
   }
@@ -107,8 +113,40 @@ public class LocatorStarterRule extends MemberStarterRule<LocatorStarterRule> im
     return this;
   }
 
+  public LocatorStarterRule withoutManagementRestService() {
+    properties.put(ENABLE_MANAGEMENT_REST_SERVICE, "false");
+    return this;
+  }
+
   @Override
   public InternalCache getCache() {
     return locator.getCache();
+  }
+
+  @Override
+  public void waitTilFullyReconnected() {
+    try {
+      await().until(() -> {
+        InternalLocator intLocator = ClusterStartupRule.getLocator();
+        InternalCache cache = ClusterStartupRule.getCache();
+        return intLocator != null && cache != null && intLocator.getDistributedSystem()
+            .isConnected() && intLocator.isReconnected();
+      });
+    } catch (Exception e) {
+      // provide more information when condition is not satisfied after awaitility timeout
+      InternalLocator intLocator = ClusterStartupRule.getLocator();
+      InternalCache cache = ClusterStartupRule.getCache();
+      DistributedSystem ds = intLocator.getDistributedSystem();
+      System.out.println("locator is: " + (intLocator != null ? "not null" : "null"));
+      System.out.println("cache is: " + (cache != null ? "not null" : "null"));
+      if (ds != null) {
+        System.out.println(
+            "distributed system is: " + (ds.isConnected() ? "connected" : "not connected"));
+      } else {
+        System.out.println("distributed system is: null");
+      }
+      System.out.println("locator is reconnected: " + (intLocator.isReconnected()));
+      throw e;
+    }
   }
 }

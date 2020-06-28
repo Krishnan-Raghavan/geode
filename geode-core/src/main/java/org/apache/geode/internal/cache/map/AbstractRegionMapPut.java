@@ -24,7 +24,7 @@ import org.apache.geode.internal.cache.EntryEventImpl;
 import org.apache.geode.internal.cache.InternalRegion;
 import org.apache.geode.internal.cache.RegionEntry;
 import org.apache.geode.internal.cache.Token;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public abstract class AbstractRegionMapPut {
   private static final Logger logger = LogService.getLogger();
@@ -113,7 +113,16 @@ public abstract class AbstractRegionMapPut {
 
   protected abstract void serializeNewValueIfNeeded();
 
-  protected abstract void runWhileLockedForCacheModification(Runnable r);
+  protected void runWhileLockedForCacheModification(Runnable r) {
+    final boolean locked = getOwner().lockWhenRegionIsInitializing();
+    try {
+      r.run();
+    } finally {
+      if (locked) {
+        getOwner().unlockWhenRegionIsInitializing();
+      }
+    }
+  }
 
   protected abstract void setOldValueForDelta();
 
@@ -147,8 +156,10 @@ public abstract class AbstractRegionMapPut {
    * Always called, even if the put failed.
    * Note that the RegionEntry that was modified by the put
    * is no longer synchronized when this is called.
+   *
+   * @param disabledEviction true if caller previously disabled eviction
    */
-  protected abstract void doAfterCompletionActions();
+  protected abstract void doAfterCompletionActions(boolean disabledEviction);
 
   /**
    * @return regionEntry if put completed, otherwise null.
@@ -164,13 +175,14 @@ public abstract class AbstractRegionMapPut {
   }
 
   private void doPut() {
+    final boolean disabledEviction = getRegionMap().disableLruUpdateCallback();
     try {
       doWithIndexInUpdateMode(this::doPutRetryingIfNeeded);
     } catch (DiskAccessException dae) {
       getOwner().handleDiskAccessException(dae);
       throw dae;
     } finally {
-      doAfterCompletionActions();
+      doAfterCompletionActions(disabledEviction);
     }
   }
 

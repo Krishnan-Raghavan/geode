@@ -16,7 +16,7 @@ package org.apache.geode.cache.query.cq.dunit;
 
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -35,6 +35,7 @@ public class PrCqUsingPoolOptimizedExecuteDUnitTest extends PrCqUsingPoolDUnitTe
   @Override
   public final void postSetUp() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = false;
       }
@@ -44,6 +45,7 @@ public class PrCqUsingPoolOptimizedExecuteDUnitTest extends PrCqUsingPoolDUnitTe
   @Override
   public final void preTearDownCacheTestCase() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = true;
       }

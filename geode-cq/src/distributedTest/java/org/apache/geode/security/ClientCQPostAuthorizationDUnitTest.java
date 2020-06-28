@@ -14,6 +14,7 @@
  */
 package org.apache.geode.security;
 
+import static org.apache.geode.internal.cache.GemFireCacheImpl.getInstance;
 import static org.apache.geode.security.SecurityTestUtils.NO_EXCEPTION;
 import static org.apache.geode.security.SecurityTestUtils.REGION_NAME;
 import static org.apache.geode.security.SecurityTestUtils.closeCache;
@@ -25,7 +26,6 @@ import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
 import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
 import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
-import static org.apache.geode.test.dunit.Wait.waitForCriterion;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -48,13 +48,13 @@ import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.RegionNotFoundException;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.cq.dunit.CqQueryTestListener;
-import org.apache.geode.cache.query.internal.cq.ClientCQImpl;
+import org.apache.geode.cache.query.cq.internal.ClientCQImpl;
 import org.apache.geode.cache.query.internal.cq.CqService;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.security.generator.AuthzCredentialGenerator;
 import org.apache.geode.security.generator.CredentialGenerator;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.SecurityTest;
@@ -71,6 +71,7 @@ public class ClientCQPostAuthorizationDUnitTest extends ClientAuthorizationTestC
   protected final void preSetUpClientAuthorizationTestBase() throws Exception {
     getSystem();
     invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -353,7 +354,7 @@ public class ClientCQPostAuthorizationDUnitTest extends ClientAuthorizationTestC
     WaitCriterion wc = new WaitCriterion() {
       @Override
       public boolean done() {
-        CqService cqService = GemFireCacheImpl.getInstance().getCqService();
+        CqService cqService = getInstance().getCqService();
         cqService.start();
         Collection<? extends InternalCqQuery> cqs = cqService.getAllCqs();
         if (cqs != null) {
@@ -368,7 +369,7 @@ public class ClientCQPostAuthorizationDUnitTest extends ClientAuthorizationTestC
         return num + "Waited for " + num + " CQs to be registered on this server.";
       }
     };
-    waitForCriterion(wc, 60 * 1000, 100, false);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   private boolean checkCQListeners(final int numOfUsers, final boolean[] expectedListenerInvocation,

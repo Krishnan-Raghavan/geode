@@ -21,7 +21,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import javax.servlet.ServletContext;
-import javax.servlet.ServletContextEvent;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -30,8 +29,12 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.junit.rules.TestRule;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.web.context.WebApplicationContext;
 
+import org.apache.geode.tools.pulse.internal.controllers.PulseController;
 import org.apache.geode.tools.pulse.internal.data.PulseConstants;
+import org.apache.geode.tools.pulse.internal.data.PulseVersion;
 import org.apache.geode.tools.pulse.internal.data.Repository;
 
 public class PulseAppListenerTest {
@@ -41,22 +44,31 @@ public class PulseAppListenerTest {
   @Rule
   public final TestRule restoreSystemProperties = new RestoreSystemProperties();
 
-  ServletContextEvent contextEvent;
+  ContextRefreshedEvent contextEvent;
 
   @Before
   public void setUp() {
-    repository = Repository.get();
-    appListener = new PulseAppListener();
+    System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_EMBEDDED, "true");
 
-    contextEvent = mock(ServletContextEvent.class);
-    ServletContext context = mock(ServletContext.class);
-    when(context.getAttribute(anyString())).thenReturn(null);
-    when(contextEvent.getServletContext()).thenReturn(context);
+    repository = new Repository();
+
+    PulseController pulseController = mock(PulseController.class);
+    appListener =
+        new PulseAppListener(pulseController, repository, new ClassPathPropertiesFileLoader());
+    PulseVersion pulseVersion = new PulseVersion(repository);
+    when(pulseController.getPulseVersion()).thenReturn(pulseVersion);
+
+    contextEvent = mock(ContextRefreshedEvent.class);
+    WebApplicationContext applicationContext = mock(WebApplicationContext.class);
+    when(contextEvent.getApplicationContext()).thenReturn(applicationContext);
+
+    ServletContext servletContext = mock(ServletContext.class);
+    when(servletContext.getAttribute(anyString())).thenReturn(null);
+    when(applicationContext.getServletContext()).thenReturn(servletContext);
   }
 
   @Test
   public void embeddedModeDefaultPropertiesRepositoryInitializationTest() {
-    System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_EMBEDDED, "true");
     appListener.contextInitialized(contextEvent);
 
     Assert.assertEquals(false, repository.getJmxUseLocator());
@@ -69,7 +81,6 @@ public class PulseAppListenerTest {
 
   @Test
   public void embeddedModeNonDefaultPropertiesRepositoryInitializationTest() {
-    System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_EMBEDDED, "true");
     System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_PORT, "9999");
     System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_HOST, "nonDefaultBindAddress");
     System.setProperty(PulseConstants.SYSTEM_PROPERTY_PULSE_USESSL_MANAGER,

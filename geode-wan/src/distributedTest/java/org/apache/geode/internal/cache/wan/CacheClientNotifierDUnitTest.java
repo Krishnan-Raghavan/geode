@@ -18,6 +18,7 @@ import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIEN
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -29,14 +30,15 @@ import java.util.Properties;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.EvictionAction;
 import org.apache.geode.cache.EvictionAttributes;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionAttributes;
+import org.apache.geode.cache.RegionFactory;
+import org.apache.geode.cache.RegionShortcut;
+import org.apache.geode.cache.Scope;
 import org.apache.geode.cache.client.Pool;
 import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.server.CacheServer;
@@ -44,16 +46,14 @@ import org.apache.geode.cache.server.ClientSubscriptionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
-import org.apache.geode.internal.cache.GemFireCacheImpl;
+import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.internal.cache.InternalCacheServer;
 import org.apache.geode.internal.cache.ha.HAContainerRegion;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
-import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.WanTest;
 
 @Category({WanTest.class})
@@ -101,8 +101,8 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
 
       @Override
       public void run() throws Exception {
-        List<CacheServer> cacheServers =
-            ((GemFireCacheImpl) cache).getCacheServersAndGatewayReceiver();
+        List<InternalCacheServer> cacheServers =
+            ((InternalCache) cache).getCacheServersAndGatewayReceiver();
         CacheServerImpl server = null;
         for (CacheServer cs : cacheServers) {
           if (cs.getPort() == serverPort) {
@@ -151,16 +151,7 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
       public void run() throws Exception {
         final Region region = cache.getRegion(getTestMethodName() + "_PR");
 
-        Wait.waitForCriterion(new WaitCriterion() {
-          public boolean done() {
-            return region.size() == expect;
-          }
-
-          public String description() {
-            return null;
-          }
-        }, 60000, 100, false);
-        assertEquals(expect, region.size());
+        await().untilAsserted(() -> assertEquals(expect, region.size()));
       }
     };
     vm.invoke(verifyRegionSize);
@@ -202,13 +193,17 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
     int serverPort = createCacheServerWithCSC(vm2, true, 3, "entry", "DEFAULT");
     checkCacheServer(vm2, serverPort, true, 3);
 
-    // create cache server 2
-    final int serverPort2 = createCacheServerWithCSC(vm2, false, 0, null, null);
-    // Currently, only the first cache server's overflow attributes will take effect
-    // It will be enhanced in GEODE-1102
-    checkCacheServer(vm2, serverPort2, true, 3);
-    LogService.getLogger().info("receiverPort=" + receiverPort + ",serverPort=" + serverPort
-        + ",serverPort2=" + serverPort2);
+    /*
+     * GEODE-6344: not to create the 2nd cacheserver on the same jvm until refix of GEODE-1183,
+     * otherwise the test might be hang
+     * // create cache server 2
+     * final int serverPort2 = createCacheServerWithCSC(vm2, false, 0, null, null);
+     * // Currently, only the first cache server's overflow attributes will take effect
+     * // It will be enhanced in GEODE-1102
+     * checkCacheServer(vm2, serverPort2, true, 3);
+     * LogService.getLogger().info("receiverPort=" + receiverPort + ",serverPort=" + serverPort
+     * + ",serverPort2=" + serverPort2);
+     */
 
     vm3.invoke(() -> createClientWithLocator(nyPort, "localhost", getTestMethodName() + "_PR",
         "123", durable));
@@ -229,8 +224,11 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
     verifyRegionSize(vm4, NUM_KEYS);
     verifyRegionSize(vm3, NUM_KEYS);
 
-    // close a cache server, then re-test
-    vm2.invoke(() -> closeACacheServer(serverPort2));
+    /*
+     * GEODE-6344
+     * // close a cache server, then re-test
+     * vm2.invoke(() -> closeACacheServer(serverPort2));
+     */
 
     vm5.invoke(() -> WANTestBase.doPuts(getTestMethodName() + "_PR", NUM_KEYS * 2));
 
@@ -255,7 +253,7 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
     }
 
     InternalDistributedSystem ds = test.getSystem(props);
-    cache = CacheFactory.create(ds);
+    cache = (InternalCache) CacheFactory.create(ds);
 
     assertNotNull(cache);
     CacheServerTestUtil.disableShufflingOfEndpoints();
@@ -268,11 +266,10 @@ public class CacheClientNotifierDUnitTest extends WANTestBase {
       CacheServerTestUtil.enableShufflingOfEndpoints();
     }
 
-    AttributesFactory factory = new AttributesFactory();
-    factory.setPoolName(p.getName());
-    factory.setDataPolicy(DataPolicy.NORMAL);
-    RegionAttributes attrs = factory.create();
-    region = cache.createRegion(regionName, attrs);
+    RegionFactory factory = cache.createRegionFactory(RegionShortcut.LOCAL)
+        .setScope(Scope.DISTRIBUTED_NO_ACK)
+        .setPoolName(p.getName());
+    region = factory.create(regionName);
     region.registerInterest("ALL_KEYS");
     assertNotNull(region);
     if (isDurable) {

@@ -14,14 +14,19 @@
  */
 package org.apache.geode;
 
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.jgroups.annotations.GuardedBy;
+
+import org.apache.geode.annotations.internal.MakeNotStatic;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.internal.ExitCode;
 import org.apache.geode.internal.SystemFailureTestHook;
 import org.apache.geode.internal.admin.remote.RemoteGfManagerAgent;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.logging.internal.executors.LoggingThread;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
+ *
  * Catches and responds to JVM failure
  * <p>
  * This class represents a catastrophic failure of the system, especially the Java virtual machine.
@@ -120,29 +125,6 @@ import org.apache.geode.internal.i18n.LocalizedStrings;
           ...
  * </pre>
  *
- * <h2>Create Logging ThreadGroups</h2> If you create any Thread, a best practice is to catch severe
- * errors and signal failure appropriately. One trick to do this is to create a ThreadGroup that
- * handles uncaught exceptions by overriding
- * {@link ThreadGroup#uncaughtException(Thread, Throwable)} and to declare your thread as a member
- * of that {@link ThreadGroup}. This also has a significant side-benefit in that most uncaught
- * exceptions can be detected:
- * <p>
- *
- * <pre>
-    ThreadGroup tg = new ThreadGroup("Worker Threads") {
-        public void uncaughtException(Thread t, Throwable e) {
-          // Do this *before* any object allocation in case of
-          // OutOfMemoryError (for instance)
-          if (e instanceof VirtualMachineError) {
-            SystemFailure.{@link #setFailure(Error) setFailure}((VirtualMachineError)e); // don't throw
-          }
-          String s = "Uncaught exception in thread " + t;
-          system.getLogWriter().severe(s, e);
-        }
-        Thread t = new Thread(myRunnable, tg, "My Thread");
-        t.start();
-      }; *
- * </pre>
  * <p>
  * <h2>Catches of Error and Throwable Should Check for Failure</h2> Keep in mind that peculiar or
  * flat-out<em>impossible</em> exceptions may ensue after a VirtualMachineError has been thrown
@@ -163,7 +145,14 @@ import org.apache.geode.internal.i18n.LocalizedStrings;
  * </pre>
  *
  * @since GemFire 5.1
+ *
+ * @deprecated since Geode 1.11 because it is potentially counterproductive to try
+ *             to mitigate a VirtualMachineError since the JVM (spec) makes no guarantees about the
+ *             soundness of the JVM after such an error. In the presence of a VirtualMachineError,
+ *             the simplest solution is really the only solution: exit the JVM as soon as possible.
+ *
  */
+@Deprecated
 @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "DM_GC",
     justification = "This class performs System.gc as last ditch effort during out-of-memory condition.")
 public final class SystemFailure {
@@ -171,21 +160,16 @@ public final class SystemFailure {
   /**
    * Time to wait during stopWatchdog and stopProctor. Not final for tests
    */
+  @MutableForTesting
   static int SHUTDOWN_WAIT = 1000;
   /**
-   * Preallocated error messages\ LocalizedStrings may use memory (in the form of an iterator) so we
+   * Preallocated error messages may use memory (in the form of an iterator) so we
    * must get the translated messages in advance.
    **/
   static final String JVM_CORRUPTION =
-      LocalizedStrings.SystemFailure_JVM_CORRUPTION_HAS_BEEN_DETECTED.toLocalizedString();
-  static final String CALLING_SYSTEM_EXIT =
-      LocalizedStrings.SystemFailure_SINCE_THIS_IS_A_DEDICATED_CACHE_SERVER_AND_THE_JVM_HAS_BEEN_CORRUPTED_THIS_PROCESS_WILL_NOW_TERMINATE_PERMISSION_TO_CALL_SYSTEM_EXIT_INT_WAS_GIVEN_IN_THE_FOLLOWING_CONTEXT
-          .toLocalizedString();
-  public static final String DISTRIBUTION_HALTED_MESSAGE =
-      LocalizedStrings.SystemFailure_DISTRIBUTION_HALTED_DUE_TO_JVM_CORRUPTION.toLocalizedString();
-  public static final String DISTRIBUTED_SYSTEM_DISCONNECTED_MESSAGE =
-      LocalizedStrings.SystemFailure_DISTRIBUTED_SYSTEM_DISCONNECTED_DUE_TO_JVM_CORRUPTION
-          .toLocalizedString();
+      "JVM corruption has been detected";
+  private static final String CALLING_SYSTEM_EXIT =
+      "Since this is a dedicated cache server and the JVM has been corrupted, this process will now terminate. Permission to call System#exit(int) was given in the following context.";
 
   /**
    * the underlying failure
@@ -195,6 +179,7 @@ public final class SystemFailure {
    * @see #getFailure()
    * @see #initiateFailure(Error)
    */
+  @MakeNotStatic
   protected static volatile Error failure = null;
 
   /**
@@ -202,6 +187,7 @@ public final class SystemFailure {
    *
    * @see #setFailureAction(Runnable)
    */
+  @MakeNotStatic
   private static volatile Runnable failureAction = () -> {
     System.err.println(JVM_CORRUPTION);
     failure.printStackTrace();
@@ -210,11 +196,13 @@ public final class SystemFailure {
   /**
    * @see #setExitOK(boolean)
    */
+  @MakeNotStatic
   private static volatile boolean exitOK = false;
 
   /**
    * If we're going to exit the JVM, I want to be accountable for who told us it was OK.
    */
+  @MakeNotStatic
   private static volatile Throwable exitExcuse;
 
   /**
@@ -266,6 +254,7 @@ public final class SystemFailure {
    *
    * @see #emergencyClose()
    */
+  @MakeNotStatic
   private static volatile boolean gemfireCloseCompleted = false;
 
   /**
@@ -273,21 +262,8 @@ public final class SystemFailure {
    *
    * @see #setFailureAction(Runnable)
    */
+  @MakeNotStatic
   private static volatile boolean failureActionCompleted = false;
-
-  /**
-   * This is a logging ThreadGroup, created only once.
-   */
-  private static final ThreadGroup tg;
-  static {
-    tg = new ThreadGroup("SystemFailure Watchdog Threads") {
-      @Override
-      public void uncaughtException(Thread t, Throwable e) {
-        System.err.println("Internal error in SystemFailure watchdog:" + e);
-        e.printStackTrace();
-      }
-    };
-  }
 
   /**
    * This is the amount of time, in seconds, the watchdog periodically awakens to see if the system
@@ -300,16 +276,17 @@ public final class SystemFailure {
    * This can be set with the system property <code>gemfire.WATCHDOG_WAIT</code>. The default is 15
    * sec.
    */
-  public static final int WATCHDOG_WAIT =
-      Integer.getInteger(DistributionConfig.GEMFIRE_PREFIX + "WATCHDOG_WAIT", 15).intValue();
+  private static final int WATCHDOG_WAIT =
+      Integer.getInteger(GeodeGlossary.GEMFIRE_PREFIX + "WATCHDOG_WAIT", 15);
 
   /**
    * This is the watchdog thread
-   *
-   * @guarded.By {@link #failureSync}
    */
+  @GuardedBy("failureSync")
+  @MakeNotStatic
   private static Thread watchDog;
 
+  @MakeNotStatic
   private static volatile boolean isCacheClosing = false;
 
   /**
@@ -343,8 +320,7 @@ public final class SystemFailure {
       if (watchDog != null && watchDog.isAlive()) {
         return;
       }
-      watchDog = new Thread(tg, SystemFailure::runWatchDog, "SystemFailure WatchDog");
-      watchDog.setDaemon(true);
+      watchDog = new LoggingThread("SystemFailure WatchDog", SystemFailure::runWatchDog);
       watchDog.start();
     }
   }
@@ -376,39 +352,12 @@ public final class SystemFailure {
   /**
    * This is the run loop for the watchdog thread.
    */
-  protected static void runWatchDog() {
+  private static void runWatchDog() {
 
     boolean warned = false;
 
     logFine(WATCHDOG_NAME, "Starting");
-    try {
-      basicLoadEmergencyClasses();
-    } catch (ExceptionInInitializerError e) {
-      // Determine if we're shutting down...
-      boolean noSurprise = false;
-      Throwable cause = e.getCause();
-      if (cause != null) {
-        if (cause instanceof IllegalStateException) {
-          String msg = cause.getMessage();
-          if (msg.contains("Shutdown in progress")) {
-            noSurprise = true;
-          }
-        }
-      }
-      if (!noSurprise) {
-        logWarning(WATCHDOG_NAME, "Unable to load GemFire classes: ", e);
-      }
-      return;
-    } catch (CancelException e) {
-      // ignore this because we are shutting down anyway
-    } catch (Throwable t) {
-      logWarning(WATCHDOG_NAME, "Unable to initialize watchdog", t);
-      return;
-    }
-    for (;;) {
-      if (stopping) {
-        return;
-      }
+    while (!stopping) {
       try {
         if (isCacheClosing) {
           break;
@@ -420,7 +369,7 @@ public final class SystemFailure {
           }
           logFine(WATCHDOG_NAME, "Waiting for disaster");
           try {
-            failureSync.wait(WATCHDOG_WAIT * 1000);
+            failureSync.wait(WATCHDOG_WAIT * 1000L);
           } catch (InterruptedException e) {
             // Ignore
           }
@@ -480,7 +429,6 @@ public final class SystemFailure {
           ExitCode.FATAL.doSystemExit();
         }
 
-
         logInfo(WATCHDOG_NAME, "exiting");
         return;
       } catch (Throwable t) {
@@ -492,9 +440,10 @@ public final class SystemFailure {
   /**
    * Spies on system statistics looking for low memory threshold
    *
-   * @guarded.By {@link #failureSync}
    * @see #minimumMemoryThreshold
    */
+  @GuardedBy("failureSync")
+  @MakeNotStatic
   private static Thread proctor;
 
   /**
@@ -511,10 +460,11 @@ public final class SystemFailure {
    * failure.
    *
    * @see #setFailureMemoryThreshold(long)
-   * @guarded.By {@link #memorySync}
    */
-  static long minimumMemoryThreshold = Long.getLong(
-      DistributionConfig.GEMFIRE_PREFIX + "SystemFailure.chronic_memory_threshold", 1048576);
+  @GuardedBy("memorySync")
+  @MakeNotStatic
+  private static long minimumMemoryThreshold = Long.getLong(
+      GeodeGlossary.GEMFIRE_PREFIX + "SystemFailure.chronic_memory_threshold", 1048576);
 
   /**
    * This is the interval, in seconds, that the proctor thread will awaken and poll system free
@@ -525,8 +475,8 @@ public final class SystemFailure {
    *
    * @see #setFailureMemoryThreshold(long)
    */
-  public static final long MEMORY_POLL_INTERVAL =
-      Long.getLong(DistributionConfig.GEMFIRE_PREFIX + "SystemFailure.MEMORY_POLL_INTERVAL", 1);
+  private static final long MEMORY_POLL_INTERVAL =
+      Long.getLong(GeodeGlossary.GEMFIRE_PREFIX + "SystemFailure.MEMORY_POLL_INTERVAL", 1);
 
   /**
    * This is the maximum amount of time, in seconds, that the proctor thread will tolerate seeing
@@ -539,7 +489,7 @@ public final class SystemFailure {
    * @see #setFailureMemoryThreshold(long)
    */
   public static final long MEMORY_MAX_WAIT =
-      Long.getLong(DistributionConfig.GEMFIRE_PREFIX + "SystemFailure.MEMORY_MAX_WAIT", 15);
+      Long.getLong(GeodeGlossary.GEMFIRE_PREFIX + "SystemFailure.MEMORY_MAX_WAIT", 15);
 
   /**
    * Flag that determines whether or not we monitor memory on our own. If this flag is set, we will
@@ -551,8 +501,8 @@ public final class SystemFailure {
    *
    * @since GemFire 6.5
    */
-  public static final boolean MONITOR_MEMORY =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "SystemFailure.MONITOR_MEMORY");
+  private static final boolean MONITOR_MEMORY =
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "SystemFailure.MONITOR_MEMORY");
 
   /**
    * Start the proctor thread, if it isn't already running.
@@ -568,8 +518,7 @@ public final class SystemFailure {
       if (proctor != null && proctor.isAlive()) {
         return;
       }
-      proctor = new Thread(tg, SystemFailure::runProctor, "SystemFailure Proctor");
-      proctor.setDaemon(true);
+      proctor = new LoggingThread("SystemFailure Proctor", SystemFailure::runProctor);
       proctor.start();
     }
   }
@@ -596,36 +545,34 @@ public final class SystemFailure {
 
   /**
    * this is the last time we saw memory starvation
-   *
-   * @guarded.By {@link #memorySync}}}
    */
+  @GuardedBy("memorySync")
+  @MakeNotStatic
   private static long firstStarveTime = NEVER_STARVED;
 
   /**
    * This is the previous measure of total memory. If it changes, we reset the proctor's starve
    * statistic.
    */
+  @MakeNotStatic
   private static long lastTotalMemory = 0;
 
   /**
    * This is the run loop for the proctor thread
    */
-  protected static void runProctor() {
+  private static void runProctor() {
     // Note that the javadocs say this can return Long.MAX_VALUE.
     final long maxMemory = Runtime.getRuntime().maxMemory();
 
     // Allocate this error in advance, since it's too late once it's been detected!
     final OutOfMemoryError oome = new OutOfMemoryError(
-        LocalizedStrings.SystemFailure_0_MEMORY_HAS_REMAINED_CHRONICALLY_BELOW_1_BYTES_OUT_OF_A_MAXIMUM_OF_2_FOR_3_SEC
-            .toLocalizedString(new Object[] {PROCTOR_NAME, Long.valueOf(minimumMemoryThreshold),
-                Long.valueOf(maxMemory), Integer.valueOf(WATCHDOG_WAIT)}));
+        String.format(
+            "%s : memory has remained chronically below %s bytes (out of a maximum of %s ) for %s sec.",
+            PROCTOR_NAME, minimumMemoryThreshold, maxMemory, WATCHDOG_WAIT));
 
     logFine(PROCTOR_NAME,
         "Starting, threshold = " + minimumMemoryThreshold + "; max = " + maxMemory);
-    for (;;) {
-      if (isCacheClosing) {
-        break;
-      }
+    while (!isCacheClosing) {
       if (stopping) {
         return;
       }
@@ -748,19 +695,9 @@ public final class SystemFailure {
    */
   private static final boolean DEBUG = false;
 
-  /**
-   * If true, we track the progress of emergencyClose on System.err
-   */
-  public static final boolean TRACE_CLOSE = false;
+  private static final String WATCHDOG_NAME = "SystemFailure Watchdog";
 
-  protected static final String WATCHDOG_NAME = "SystemFailure Watchdog";
-
-  protected static final String PROCTOR_NAME = "SystemFailure Proctor";
-
-  /**
-   * break any potential circularity in {@link #loadEmergencyClasses()}
-   */
-  private static volatile boolean emergencyClassesLoaded = false;
+  private static final String PROCTOR_NAME = "SystemFailure Proctor";
 
   /**
    * Since it requires object memory to unpack a jar file, make sure this JVM has loaded the classes
@@ -772,15 +709,6 @@ public final class SystemFailure {
    */
   public static void loadEmergencyClasses() {
     startThreads();
-  }
-
-  private static void basicLoadEmergencyClasses() {
-    if (emergencyClassesLoaded)
-      return;
-    emergencyClassesLoaded = true;
-    SystemFailureTestHook.loadEmergencyClasses(); // bug 50516
-    GemFireCacheImpl.loadEmergencyClasses();
-    RemoteGfManagerAgent.loadEmergencyClasses();
   }
 
   /**
@@ -800,22 +728,12 @@ public final class SystemFailure {
    * system.
    */
   public static void emergencyClose() {
-    if (TRACE_CLOSE) {
-      System.err.println("SystemFailure: closing GemFireCache");
-    }
     GemFireCacheImpl.emergencyClose();
 
-    if (TRACE_CLOSE) {
-      System.err.println("SystemFailure: closing admins");
-    }
     RemoteGfManagerAgent.emergencyClose();
 
     // If memory was the problem, make an explicit attempt at this point to clean up.
     System.gc();
-
-    if (TRACE_CLOSE) {
-      System.err.println("SystemFailure: end of emergencyClose");
-    }
   }
 
   /**
@@ -828,7 +746,7 @@ public final class SystemFailure {
    * have, instead of wrapping it with one pertinent to the current context. See bug 38394.
    *
    */
-  private static void throwFailure() throws InternalGemFireError, Error {
+  private static void throwFailure() throws Error {
     if (failure != null)
       throw failure;
   }
@@ -886,8 +804,7 @@ public final class SystemFailure {
   public static void setFailure(Error failure) {
     if (failure == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.SystemFailure_YOU_ARE_NOT_PERMITTED_TO_UNSET_A_SYSTEM_FAILURE
-              .toLocalizedString());
+          "You are not permitted to un-set a system failure.");
     }
     if (SystemFailureTestHook.errorIsExpected(failure)) {
       return;
@@ -1015,6 +932,7 @@ public final class SystemFailure {
     }
   }
 
+  @MakeNotStatic
   private static volatile boolean stopping;
 
   /**

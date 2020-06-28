@@ -34,7 +34,6 @@ import java.util.Set;
 
 import org.apache.geode.InternalGemFireException;
 import org.apache.geode.internal.admin.EntryValueNode;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * This class holds the metadata for a single object field in a value stored in the cache. They are
@@ -49,7 +48,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
   private String name;
   private boolean primitive;
   private EntryValueNodeImpl[] fields;
-  private static ThreadLocal recursionSet = new ThreadLocal();
+  private static final ThreadLocal recursionSet = new ThreadLocal();
 
   public static EntryValueNodeImpl createFromValueRoot(Object value, boolean logicalInspection) {
     recursionSet.set(new IdentityHashMap());
@@ -274,8 +273,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
         AccessibleObject.setAccessible(fields, true);
       } catch (SecurityException se) {
         throw new InternalGemFireException(
-            LocalizedStrings.EntryValueNodeImpl_UNABLE_TO_SET_ACCESSIBILITY_OF_FIELD_OBJECTS_DURING_CACHE_VALUE_DISPLAY_CONSTRUCTION
-                .toLocalizedString(),
+            "Unable to set accessibility of Field objects during cache value display construction",
             se);
       }
       List fieldList = new ArrayList();
@@ -289,8 +287,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
           fieldVal = fields[i].get(obj);
         } catch (Exception e) {
           throw new InternalGemFireException(
-              LocalizedStrings.EntryValueNodeImpl_UNABLE_TO_BUILD_CACHE_VALUE_DISPLAY
-                  .toLocalizedString(),
+              "Unable to build cache value display",
               e);
         }
         String name = fields[i].getName();
@@ -318,18 +315,22 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
     return (obj instanceof Map || obj instanceof List || obj instanceof Collection);
   }
 
+  @Override
   public boolean isPrimitiveOrString() {
     return primitive;
   }
 
+  @Override
   public String getName() {
     return name;
   }
 
+  @Override
   public String getType() {
     return type;
   }
 
+  @Override
   public EntryValueNode[] getChildren() {
     if (fields != null) {
       return fields;
@@ -338,6 +339,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
     }
   }
 
+  @Override
   public Object getPrimitiveValue() {
     return primitiveVal;
   }
@@ -366,6 +368,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
     }
   }
 
+  @Override
   public void writeExternal(ObjectOutput out) throws IOException {
     out.writeObject(primitiveVal);
     out.writeObject(type);
@@ -374,6 +377,7 @@ public class EntryValueNodeImpl implements EntryValueNode, Externalizable/* , Da
     out.writeBoolean(primitive);
   }
 
+  @Override
   public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
     this.primitiveVal = in.readObject();
     this.type = (String) in.readObject();

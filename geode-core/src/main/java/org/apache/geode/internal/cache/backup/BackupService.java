@@ -20,10 +20,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.logging.log4j.Logger;
@@ -35,8 +32,8 @@ import org.apache.geode.distributed.internal.membership.InternalDistributedMembe
 import org.apache.geode.internal.cache.DiskStoreImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.Oplog;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.LoggingThreadGroup;
+import org.apache.geode.logging.internal.executors.LoggingExecutors;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class BackupService {
   private static final Logger logger = LogService.getLogger();
@@ -77,6 +74,7 @@ public class BackupService {
     try {
       result = taskFuture.get();
     } catch (InterruptedException | ExecutionException e) {
+      logger.warn("Backup failed with exception: ", e);
       result = new HashSet<>();
     } finally {
       cleanup();
@@ -126,7 +124,7 @@ public class BackupService {
     Set allIds =
         cache.getDistributionManager().addAllMembershipListenerAndGetAllIds(membershipListener);
     if (!allIds.contains(sender)) {
-      cleanup();
+      abortBackup();
       throw new IllegalStateException("The member requesting a backup has already departed");
     }
   }
@@ -136,21 +134,9 @@ public class BackupService {
   }
 
   private ExecutorService createExecutor() {
-    LoggingThreadGroup group = LoggingThreadGroup.createThreadGroup("BackupService Thread", logger);
-    ThreadFactory threadFactory = new ThreadFactory() {
-
-      private final AtomicInteger threadId = new AtomicInteger();
-
-      @Override
-      public Thread newThread(final Runnable command) {
-        Thread thread =
-            new Thread(group, command, "BackupServiceThread" + threadId.incrementAndGet());
-        thread.setDaemon(true);
-        return thread;
-      }
-    };
-    return Executors.newSingleThreadExecutor(threadFactory);
+    return LoggingExecutors.newSingleThreadExecutor("BackupServiceThread", true);
   }
+
 
   private void cleanup() {
     cache.getDistributionManager().removeAllMembershipListener(membershipListener);
@@ -162,7 +148,7 @@ public class BackupService {
     @Override
     public void memberDeparted(DistributionManager distributionManager,
         InternalDistributedMember id, boolean crashed) {
-      cleanup();
+      abortBackup();
     }
 
     @Override

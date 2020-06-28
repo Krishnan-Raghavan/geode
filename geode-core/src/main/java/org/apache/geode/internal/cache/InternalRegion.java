@@ -16,7 +16,9 @@ package org.apache.geode.internal.cache;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.Lock;
 
@@ -40,6 +42,7 @@ import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.cache.eviction.EvictionController;
 import org.apache.geode.internal.cache.persistence.DiskExceptionHandler;
+import org.apache.geode.internal.cache.persistence.DiskRecoveryStore;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
@@ -65,10 +68,14 @@ import org.apache.geode.internal.util.concurrent.StoppableCountDownLatch;
  */
 @SuppressWarnings("rawtypes")
 public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryContext,
-    RegionAttributes, HasDiskRegion, RegionMapOwner, DiskExceptionHandler {
+    RegionAttributes, HasDiskRegion, RegionMapOwner, DiskExceptionHandler, DiskRecoveryStore {
 
+  int getLocalSize();
+
+  @Override
   CachePerfStats getCachePerfStats();
 
+  @Override
   DiskRegion getDiskRegion();
 
   RegionEntry getRegionEntry(Object key);
@@ -98,6 +105,8 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
   void unscheduleTombstone(RegionEntry entry);
 
   void scheduleTombstone(RegionEntry entry, VersionTag destroyedVersion);
+
+  void scheduleTombstone(RegionEntry entry, VersionTag destroyedVersion, boolean reschedule);
 
   boolean isEntryExpiryPossible();
 
@@ -207,7 +216,7 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
 
   void waitOnInitialization(StoppableCountDownLatch latch);
 
-  Set basicSubregions(boolean recursive);
+  Set<InternalRegion> basicSubregions(boolean recursive);
 
   boolean isSecret();
 
@@ -298,6 +307,9 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
 
   void invokeTXCallbacks(EnumListenerEvent afterDestroy, EntryEventImpl ee, boolean b);
 
+  void invokeTXCallbacks(EnumListenerEvent afterDestroy, EntryEventImpl ee, boolean b,
+      boolean isLastEventInTransaction);
+
   LocalRegion getPartitionedRegion();
 
   void checkIfAboveThreshold(EntryEventImpl event);
@@ -375,6 +387,11 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
   boolean virtualPut(EntryEventImpl event, boolean ifNew, boolean ifOld, Object expectedOldValue,
       boolean requireOldValue, long lastModified, boolean overwriteDestroyed);
 
+  boolean virtualPut(EntryEventImpl event, boolean ifNew, boolean ifOld, Object expectedOldValue,
+      boolean requireOldValue, long lastModified, boolean overwriteDestroyed,
+      boolean invokeCallbacks,
+      boolean throwsConcurrentModification);
+
   long postPutAllSend(DistributedPutAllOperation putallOp, VersionedObjectList successfulPuts);
 
   void postPutAllFireEvents(DistributedPutAllOperation putallOp,
@@ -388,7 +405,7 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
 
   Object getIMSync();
 
-  IndexManager setIndexManager(IndexManager idxMgr);
+  void setIndexManager(IndexManager idxMgr);
 
   RegionTTLExpiryTask getRegionTTLExpiryTask();
 
@@ -406,8 +423,47 @@ public interface InternalRegion extends Region, HasCachePerfStats, RegionEntryCo
 
   EvictionController getEvictionController();
 
-  default void handleWANEvent(EntryEventImpl event) {}
+  default void handleWANEvent(EntryEventImpl event) {
+    // do nothing;
+  }
 
   MemoryThresholdInfo getAtomicThresholdInfo();
 
+  InternalCache getInternalCache();
+
+  default boolean lockWhenRegionIsInitializing() {
+    return false;
+  }
+
+  default void unlockWhenRegionIsInitializing() {
+    // do nothing
+  }
+
+  Map<Object, Object> getEntryUserAttributes();
+
+  int getTombstoneCount();
+
+  Region.Entry getEntry(Object key, boolean allowTombstones);
+
+  Set<String> getVisibleAsyncEventQueueIds();
+
+  CachePerfStats getRegionPerfStats();
+
+  VersionedObjectList basicRemoveAll(Collection<Object> keys,
+      DistributedRemoveAllOperation removeAllOp, List<VersionTag> retryVersions);
+
+  VersionTag getVersionTag(Object key);
+
+  /**
+   * This method determines whether this region should synchronize with peer replicated regions when
+   * the given member has crashed.
+   *
+   * @param id the crashed member
+   * @return true if synchronization should be attempted
+   */
+  boolean shouldSyncForCrashedMember(InternalDistributedMember id);
+
+  boolean isRegionCreateNotified();
+
+  void setRegionCreateNotified(boolean notified);
 }

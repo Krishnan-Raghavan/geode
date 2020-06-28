@@ -31,7 +31,8 @@ import org.apache.geode.distributed.internal.locks.DLockService;
 import org.apache.geode.distributed.internal.locks.DLockToken;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.admin.DLockInfo;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 public class FetchDistLockInfoResponse extends AdminResponse {
   // instance variables
@@ -71,25 +72,28 @@ public class FetchDistLockInfoResponse extends AdminResponse {
     return lockInfos;
   }
 
+  @Override
   public int getDSFID() {
     return FETCH_DIST_LOCK_INFO_RESPONSE;
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.lockInfos, out);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.lockInfos = (DLockInfo[]) DataSerializer.readObject(in);
   }
 
   @Override
   public String toString() {
-    return LocalizedStrings.FetchDistLockInfoResponse_FETCHDISTLOCKINFORESPONSE_FROM_0
-        .toLocalizedString(this.getSender());
+    return String.format("FetchDistLockInfoResponse from %s",
+        this.getSender());
   }
 }

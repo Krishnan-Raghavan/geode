@@ -14,25 +14,23 @@
  */
 package org.apache.geode.test.junit.rules.gfsh;
 
-import static org.apache.commons.lang.SystemUtils.PATH_SEPARATOR;
+import static java.io.File.pathSeparator;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import org.junit.rules.ExternalResource;
 import org.junit.rules.TemporaryFolder;
 
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.rules.RequiresGeodeHome;
+import org.apache.geode.test.version.VersionManager;
 
 /**
  * The {@code GfshRule} allows a test to execute Gfsh commands via the actual (fully-assembled) gfsh
@@ -40,17 +38,12 @@ import org.apache.geode.test.junit.rules.RequiresGeodeHome;
  * a forked JVM. The {@link GfshRule#after()} method will attempt to clean up all forked JVMs.
  *
  * if you want to debug into the gfsh or the locator/servers started using this rule, you can do:
+ * GfshScript.of("start locator", 30000).and("start server", 30001).withDebugPort(30002).execute
  *
- * GfshScript.of(new DebuggableCommand("start locator", 30001)).execute(gfshRule, 30000);
- *
- * this will set the gfsh to be debuggable at port 30000, and the locator started to be debuggable
- * at port 30001
+ * this will set the gfsh to be debuggable at port 30002, and the locator started to be debuggable
+ * at port 30000, and the server to be debuggable at 30001
  */
 public class GfshRule extends ExternalResource {
-
-  private static final String DOUBLE_QUOTE = "\"";
-  private static final String LINE_SEPARATOR = System.getProperty("line.separator");
-
   private TemporaryFolder temporaryFolder = new TemporaryFolder();
   private List<GfshExecution> gfshExecutions;
   private Path gfsh;
@@ -67,7 +60,7 @@ public class GfshRule extends ExternalResource {
     gfsh = findGfsh();
     assertThat(gfsh).exists();
 
-    gfshExecutions = new ArrayList<>();
+    gfshExecutions = Collections.synchronizedList(new ArrayList<>());
     temporaryFolder.create();
   }
 
@@ -77,24 +70,14 @@ public class GfshRule extends ExternalResource {
    */
   @Override
   protected void after() {
-    gfshExecutions.stream().collect(Collectors.toList()).forEach(this::stopMembersQuietly);
+    // Copy the gfshExecutions list because stopMembers will add more executions
+    // This would not include the "stopMemberQuietly" executions
+    ArrayList<GfshExecution> executionsWithMembersToStop = new ArrayList<>(gfshExecutions);
+    executionsWithMembersToStop.forEach(this::stopMembers);
 
-    final List<String> shutdownExceptions = new ArrayList<>();
+    // This will include the "stopMemberQuietly" executions
     try {
-      gfshExecutions.stream().map(GfshExecution::getProcess).map(Process::destroyForcibly)
-          .forEach((Process process) -> {
-            try {
-              // Process.destroyForcibly() may not terminate immediately
-              process.waitFor(1, TimeUnit.MINUTES);
-            } catch (InterruptedException ie) {
-              shutdownExceptions
-                  .add(process.toString() + " failed to shutdown: " + ie.getMessage());
-            }
-          });
-      if (!shutdownExceptions.isEmpty()) {
-        throw new RuntimeException("gfshExecutions processes failed to shutdown" + LINE_SEPARATOR
-            + String.join(LINE_SEPARATOR, shutdownExceptions));
-      }
+      gfshExecutions.forEach(GfshExecution::killProcess);
     } finally {
       temporaryFolder.delete();
     }
@@ -131,27 +114,46 @@ public class GfshRule extends ExternalResource {
     return execute(GfshScript.of(commands));
   }
 
-  public GfshExecution execute(GfshScript gfshScript) {
-    return execute(gfshScript, -1);
+  public GfshExecution execute(File workingDir, String... commands) {
+    return execute(GfshScript.of(commands), workingDir);
   }
 
-  public GfshExecution execute(GfshScript gfshScript, int gfshDebugPort) {
-    GfshExecution gfshExecution;
+  /**
+   * this will allow you to specify a gfsh workingDir when executing the script
+   * this is usually helpful if:
+   * 1. you would start a different gfsh session but would
+   * like to remain in the same working dir as your previous one, (You can get your gfsh session's
+   * working dir by using GfshExecution.getWorkingDir)
+   * 2. you already prepared the workingdir with some initial setup.
+   *
+   * This way, this workingDir will be managed by the gfshRule and stop all the processes that
+   * exists in this working dir when tests finish
+   */
+  public GfshExecution execute(GfshScript gfshScript, File workingDir) {
+    System.out.println("Executing " + gfshScript);
+    try {
+      int debugPort = gfshScript.getDebugPort();
+      Process process = toProcessBuilder(gfshScript, gfsh, workingDir, debugPort).start();
+      GfshExecution gfshExecution = new GfshExecution(process, workingDir);
+      gfshExecutions.add(gfshExecution);
+      gfshExecution.awaitTermination(gfshScript);
+      return gfshExecution;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public GfshExecution execute(GfshScript gfshScript) {
     try {
       File workingDir = new File(temporaryFolder.getRoot(), gfshScript.getName());
       workingDir.mkdirs();
-      Process process = toProcessBuilder(gfshScript, gfsh, workingDir, gfshDebugPort).start();
-      gfshExecution = new GfshExecution(process, workingDir);
-      gfshExecutions.add(gfshExecution);
-      gfshScript.awaitIfNecessary(gfshExecution);
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
+      return execute(gfshScript, workingDir);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
-
-    return gfshExecution;
   }
 
-  protected ProcessBuilder toProcessBuilder(GfshScript gfshScript, Path gfshPath, File workingDir,
+  private ProcessBuilder toProcessBuilder(GfshScript gfshScript, Path gfshPath, File workingDir,
       int gfshDebugPort) {
     List<String> commandsToExecute = new ArrayList<>();
 
@@ -179,9 +181,9 @@ public class GfshRule extends ExternalResource {
     if (!extendedClasspath.isEmpty()) {
       String classpathKey = "CLASSPATH";
       String existingJavaArgs = environmentMap.get(classpathKey);
-      String specified = String.join(PATH_SEPARATOR, extendedClasspath);
+      String specified = String.join(pathSeparator, extendedClasspath);
       String newValue =
-          String.format("%s%s", existingJavaArgs == null ? "" : existingJavaArgs + PATH_SEPARATOR,
+          String.format("%s%s", existingJavaArgs == null ? "" : existingJavaArgs + pathSeparator,
               specified);
       environmentMap.put(classpathKey, newValue);
     }
@@ -193,36 +195,48 @@ public class GfshRule extends ExternalResource {
     return processBuilder;
   }
 
-  private void stopMembersQuietly(GfshExecution gfshExecution) {
-    gfshExecution.getServerDirs().forEach(this::stopServerInDir);
-    gfshExecution.getLocatorDirs().forEach(this::stopLocatorInDir);
+  /**
+   * this will stop the server that's been started in this gfsh execution
+   */
+  public void stopServer(GfshExecution execution, String serverName) {
+    String command = "stop server --dir="
+        + execution.getWorkingDir().toPath().resolve(serverName).toAbsolutePath();
+    execute(GfshScript.of(command).withName("Stop-server-" + serverName));
   }
 
-  private void stopServerInDir(File dir) {
-    String stopServerCommand = "stop server --dir=" + quoteArgument(dir.toString());
-
-    GfshScript stopServerScript =
-        GfshScript.of(stopServerCommand).withName("teardown-stop-server").awaitQuietly();
-    execute(stopServerScript);
+  /**
+   * this will stop the lcoator that's been started in this gfsh execution
+   */
+  public void stopLocator(GfshExecution execution, String locatorName) {
+    String command = "stop locator --dir="
+        + execution.getWorkingDir().toPath().resolve(locatorName).toAbsolutePath();
+    execute(GfshScript.of(command).withName("Stop-locator-" + locatorName));
   }
 
-  private void stopLocatorInDir(File dir) {
-    String stopLocatorCommand = "stop locator --dir=" + quoteArgument(dir.toString());
-
-    GfshScript stopServerScript =
-        GfshScript.of(stopLocatorCommand).withName("teardown-stop-locator").awaitQuietly();
-    execute(stopServerScript);
-  }
-
-  private String quoteArgument(String argument) {
-    if (!argument.startsWith(DOUBLE_QUOTE)) {
-      argument = DOUBLE_QUOTE + argument;
+  private void stopMembers(GfshExecution gfshExecution) {
+    String[] stopMemberScripts = gfshExecution.getStopMemberCommands();
+    if (stopMemberScripts.length == 0) {
+      return;
     }
+    execute(GfshScript.of(stopMemberScripts).withName("Stop-Members"));
+  }
 
-    if (!argument.endsWith(DOUBLE_QUOTE)) {
-      argument = argument + DOUBLE_QUOTE;
+  public static String startServerCommand(String name, int port, int connectedLocatorPort) {
+    String command = "start server --name=" + name
+        + " --server-port=" + port
+        + " --locators=localhost[" + connectedLocatorPort + "]";
+    return command;
+  }
+
+  public static String startLocatorCommand(String name, int port, int jmxPort, int httpPort,
+      int connectedLocatorPort) {
+    String command = "start locator --name=" + name
+        + " --port=" + port
+        + " --http-service-port=" + httpPort;
+    if (connectedLocatorPort > 0) {
+      command += " --locators=localhost[" + connectedLocatorPort + "]";
     }
-
-    return argument;
+    command += " --J=-Dgemfire.jmx-manager-port=" + jmxPort;
+    return command;
   }
 }

@@ -14,10 +14,12 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.distributed.ConfigurationProperties.DISABLE_AUTO_RECONNECT;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_CLUSTER_CONFIGURATION;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_NETWORK_PARTITION_DETECTION;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.USE_CLUSTER_CONFIGURATION;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.DistributedTestUtils.crashDistributedSystem;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
@@ -172,7 +174,8 @@ public class BucketCreationCrashRegressionTest implements Serializable {
         .isInstanceOf(RMIException.class)
         .hasCauseInstanceOf(DistributedSystemDisconnectedException.class);
 
-    assertThat(server2.invoke(() -> getBucketList())).containsExactly(3);
+    await()
+        .untilAsserted(() -> assertThat(server2.invoke(() -> getBucketList())).containsExactly(3));
 
     // This shouldn't hang, because the bucket creation should finish.
     server2.invoke(() -> putData(3, 4, "a"));
@@ -183,6 +186,7 @@ public class BucketCreationCrashRegressionTest implements Serializable {
     config.setProperty(ENABLE_CLUSTER_CONFIGURATION, "false");
     config.setProperty(ENABLE_NETWORK_PARTITION_DETECTION, "false");
     config.setProperty(USE_CLUSTER_CONFIGURATION, "false");
+    config.setProperty(DISABLE_AUTO_RECONNECT, "true");
     return config;
   }
 

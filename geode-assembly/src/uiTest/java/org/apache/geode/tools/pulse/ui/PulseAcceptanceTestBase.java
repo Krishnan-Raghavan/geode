@@ -15,6 +15,7 @@
  */
 package org.apache.geode.tools.pulse.ui;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.tools.pulse.tests.ui.PulseTestConstants.CLUSTER_CLIENTS_ID;
 import static org.apache.geode.tools.pulse.tests.ui.PulseTestConstants.CLUSTER_FUNCTIONS_ID;
 import static org.apache.geode.tools.pulse.tests.ui.PulseTestConstants.CLUSTER_GCPAUSES_ID;
@@ -68,20 +69,20 @@ public abstract class PulseAcceptanceTestBase {
     searchByXPathAndClick("//a[text()='Cluster View']");
   }
 
-  protected void searchByLinkAndClick(String linkText) {
+  private void searchByLinkAndClick(String linkText) {
     WebElement element = new WebDriverWait(getWebDriver(), 2)
         .until(ExpectedConditions.elementToBeClickable(By.linkText(linkText)));
     assertNotNull(element);
     element.click();
   }
 
-  protected void searchByIdAndClick(String id) {
+  private void searchByIdAndClick(String id) {
     WebElement element = getWebDriver().findElement(By.id(id));
     assertNotNull(element);
     element.click();
   }
 
-  protected void searchByXPathAndClick(String xpath) {
+  private void searchByXPathAndClick(String xpath) {
     WebElement element = getWebDriver().findElement(By.xpath(xpath));
     assertNotNull(element);
     element.click();
@@ -140,51 +141,51 @@ public abstract class PulseAcceptanceTestBase {
     // table contains header row so actual members is one less than the tr elements.
     assertThat(actualMembers.length).isEqualTo(elements.size() - 1);
 
-    for (int i = 0; i < actualMembers.length; i++) {
+    for (Cluster.Member actualMember : actualMembers) {
       // reset from member view as we are looping
       searchByXPathAndClick("//a[text()='Cluster View']");
       searchByIdAndClick("default_grid_button");
       String displayedMemberId =
           getWebDriver().findElement(By.xpath("//table[@id='memberList']/tbody/tr[contains(@id, '"
-              + actualMembers[i].getName() + "')]/td")).getText();
-      assertThat(actualMembers[i].getId()).contains(displayedMemberId);
+              + actualMember.getName() + "')]/td")).getText();
+      assertThat(actualMember.getId()).contains(displayedMemberId);
 
       String displayedMemberName =
           getWebDriver().findElement(By.xpath("//table[@id='memberList']/tbody/tr[contains(@id, '"
-              + actualMembers[i].getName() + "')]/td[2]")).getText();
-      assertThat(actualMembers[i].getName()).isEqualTo(displayedMemberName);
+              + actualMember.getName() + "')]/td[2]")).getText();
+      assertThat(actualMember.getName()).isEqualTo(displayedMemberName);
 
       String displayedMemberHost =
           getWebDriver().findElement(By.xpath("//table[@id='memberList']/tbody/tr[contains(@id, '"
-              + actualMembers[i].getName() + "')]/td[3]")).getText();
-      assertThat(actualMembers[i].getHost()).isEqualTo(displayedMemberHost);
+              + actualMember.getName() + "')]/td[3]")).getText();
+      assertThat(actualMember.getHost()).isEqualTo(displayedMemberHost);
 
       // now click the grid row to go to member view and assert details displayed
       searchByXPathAndClick("//table[@id='memberList']/tbody/tr[contains(@id, '"
-          + actualMembers[i].getName() + "')]/td");
+          + actualMember.getName() + "')]/td");
 
       String displayedRegionCount =
           getWebDriver().findElement(By.id(MEMBER_VIEW_REGION_ID)).getText();
-      assertThat(String.valueOf(actualMembers[i].getTotalRegionCount()))
+      assertThat(String.valueOf(actualMember.getTotalRegionCount()))
           .isEqualTo(displayedRegionCount);
 
       String displaySocketCount =
           getWebDriver().findElement(By.id(MEMBER_VIEW_SOCKETS_ID)).getText();
-      if (actualMembers[i].getTotalFileDescriptorOpen() < 0)
+      if (actualMember.getTotalFileDescriptorOpen() < 0)
         assertThat("NA").isEqualTo(displaySocketCount);
       else
-        assertThat(String.valueOf(actualMembers[i].getTotalFileDescriptorOpen()))
+        assertThat(String.valueOf(actualMember.getTotalFileDescriptorOpen()))
             .isEqualTo(displaySocketCount);
 
       String displayedJVMPauses =
           getWebDriver().findElement(By.id(MEMBER_VIEW_JVMPAUSES_ID)).getText();
-      assertThat(String.valueOf(actualMembers[i].getPreviousJVMPauseCount()))
+      assertThat(String.valueOf(actualMember.getPreviousJVMPauseCount()))
           .isEqualTo(displayedJVMPauses);
     }
   }
 
   @Test
-  public void testDropDownList() throws InterruptedException {
+  public void testDropDownList() {
     searchByIdAndClick("default_grid_button");
     searchByXPathAndClick("//table[@id='memberList']/tbody/tr[contains(@id, 'locator')]/td");
     searchByIdAndClick("memberName");
@@ -252,7 +253,7 @@ public abstract class PulseAcceptanceTestBase {
       searchByIdAndClick(DATA_BROWSER_REGION1_CHECKBOX);
       List<WebElement> memberList =
           getWebDriver().findElements(By.xpath("//ul[@id='membersList']/li"));
-      assertThat(getCluster().getClusterRegion("/FOO").getMemberCount())
+      assertThat(getCluster().getClusterRegion(SEPARATOR + "FOO").getMemberCount())
           .isEqualTo(memberList.size());
       String DataBrowserMember1Name1 =
           getWebDriver().findElement(By.xpath("//label[@for='Member0']")).getText();
@@ -261,7 +262,7 @@ public abstract class PulseAcceptanceTestBase {
 
       // execute a query
       WebElement queryTextArea = getWebDriver().findElement(By.id("dataBrowserQueryText"));
-      queryTextArea.sendKeys("select * from /FOO");
+      queryTextArea.sendKeys("select * from " + SEPARATOR + "FOO");
       WebElement executeButton = getWebDriver().findElement(By.id("btnExecuteQuery"));
       executeButton.click();
       String queryResultHeader = getWebDriver()
@@ -283,7 +284,7 @@ public abstract class PulseAcceptanceTestBase {
   @Test
   public void testDataViewTreeMapPopUpData() {
     if (getCluster().getTotalRegionCount() > 0) {
-      Cluster.Region actualRegion = getCluster().getClusterRegion("/FOO");
+      Cluster.Region actualRegion = getCluster().getClusterRegion(SEPARATOR + "FOO");
       searchByLinkAndClick(CLUSTER_VIEW_LABEL);
       searchByLinkAndClick(DATA_DROPDOWN_ID);
       WebElement TreeMapMember =
@@ -313,7 +314,7 @@ public abstract class PulseAcceptanceTestBase {
     }
   }
 
-  public void testTreeMapPopUpData(String gridIcon) {
+  private void testTreeMapPopUpData(String gridIcon) {
     for (String member : getCluster().getMembersHMap().keySet()) {
       searchByLinkAndClick(CLUSTER_VIEW_LABEL);
       if (gridIcon.equals(SERVER_GROUP_GRID_ID)) {

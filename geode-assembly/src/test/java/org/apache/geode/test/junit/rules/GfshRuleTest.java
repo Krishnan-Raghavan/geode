@@ -23,7 +23,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.GfshTest;
 import org.apache.geode.test.junit.rules.gfsh.GfshRule;
 
@@ -31,7 +30,7 @@ import org.apache.geode.test.junit.rules.gfsh.GfshRule;
 public class GfshRuleTest {
 
   @Rule
-  public GfshRule gfsh130 = new GfshRule(VersionManager.GEODE_130);
+  public GfshRule gfsh130 = new GfshRule("1.3.0");
 
   @Rule
   public GfshRule gfshDefault = new GfshRule();
@@ -45,7 +44,8 @@ public class GfshRuleTest {
   @Test
   public void checkGfsh130() {
     assertThat(gfsh130.getGfshPath().toString())
-        .contains(Paths.get("geode-old-versions/build/apache-geode-1.3.0/bin/gfsh").toString());
+        .contains(Paths.get("geode-old-versions/1.3.0/build/apache-geode-1.3.0/bin/gfsh")
+            .toString());
   }
 
 }

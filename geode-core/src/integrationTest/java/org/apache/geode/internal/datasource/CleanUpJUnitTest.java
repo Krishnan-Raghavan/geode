@@ -19,6 +19,7 @@ package org.apache.geode.internal.datasource;
 
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.fail;
 
 import java.sql.Connection;
@@ -33,8 +34,6 @@ import org.junit.Test;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.util.test.TestUtil;
-
 
 /**
  *
@@ -51,7 +50,9 @@ public class CleanUpJUnitTest {
   public void setUp() {
     props = new Properties();
     props.setProperty(MCAST_PORT, "0");
-    String path = TestUtil.getResourcePath(CleanUpJUnitTest.class, "/jta/cachejta.xml");
+    String path =
+        createTempFileFromResource(CleanUpJUnitTest.class, "/jta/cachejta.xml")
+            .getAbsolutePath();
     props.setProperty(CACHE_XML_FILE, path);
     ds1 = DistributedSystem.connect(props);
     cache = CacheFactory.create(ds1);
@@ -73,37 +74,6 @@ public class CleanUpJUnitTest {
             "DataSourceFactoryTest-testGetSimpleDataSource() Error in creating the GemFireBasicDataSource");
     } catch (Exception e) {
       fail("Exception occurred in testGetSimpleDataSource due to " + e);
-      e.printStackTrace();
-    }
-  }
-
-  /*
-   * @Test public void testExpiration() { try { Context ctx = cache.getJNDIContext();
-   * GemFireConnPooledDataSource ds = (GemFireConnPooledDataSource) ctx
-   * .lookup("java:/PooledDataSource"); GemFireConnectionPoolManager provider =
-   * (GemFireConnectionPoolManager) ds .getConnectionProvider(); ConnectionPoolCacheImpl poolCache =
-   * (ConnectionPoolCacheImpl) provider .getConnectionPoolCache(); PooledConnection conn =
-   * poolCache.getPooledConnectionFromPool(); poolCache.returnPooledConnectionToPool(conn);
-   * Thread.sleep(poolCache.expirationTime * 2); if (!(poolCache.availableCache.isEmpty())) {
-   * fail("Clean-up on expiration not done"); } } catch (Exception e) { e.printStackTrace(); } }
-   */
-  @Test
-  public void testBlockingTimeOut() {
-    try {
-      Context ctx = cache.getJNDIContext();
-      GemFireConnPooledDataSource ds =
-          (GemFireConnPooledDataSource) ctx.lookup("java:/PooledDataSource");
-      GemFireConnectionPoolManager provider =
-          (GemFireConnectionPoolManager) ds.getConnectionProvider();
-      ConnectionPoolCacheImpl poolCache =
-          (ConnectionPoolCacheImpl) provider.getConnectionPoolCache();
-      poolCache.getPooledConnectionFromPool();
-      Thread.sleep(40000);
-      if (!(poolCache.activeCache.isEmpty())) {
-        fail("Clean-up on expiration not done");
-      }
-    } catch (Exception e) {
-      fail("Exception occurred in testBlockingTimeOut due to " + e);
       e.printStackTrace();
     }
   }

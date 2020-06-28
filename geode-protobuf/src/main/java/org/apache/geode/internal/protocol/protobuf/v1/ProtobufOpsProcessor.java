@@ -16,15 +16,14 @@ package org.apache.geode.internal.protocol.protobuf.v1;
 
 import org.apache.logging.log4j.Logger;
 
-import org.apache.geode.SystemFailure;
 import org.apache.geode.annotations.Experimental;
 import org.apache.geode.internal.exception.InvalidExecutionContextException;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.protocol.protobuf.v1.registry.ProtobufOperationContextRegistry;
 import org.apache.geode.internal.protocol.protobuf.v1.serialization.exception.DecodingException;
 import org.apache.geode.internal.protocol.protobuf.v1.serialization.exception.EncodingException;
 import org.apache.geode.internal.protocol.protobuf.v1.state.TerminateConnection;
 import org.apache.geode.internal.protocol.protobuf.v1.state.exception.ConnectionStateException;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.security.NotAuthorizedException;
 
 /**
@@ -34,29 +33,33 @@ import org.apache.geode.security.NotAuthorizedException;
 @Experimental
 public class ProtobufOpsProcessor {
   private final ProtobufOperationContextRegistry protobufOperationContextRegistry;
-  private static final Logger logger = LogService.getLogger(ProtobufOpsProcessor.class);
+  private static final Logger logger = LogService.getLogger();
 
   public ProtobufOpsProcessor(ProtobufOperationContextRegistry protobufOperationContextRegistry) {
     this.protobufOperationContextRegistry = protobufOperationContextRegistry;
   }
 
+  @SuppressWarnings("unchecked")
   public ClientProtocol.Message process(ClientProtocol.Message request,
       MessageExecutionContext messageExecutionContext) {
     ClientProtocol.Message.MessageTypeCase requestType = request.getMessageTypeCase();
     logger.debug("Processing request of type {}", requestType);
+    @SuppressWarnings("rawtypes")
     ProtobufOperationContext operationContext =
         protobufOperationContextRegistry.getOperationContext(requestType);
+
+    @SuppressWarnings("rawtypes")
     Result result;
 
     try {
       messageExecutionContext.getConnectionState().validateOperation(operationContext);
       result = processOperation(request, messageExecutionContext, requestType, operationContext);
     } catch (VirtualMachineError error) {
-      SystemFailure.initiateFailure(error);
+      initiateFailure(error);
       throw error;
     } catch (Throwable t) {
       logger.warn("Failure for request " + request, t);
-      SystemFailure.checkFailure();
+      checkFailure();
       result = Failure.of(t);
 
       if (t instanceof ConnectionStateException) {
@@ -68,8 +71,21 @@ public class ProtobufOpsProcessor {
         operationContext.getToErrorResponse())).build();
   }
 
-  private Result processOperation(ClientProtocol.Message request, MessageExecutionContext context,
-      ClientProtocol.Message.MessageTypeCase requestType, ProtobufOperationContext operationContext)
+  @SuppressWarnings("deprecation")
+  private static void checkFailure() {
+    org.apache.geode.SystemFailure.checkFailure();
+  }
+
+  @SuppressWarnings("deprecation")
+  private static void initiateFailure(VirtualMachineError error) {
+    org.apache.geode.SystemFailure.initiateFailure(error);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Result<?> processOperation(ClientProtocol.Message request,
+      MessageExecutionContext context,
+      ClientProtocol.Message.MessageTypeCase requestType,
+      @SuppressWarnings("rawtypes") ProtobufOperationContext operationContext)
       throws ConnectionStateException, EncodingException, DecodingException {
 
     long startTime = context.getStatistics().startOperation();

@@ -14,14 +14,16 @@
  */
 package org.apache.geode.internal.tcp;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -29,16 +31,15 @@ import org.junit.runners.Parameterized;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.distributed.Locator;
+import org.apache.geode.distributed.internal.DistributionImpl;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.SerialAckedMessage;
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.test.dunit.DistributedTestCase;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
-import org.apache.geode.util.test.TestUtil;
-
-
 
 @RunWith(Parameterized.class)
 @Parameterized.UseParametersRunnerFactory(CategoryWithParameterizedRunnerFactory.class)
@@ -55,8 +56,9 @@ public class TCPConduitDUnitTest extends DistributedTestCase {
     Properties SSL = new Properties();
     SSL.putAll(nonSSL);
 
-    final String keystorePath = TestUtil.getResourcePath(TCPConduitDUnitTest.class,
-        "/org/apache/geode/cache/client/internal/default.keystore");
+    final String keystorePath =
+        createTempFileFromResource(TCPConduitDUnitTest.class,
+            "/org/apache/geode/cache/client/internal/default.keystore").getAbsolutePath();
 
     SSL.setProperty(ConfigurationProperties.SSL_ENABLED_COMPONENTS, "cluster");
     SSL.setProperty(ConfigurationProperties.SSL_KEYSTORE, keystorePath);
@@ -92,10 +94,31 @@ public class TCPConduitDUnitTest extends DistributedTestCase {
     vm2.invoke(() -> startServer(properties));
     vm3.invoke(() -> startServer(properties));
 
-    Thread.sleep(5000);
+    await().untilAsserted(() -> {
+      assertThat(ConnectionTable.getNumSenderSharedConnections()).isEqualTo(3);
+    });
+
+    // ensure that the closing of a shared/unordered connection to another node does not
+    // remove all connections for that node
+    InternalDistributedMember otherMember =
+        (InternalDistributedMember) system.getAllOtherMembers().iterator().next();
+    DistributionImpl distribution =
+        (DistributionImpl) system.getDistributionManager().getDistribution();
+    final ConnectionTable connectionTable =
+        distribution.getDirectChannel().getConduit().getConTable();
+
+    assertThat(connectionTable.hasReceiversFor(otherMember)).isTrue();
+
+    Connection sharedUnordered = connectionTable.get(otherMember, false,
+        System.currentTimeMillis(), 15000, 0);
+    sharedUnordered.requestClose("for testing");
+    // the sender connection has been closed so we should only have 2 senders now
+    assertThat(ConnectionTable.getNumSenderSharedConnections()).isEqualTo(2);
+    // there should still be receivers for the other member - endpoint not removed!
+    assertThat(connectionTable.hasReceiversFor(otherMember)).isTrue();
 
     try {
-      Awaitility.await("for message to be sent").atMost(10, TimeUnit.SECONDS).until(() -> {
+      await("for message to be sent").until(() -> {
         final SerialAckedMessage serialAckedMessage = new SerialAckedMessage();
         serialAckedMessage.send(system.getAllOtherMembers(), false);
         return true;

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.functional;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
@@ -36,8 +37,8 @@ import org.apache.geode.cache.query.Query;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.data.Portfolio;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.test.junit.categories.OQLQueryTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 @Category({OQLQueryTest.class})
 public class DistinctResultsWithDupValuesInRegionJUnitTest {
@@ -49,7 +50,7 @@ public class DistinctResultsWithDupValuesInRegionJUnitTest {
 
   @Before
   public void setUp() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
     CacheUtils.startCache();
   }
 
@@ -59,15 +60,22 @@ public class DistinctResultsWithDupValuesInRegionJUnitTest {
   }
 
   private static String[] queries = new String[] {
-      "select DISTINCT * from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",
-      "select DISTINCT * from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM'",
-      "select DISTINCT * from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' order by p.ID",
-      "select DISTINCT * from /test p, p.positions.values pos where p.ID> 0 order by p.ID",
-      "select DISTINCT p.ID, p.status, pos.secId from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",
-      "select DISTINCT p.ID, p.status, pos.secId, pos.secType from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",};
+      "select DISTINCT * from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",
+      "select DISTINCT * from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM'",
+      "select DISTINCT * from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' order by p.ID",
+      "select DISTINCT * from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 order by p.ID",
+      "select DISTINCT p.ID, p.status, pos.secId from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",
+      "select DISTINCT p.ID, p.status, pos.secId, pos.secType from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' OR pos.secId = 'IBM' order by p.ID",};
 
   private static String[] moreQueries = new String[] {
-      "select DISTINCT p.ID, p.status from /test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' order by p.ID",};
+      "select DISTINCT p.ID, p.status from " + SEPARATOR
+          + "test p, p.positions.values pos where p.ID> 0 OR p.status = 'active' order by p.ID",};
 
   /**
    * Test on Local Region data
@@ -300,7 +308,7 @@ public class DistinctResultsWithDupValuesInRegionJUnitTest {
     QueryService queryService = cache.getQueryService();
     Query query1 = null;
     try {
-      queryService.createIndex("idIndex", "p.ID", "/" + regionName + " p");
+      queryService.createIndex("idIndex", "p.ID", SEPARATOR + regionName + " p");
       for (String queryStr : queries) {
         query1 = queryService.newQuery(queryStr);
 
@@ -331,7 +339,7 @@ public class DistinctResultsWithDupValuesInRegionJUnitTest {
     QueryService queryService = cache.getQueryService();
     Query query1 = null;
     try {
-      queryService.createIndex("idIndex", "p.ID", "/" + regionName + " p");
+      queryService.createIndex("idIndex", "p.ID", SEPARATOR + regionName + " p");
       for (String queryStr : queries) {
         query1 = queryService.newQuery(queryStr);
 
@@ -363,7 +371,7 @@ public class DistinctResultsWithDupValuesInRegionJUnitTest {
     QueryService queryService = cache.getQueryService();
     Query query1 = null;
     try {
-      queryService.createIndex("idIndex", "p.ID", "/" + regionName + " p");
+      queryService.createIndex("idIndex", "p.ID", SEPARATOR + regionName + " p");
       for (String queryStr : queries) {
         query1 = queryService.newQuery(queryStr);
 

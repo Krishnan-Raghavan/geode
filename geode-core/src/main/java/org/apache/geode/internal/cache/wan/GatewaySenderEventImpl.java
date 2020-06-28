@@ -19,6 +19,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 
 import org.apache.geode.DataSerializer;
 import org.apache.geode.InternalGemFireError;
@@ -26,13 +27,10 @@ import org.apache.geode.cache.CacheEvent;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.Operation;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.TransactionId;
 import org.apache.geode.cache.asyncqueue.AsyncEvent;
 import org.apache.geode.cache.util.ObjectSizer;
 import org.apache.geode.cache.wan.EventSequenceID;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
-import org.apache.geode.internal.VersionedDataInputStream;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.CachedDeserializableFactory;
 import org.apache.geode.internal.cache.Conflatable;
@@ -42,7 +40,8 @@ import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.Token;
 import org.apache.geode.internal.cache.WrappedCallbackArgument;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.cache.tier.sockets.Message;
+import org.apache.geode.internal.lang.ObjectUtils;
 import org.apache.geode.internal.offheap.OffHeapHelper;
 import org.apache.geode.internal.offheap.ReferenceCountHelper;
 import org.apache.geode.internal.offheap.Releasable;
@@ -51,6 +50,12 @@ import org.apache.geode.internal.offheap.annotations.OffHeapIdentifier;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.internal.serialization.VersionedDataInputStream;
 import org.apache.geode.internal.size.Sizeable;
 
 /**
@@ -64,10 +69,11 @@ import org.apache.geode.internal.size.Sizeable;
 public class GatewaySenderEventImpl
     implements AsyncEvent, DataSerializableFixedID, Conflatable, Sizeable, Releasable {
   private static final long serialVersionUID = -5690172020872255422L;
-
   protected static final Object TOKEN_NULL = new Object();
 
-  protected static final short VERSION = 0x11;
+  // It should use current version. But it was hard-coded to be 0x11, i.e. GEODE_120_ORDINAL,
+  // by mistake since 120 to pre-190
+  protected static final short VERSION = Version.getCurrentVersion().ordinal();
 
   protected EnumListenerEvent operation;
 
@@ -86,7 +92,7 @@ public class GatewaySenderEventImpl
   /**
    * The number of parts for the <code>Message</code>
    *
-   * @see org.apache.geode.internal.cache.tier.sockets.Message
+   * @see Message
    */
   protected int numberOfParts;
 
@@ -113,7 +119,7 @@ public class GatewaySenderEventImpl
   /**
    * The serialized new value for this event's key. May not be computed at construction time.
    */
-  protected byte[] value;
+  protected volatile byte[] value;
 
   /**
    * The "object" form of the value. Will be null after this object is deserialized.
@@ -170,6 +176,14 @@ public class GatewaySenderEventImpl
   protected Long shadowKey = Long.valueOf(-1L);
 
   protected boolean isInitialized;
+
+  private transient boolean isConcurrencyConflict = false;
+
+  private short version;
+
+  private boolean isLastEventInTransaction = true;
+  private TransactionId transactionId = null;
+
 
   /**
    * Is this thread in the process of serializing this event?
@@ -230,18 +244,20 @@ public class GatewaySenderEventImpl
    * @param operation The operation for this event (e.g. AFTER_CREATE)
    * @param event The <code>CacheEvent</code> on which this <code>GatewayEventImpl</code> is based
    * @param substituteValue The value to be enqueued instead of the value in the event.
+   * @param isLastEventInTransaction true if the event is the last in the transaction
    *
    */
   @Retained
   public GatewaySenderEventImpl(EnumListenerEvent operation, CacheEvent event,
-      Object substituteValue) throws IOException {
-    this(operation, event, substituteValue, true);
+      Object substituteValue, boolean isLastEventInTransaction) throws IOException {
+    this(operation, event, substituteValue, true, isLastEventInTransaction);
   }
 
   @Retained
   public GatewaySenderEventImpl(EnumListenerEvent operation, CacheEvent event,
-      Object substituteValue, boolean initialize, int bucketId) throws IOException {
-    this(operation, event, substituteValue, initialize);
+      Object substituteValue, boolean initialize, int bucketId,
+      boolean isLastEventInTransaction) throws IOException {
+    this(operation, event, substituteValue, initialize, isLastEventInTransaction);
     this.bucketId = bucketId;
   }
 
@@ -256,7 +272,7 @@ public class GatewaySenderEventImpl
    */
   @Retained
   public GatewaySenderEventImpl(EnumListenerEvent operation, CacheEvent ce, Object substituteValue,
-      boolean initialize) throws IOException {
+      boolean initialize, boolean isLastEventInTransaction) throws IOException {
     // Set the operation and event
     final EntryEventImpl event = (EntryEventImpl) ce;
     this.operation = operation;
@@ -310,6 +326,11 @@ public class GatewaySenderEventImpl
     if (initialize) {
       initialize();
     }
+    this.isConcurrencyConflict = event.isConcurrencyConflict();
+
+    this.transactionId = event.getTransactionId();
+    this.isLastEventInTransaction = isLastEventInTransaction;
+
   }
 
   /**
@@ -338,6 +359,8 @@ public class GatewaySenderEventImpl
     this.valueObjReleased = false;
     this.valueIsObject = offHeapEvent.valueIsObject;
     this.value = offHeapEvent.getSerializedValue();
+    this.transactionId = offHeapEvent.transactionId;
+    this.isLastEventInTransaction = offHeapEvent.isLastEventInTransaction;
   }
 
   /**
@@ -354,6 +377,7 @@ public class GatewaySenderEventImpl
    *
    * @return this event's operation
    */
+  @Override
   public Operation getOperation() {
     Operation op = null;
     switch (this.action) {
@@ -440,6 +464,7 @@ public class GatewaySenderEventImpl
    *
    * @return this event's key
    */
+  @Override
   public Object getKey() {
     // TODO:Asif : Ideally would like to have throw exception if the key
     // is TOKEN_UN_INITIALIZED, but for the time being trying to retain the GFE
@@ -462,6 +487,7 @@ public class GatewaySenderEventImpl
    *
    * @return this event's callback argument
    */
+  @Override
   public Object getCallbackArgument() {
     Object result = getSenderCallbackArgument();
     while (result instanceof WrappedCallbackArgument) {
@@ -518,6 +544,7 @@ public class GatewaySenderEventImpl
    *
    * @return this event's deserialized value
    */
+  @Override
   public Object getDeserializedValue() {
     if (this.valueIsObject == 0x00) {
       Object result = this.value;
@@ -613,6 +640,7 @@ public class GatewaySenderEventImpl
    * value object and return the serialized bytes. Use {@link #getValueIsObject()} to determine if
    * the result is raw or serialized bytes.
    */
+  @Override
   public byte[] getSerializedValue() {
     byte[] result = this.value;
     if (result == null) {
@@ -659,6 +687,7 @@ public class GatewaySenderEventImpl
     this.possibleDuplicate = possibleDuplicate;
   }
 
+  @Override
   public boolean getPossibleDuplicate() {
     return this.possibleDuplicate;
   }
@@ -667,23 +696,43 @@ public class GatewaySenderEventImpl
     return this.creationTime;
   }
 
+  @Override
   public int getDSFID() {
     return GATEWAY_SENDER_EVENT_IMPL;
   }
 
-  public void toData(DataOutput out) throws IOException {
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    toDataPre_GEODE_1_13_0_0(out, context);
+    boolean hasTransaction = this.transactionId != null;
+    DataSerializer.writeBoolean(hasTransaction, out);
+    if (hasTransaction) {
+      DataSerializer.writeBoolean(this.isLastEventInTransaction, out);
+      context.getSerializer().writeObject(this.transactionId, out);
+    }
+  }
+
+  public void toDataPre_GEODE_1_13_0_0(DataOutput out,
+      SerializationContext context) throws IOException {
+    toDataPre_GEODE_1_9_0_0(out, context);
+    DataSerializer.writeBoolean(this.isConcurrencyConflict, out);
+  }
+
+  public void toDataPre_GEODE_1_9_0_0(DataOutput out, SerializationContext context)
+      throws IOException {
     // Make sure we are initialized before we serialize.
     initialize();
     out.writeShort(VERSION);
     out.writeInt(this.action);
     out.writeInt(this.numberOfParts);
     // out.writeUTF(this._id);
-    DataSerializer.writeObject(this.id, out);
+    context.getSerializer().writeObject(this.id, out);
     DataSerializer.writeString(this.regionPath, out);
     out.writeByte(this.valueIsObject);
-    serializeKey(out);
+    serializeKey(out, context);
     DataSerializer.writeByteArray(getSerializedValue(), out);
-    DataSerializer.writeObject(this.callbackArgument, out);
+    context.getSerializer().writeObject(this.callbackArgument, out);
     out.writeBoolean(this.possibleDuplicate);
     out.writeLong(this.creationTime);
     out.writeInt(this.bucketId);
@@ -691,33 +740,54 @@ public class GatewaySenderEventImpl
     out.writeLong(getVersionTimeStamp());
   }
 
-  protected void serializeKey(DataOutput out) throws IOException {
-    DataSerializer.writeObject(this.key, out);
+  protected void serializeKey(DataOutput out,
+      SerializationContext context) throws IOException {
+    context.getSerializer().writeObject(this.key, out);
   }
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    short version = in.readShort();
-    if (version != VERSION) {
-      // warning?`
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    fromDataPre_GEODE_1_13_0_0(in, context);
+    if (version >= Version.GEODE_1_13_0.ordinal()) {
+      boolean hasTransaction = DataSerializer.readBoolean(in);
+      if (hasTransaction) {
+        this.isLastEventInTransaction = DataSerializer.readBoolean(in);
+        this.transactionId = context.getDeserializer().readObject(in);
+      }
     }
+  }
+
+  public void fromDataPre_GEODE_1_13_0_0(DataInput in, DeserializationContext context)
+      throws IOException, ClassNotFoundException {
+    fromDataPre_GEODE_1_9_0_0(in, context);
+    if (version >= Version.GEODE_1_9_0.ordinal()) {
+      this.isConcurrencyConflict = DataSerializer.readBoolean(in);
+    }
+  }
+
+  public void fromDataPre_GEODE_1_9_0_0(DataInput in, DeserializationContext context)
+      throws IOException, ClassNotFoundException {
+    version = in.readShort();
     this.isInitialized = true;
     this.action = in.readInt();
     this.numberOfParts = in.readInt();
     // this._id = in.readUTF();
     if (version < 0x11 && (in instanceof InputStream)
-        && InternalDataSerializer.getVersionForDataStream(in) == Version.CURRENT) {
+        && StaticSerialization.getVersionForDataStream(in) == Version.CURRENT) {
       in = new VersionedDataInputStream((InputStream) in, Version.GFE_701);
     }
-    this.id = (EventID) DataSerializer.readObject(in);
+    this.id = (EventID) context.getDeserializer().readObject(in);
     // TODO:Asif ; Check if this violates Barry's logic of not assiging VM
     // specific Token.FROM_GATEWAY
     // and retain the serialized Token.FROM_GATEWAY
     // this._id.setFromGateway(false);
     this.regionPath = DataSerializer.readString(in);
     this.valueIsObject = in.readByte();
-    deserializeKey(in);
+    deserializeKey(in, context);
     this.value = DataSerializer.readByteArray(in);
-    this.callbackArgument = (GatewaySenderEventCallbackArgument) DataSerializer.readObject(in);
+    this.callbackArgument =
+        (GatewaySenderEventCallbackArgument) context.getDeserializer().readObject(in);
     this.possibleDuplicate = in.readBoolean();
     this.creationTime = in.readLong();
     this.bucketId = in.readInt();
@@ -726,14 +796,15 @@ public class GatewaySenderEventImpl
     // TODO should this call initializeKey()?
   }
 
-  protected void deserializeKey(DataInput in) throws IOException, ClassNotFoundException {
-    this.key = DataSerializer.readObject(in);
+  protected void deserializeKey(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    this.key = context.getDeserializer().readObject(in);
   }
 
   @Override
   public String toString() {
-    StringBuffer buffer = new StringBuffer();
-    buffer.append("SenderEventImpl[").append("id=").append(this.id).append(";action=")
+    StringBuilder builder = new StringBuilder();
+    builder.append("GatewaySenderEventImpl[").append("id=").append(this.id).append(";action=")
         .append(this.action).append(";operation=").append(getOperation()).append(";region=")
         .append(this.regionPath).append(";key=").append(this.key).append(";value=")
         .append(getValueAsString(true)).append(";valueIsObject=").append(this.valueIsObject)
@@ -742,8 +813,21 @@ public class GatewaySenderEventImpl
         .append(";creationTime=").append(this.creationTime).append(";shadowKey=")
         .append(this.shadowKey).append(";timeStamp=").append(this.versionTimeStamp)
         .append(";acked=").append(this.isAcked).append(";dispatched=").append(this.isDispatched)
-        .append(";bucketId=").append(this.bucketId).append("]");
-    return buffer.toString();
+        .append(";bucketId=").append(this.bucketId)
+        .append(";isConcurrencyConflict=").append(this.isConcurrencyConflict)
+        .append(";transactionId=").append(this.transactionId)
+        .append(";isLastEventInTransaction=").append(this.isLastEventInTransaction)
+        .append("]");
+    return builder.toString();
+  }
+
+  public String toSmallString() {
+    StringBuilder builder = new StringBuilder();
+    builder.append("GatewaySenderEventImpl[").append("id=").append(this.id).append(";operation=")
+        .append(getOperation()).append(";region=").append(this.regionPath).append(";key=")
+        .append(this.key).append(";shadowKey=").append(this.shadowKey).append(";bucketId=")
+        .append(this.bucketId).append("]");
+    return builder.toString();
   }
 
   public static boolean isSerializingValue() {
@@ -764,6 +848,7 @@ public class GatewaySenderEventImpl
    *
    * @return Whether to conflate this message
    */
+  @Override
   public boolean shouldBeConflated() {
     // If the message is an update, it may be conflatable. If it is a
     // create, destroy, invalidate or destroy-region, it is not conflatable.
@@ -771,14 +856,17 @@ public class GatewaySenderEventImpl
     return isUpdate();
   }
 
+  @Override
   public String getRegionToConflate() {
     return this.regionPath;
   }
 
+  @Override
   public Object getKeyToConflate() {
     return this.key;
   }
 
+  @Override
   public Object getValueToConflate() {
     // Since all the uses of this are for logging
     // changing it to return the string form of the value
@@ -786,6 +874,7 @@ public class GatewaySenderEventImpl
     return this.getValueAsString(true);
   }
 
+  @Override
   public void setLatestValue(Object value) {
     // Currently this method is never used.
     // If someone does want to use it in the future
@@ -846,8 +935,7 @@ public class GatewaySenderEventImpl
     // TODO:ASIF :Once stabilized remove the check below
     if (this.id == null) {
       throw new IllegalStateException(
-          LocalizedStrings.GatewayEventImpl_NO_EVENT_ID_IS_AVAILABLE_FOR_THIS_GATEWAY_EVENT
-              .toLocalizedString());
+          "No event id is available for this gateway event.");
     }
 
   }
@@ -872,7 +960,7 @@ public class GatewaySenderEventImpl
     if (this.substituteValue == null) {
       // If the value is already serialized, use it.
       this.valueIsObject = 0x01;
-      /**
+      /*
        * so ends up being stored in this.valueObj
        */
       @Retained(OffHeapIdentifier.GATEWAY_SENDER_EVENT_IMPL_VALUE)
@@ -1002,6 +1090,7 @@ public class GatewaySenderEventImpl
     }
   }
 
+  @Override
   public EventID getEventId() {
     return this.id;
   }
@@ -1010,6 +1099,7 @@ public class GatewaySenderEventImpl
    * Return the EventSequenceID of the Event
    *
    */
+  @Override
   public EventSequenceID getEventSequenceID() {
     return new EventSequenceID(id.getMembershipID(), id.getThreadID(), id.getSequenceID());
   }
@@ -1018,6 +1108,7 @@ public class GatewaySenderEventImpl
     return this.versionTimeStamp;
   }
 
+  @Override
   public int getSizeInBytes() {
     // Calculate the size of this event. This is used for overflow to disk.
 
@@ -1033,6 +1124,7 @@ public class GatewaySenderEventImpl
     // - the region and regionName because they are references
     // - the operation because it is a reference
     // - the entry event because it is nulled prior to calling this method
+    // - the transactionId because it is is a reference
 
     // The size of instances of the following internal datatypes were estimated
     // using a NullDataOutputStream and hardcoded into this method:
@@ -1053,7 +1145,8 @@ public class GatewaySenderEventImpl
     // _callbackArgument reference = 4 bytes
     // _operation reference = 4 bytes
     // _entryEvent reference = 4 bytes
-    size += 28;
+    // _transactionId reference = 4 bytes
+    size += 32;
 
     // Add primitive references
     // int _action = 4 bytes
@@ -1063,7 +1156,9 @@ public class GatewaySenderEventImpl
     // int bucketId = 4 bytes
     // long shadowKey = 8 bytes
     // long creationTime = 8 bytes
-    size += 30;
+    // boolean _hasTransaction = 1 byte
+    // boolean _isLastEventInTransaction = 1 byte
+    size += 32;
 
     // Add the id (an instance of EventId)
     // The hardcoded value below was estimated using a NullDataOutputStream
@@ -1114,6 +1209,7 @@ public class GatewaySenderEventImpl
   // so
   // modifying the implementation a bit.
 
+  @Override
   public Region<?, ?> getRegion() {
     // The region will be null mostly for the other node where the gateway event
     // is serialized
@@ -1123,6 +1219,10 @@ public class GatewaySenderEventImpl
 
   public int getBucketId() {
     return bucketId;
+  }
+
+  public boolean isConcurrencyConflict() {
+    return isConcurrencyConflict;
   }
 
   /**
@@ -1139,9 +1239,49 @@ public class GatewaySenderEventImpl
     return this.shadowKey;
   }
 
+  public boolean isLastEventInTransaction() {
+    return isLastEventInTransaction;
+  }
+
+  public TransactionId getTransactionId() {
+    return transactionId;
+  }
+
+  public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+
+    if (!(obj instanceof GatewaySenderEventImpl)) {
+      return false;
+    }
+
+    GatewaySenderEventImpl that = (GatewaySenderEventImpl) obj;
+
+    return this.shadowKey.equals(that.shadowKey)
+        && this.id.equals(that.id)
+        && this.bucketId == that.bucketId
+        && this.action == that.action
+        && this.regionPath.equals(that.regionPath)
+        && this.key.equals(that.key)
+        && Arrays.equals(this.value, that.value);
+  }
+
+  public int hashCode() {
+    int hashCode = 17;
+    hashCode = 37 * hashCode + ObjectUtils.hashCode(this.shadowKey);
+    hashCode = 37 * hashCode + ObjectUtils.hashCode(this.id);
+    hashCode = 37 * hashCode + this.bucketId;
+    hashCode = 37 * hashCode + this.action;
+    hashCode = 37 * hashCode + ObjectUtils.hashCode(this.regionPath);
+    hashCode = 37 * hashCode + ObjectUtils.hashCode(this.key);
+    hashCode = 37 * hashCode + (this.value == null ? 0 : Arrays.hashCode(this.value));
+    return hashCode;
+  }
+
   @Override
   public Version[] getSerializationVersions() {
-    return null;
+    return new Version[] {Version.GEODE_1_9_0, Version.GEODE_1_13_0};
   }
 
   public int getSerializedValueSize() {

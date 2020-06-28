@@ -16,13 +16,12 @@ package org.apache.geode.internal.cache.tier.sockets;
 
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
-import static org.awaitility.Awaitility.with;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
 import org.junit.Test;
@@ -50,7 +49,7 @@ import org.apache.geode.internal.cache.AbstractRegionMap;
 import org.apache.geode.internal.cache.ClientServerObserverAdapter;
 import org.apache.geode.internal.cache.ClientServerObserverHolder;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
@@ -193,7 +192,7 @@ public class ClientServerForceInvalidateDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void waitForClientInvalidate() {
-    with().pollInterval(10, TimeUnit.MILLISECONDS).await().atMost(20, TimeUnit.SECONDS)
+    await()
         .until(() -> hasClientListenerAfterInvalidateBeenInvoked());
   }
 
@@ -311,7 +310,7 @@ public class ClientServerForceInvalidateDUnitTest extends JUnit4CacheTestCase {
     props.setProperty(LOCATORS, "");
     Cache cache = new ClientServerForceInvalidateDUnitTest().createCacheV(props);
     PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer(h, port1).addServer(h, port2)
-        .setSubscriptionEnabled(true).setThreadLocalConnections(true).setReadTimeout(1000)
+        .setSubscriptionEnabled(true).setReadTimeout(1000)
         .setSocketBufferSize(32768).setMinConnections(3).setSubscriptionRedundancy(-1)
         .setPingInterval(2000).create("ClientServerForceInvalidateDUnitTestPool");
 
@@ -328,8 +327,7 @@ public class ClientServerForceInvalidateDUnitTest extends JUnit4CacheTestCase {
     region1.registerInterest("ALL_KEYS", InterestResultPolicy.NONE, false, false);
     region1.getAttributesMutator().addCacheListener(new ClientListener());
     assertNotNull(region1);
-    with().pollDelay(1, TimeUnit.MILLISECONDS).pollInterval(1, TimeUnit.SECONDS).await()
-        .atMost(60, TimeUnit.SECONDS).until(() -> poolReady(p));
+    await().until(() -> poolReady(p));
   }
 
   private static boolean poolReady(final PoolImpl pool) {

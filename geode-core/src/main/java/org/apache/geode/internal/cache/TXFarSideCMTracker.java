@@ -26,14 +26,13 @@ import java.util.Set;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.MembershipListener;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.locks.TXLockId;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * TXFarSideCMTracker tracks received and processed TXCommitMessages, for transactions that contain
@@ -66,7 +65,6 @@ public class TXFarSideCMTracker {
   private final Map txInProgress;
   private final Object txHistory[];
   private int lastHistoryItem;
-  // private final DM dm;
 
   /**
    * Constructor for TXFarSideCMTracker
@@ -75,9 +73,6 @@ public class TXFarSideCMTracker {
    *        Far Siders did not receive the second message.
    */
   public TXFarSideCMTracker(int historySize) {
-    // InternalDistributedSystem sys = (InternalDistributedSystem)
-    // CacheFactory.getAnyInstance().getDistributedSystem();
-    // this.dm = sys.getDistributionManager();
     this.txInProgress = new HashMap();
     this.txHistory = new Object[historySize];
     this.lastHistoryItem = 0;
@@ -91,38 +86,25 @@ public class TXFarSideCMTracker {
    * Answers fellow "Far Siders" question about an DACK transaction when the transaction originator
    * died before it sent the CommitProcess message.
    */
-  public boolean commitProcessReceived(Object key, DistributionManager dm) {
-    // Assume that after the member has departed that we have all its pending
-    // transaction messages
-    if (key instanceof TXLockId) {
-      TXLockId lk = (TXLockId) key;
-      waitForMemberToDepart(lk.getMemberId(), dm);
-    } else if (key instanceof TXId) {
-      TXId id = (TXId) key;
-      waitForMemberToDepart(id.getMemberId(), dm);
-    } else {
-      Assert.assertTrue(false, "TXTracker received an unknown key class: " + key.getClass());
-    }
-
-    final TXCommitMessage mess;
-    synchronized (this.txInProgress) {
-      mess = (TXCommitMessage) this.txInProgress.get(key);
-      if (null != mess && mess.isProcessing()) {
+  public boolean commitProcessReceived(Object key) {
+    final TXCommitMessage message;
+    synchronized (txInProgress) {
+      message = (TXCommitMessage) getTxInProgress().get(key);
+      if (foundTxInProgress(message)) {
         return true;
       }
-      for (int i = this.txHistory.length - 1; i >= 0; --i) {
-        if (key.equals(this.txHistory[i])) {
-          return true;
-        }
+
+      if (foundFromHistory(key)) {
+        return true;
       }
     }
 
-    if (mess != null) {
-      synchronized (mess) {
-        if (!mess.isProcessing()) {
+    if (message != null) {
+      synchronized (message) {
+        if (!message.isProcessing()) {
           // Prevent any potential future processing
           // of this message
-          mess.setDontProcess();
+          message.setDontProcess();
           return false;
         } else {
           return true;
@@ -130,6 +112,23 @@ public class TXFarSideCMTracker {
       }
     }
 
+    return false;
+  }
+
+  Map getTxInProgress() {
+    return txInProgress;
+  }
+
+  boolean foundTxInProgress(TXCommitMessage message) {
+    return null != message && message.isProcessing();
+  }
+
+  boolean foundFromHistory(Object key) {
+    for (int i = this.txHistory.length - 1; i >= 0; --i) {
+      if (key.equals(this.txHistory[i])) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -176,9 +175,10 @@ public class TXFarSideCMTracker {
             commitMessage.wait(100);
           } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
-            logger.error(LocalizedMessage.create(
-                LocalizedStrings.TxFarSideTracker_WAITING_TO_COMPLETE_ON_MESSAGE_0_CAUGHT_AN_INTERRUPTED_EXCEPTION,
-                commitMessage), ie);
+            logger.error(
+                String.format("Waiting to complete on message %s caught an interrupted exception",
+                    commitMessage),
+                ie);
             break;
           }
         }
@@ -205,12 +205,15 @@ public class TXFarSideCMTracker {
     final Object lock = new Object();
     final MembershipListener memEar = new MembershipListener() {
       // MembershipListener implementation
+      @Override
       public void memberJoined(DistributionManager distributionManager,
           InternalDistributedMember id) {}
 
+      @Override
       public void memberSuspect(DistributionManager distributionManager,
           InternalDistributedMember id, InternalDistributedMember whoSuspected, String reason) {}
 
+      @Override
       public void memberDeparted(DistributionManager distributionManager,
           InternalDistributedMember id, boolean crashed) {
         if (memberId.equals(id)) {
@@ -220,6 +223,7 @@ public class TXFarSideCMTracker {
         }
       }
 
+      @Override
       public void quorumLost(DistributionManager distributionManager,
           Set<InternalDistributedMember> failures, List<InternalDistributedMember> remaining) {}
     };
@@ -334,6 +338,7 @@ public class TXFarSideCMTracker {
   // TODO we really need to keep around only one msg for each thread on a client
   private Map<TXId, TXCommitMessage> failoverMap =
       Collections.synchronizedMap(new LinkedHashMap<TXId, TXCommitMessage>() {
+        @Override
         protected boolean removeEldestEntry(Entry eldest) {
           return size() > TXManagerImpl.FAILOVER_TX_MAP_SIZE;
         };
@@ -355,5 +360,10 @@ public class TXFarSideCMTracker {
     this.failoverMap.clear();
     this.lastHistoryItem = 0;
     Arrays.fill(this.txHistory, null);
+  }
+
+  @VisibleForTesting
+  public int getFailoverMapSize() {
+    return failoverMap.size();
   }
 }

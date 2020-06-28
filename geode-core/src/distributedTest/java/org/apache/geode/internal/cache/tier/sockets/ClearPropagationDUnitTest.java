@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
@@ -137,6 +138,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
   @Test
   public void testVerifyClearNotReceivedBySenderReceivedByOthers() {
     CacheSerializableRunnable resetFlags = new CacheSerializableRunnable("resetFlags") {
+      @Override
       public void run2() throws CacheException {
         gotClear = false;
         gotDestroyed = false;
@@ -181,6 +183,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
   @Test
   public void testEventIdGeneratedInDestroyRegionOperation() throws Exception {
     CacheSerializableRunnable resetFlags = new CacheSerializableRunnable("resetFlags") {
+      @Override
       public void run2() throws CacheException {
         gotClear = false;
         gotDestroyed = false;
@@ -216,6 +219,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
   private CacheSerializableRunnable checkDestroyRegion(final boolean toBlock) {
     CacheSerializableRunnable checkRegion = new CacheSerializableRunnable("checkDestroyRegion") {
+      @Override
       public void run2() throws CacheException {
         if (toBlock) {
           synchronized (ClearPropagationDUnitTest.class) {
@@ -231,7 +235,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
           }
         }
 
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNull(region);
       }
     };
@@ -243,8 +247,9 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
     CacheSerializableRunnable clearRegion = new CacheSerializableRunnable("checkSize") {
 
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         LogWriterUtils.getLogWriter().info("Size of the region " + region.size());
 
@@ -269,7 +274,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
   public static void acquireConnectionsAndClear(String host) {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       String poolName = r1.getAttributes().getPoolName();
       assertNotNull(poolName);
@@ -278,7 +283,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
       Connection conn1 = pool.acquireConnection(new ServerLocation(host, PORT2));
       assertNotNull(conn1);
       assertEquals(PORT2, conn1.getServer().getPort());
-      ServerRegionProxy srp = new ServerRegionProxy(Region.SEPARATOR + REGION_NAME, pool);
+      ServerRegionProxy srp = new ServerRegionProxy(SEPARATOR + REGION_NAME, pool);
       srp.clearOnForTestsOnly(conn1, new EventID(new byte[] {1}, 1, 1), null);
     } catch (Exception ex) {
       ex.printStackTrace();
@@ -289,7 +294,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
   public static void acquireConnectionsAndDestroyRegion(String host) {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       String poolName = r1.getAttributes().getPoolName();
       assertNotNull(poolName);
@@ -298,7 +303,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
       Connection conn1 = pool.acquireConnection(new ServerLocation(host, PORT2));
       assertNotNull(conn1);
       assertEquals(PORT2, conn1.getServer().getPort());
-      ServerRegionProxy srp = new ServerRegionProxy(Region.SEPARATOR + REGION_NAME, pool);
+      ServerRegionProxy srp = new ServerRegionProxy(SEPARATOR + REGION_NAME, pool);
       srp.destroyRegionOnForTestsOnly(conn1, new EventID(new byte[] {1}, 1, 1), null);
     } catch (Exception ex) {
       ex.printStackTrace();
@@ -313,7 +318,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void createEntriesK1andK2() {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       if (!r1.containsKey("key1")) {
         r1.create("key1", "key-1");
@@ -351,6 +356,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setPoolName(p.getName());
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterRegionClear(RegionEvent re) {
 
         synchronized (ClearPropagationDUnitTest.class) {
@@ -359,6 +365,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
         }
       }
 
+      @Override
       public void afterRegionDestroy(RegionEvent re) {
         synchronized (ClearPropagationDUnitTest.class) {
           gotDestroyed = true;
@@ -388,7 +395,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
   public static void registerKeysK1andK2() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       List list = new ArrayList();
       list.add("key1");
@@ -402,7 +409,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
 
   public static void verifyNoUpdates() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       // verify no updates
       assertEquals("key-1", r.getEntry("key1").getValue());
@@ -415,7 +422,7 @@ public class ClearPropagationDUnitTest extends JUnit4DistributedTestCase {
   public static void verifyUpdates() {
     try {
 
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       // verify updates
       assertNull(r.getEntry("key2").getValue());

@@ -16,6 +16,7 @@ package org.apache.geode.cache30;
 
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.Properties;
 
 import org.apache.geode.cache.EntryOperation;
@@ -30,17 +31,25 @@ public class CacheXMLPartitionResolver implements PartitionResolver, Serializabl
     this.resolveProps.setProperty("routingType", "key");
   }
 
+  @Override
   public String getName() {
     return getClass().getName();
   }
 
+  @Override
   public Serializable getRoutingObject(EntryOperation opDetails) {
     return null;
   }
 
+  @Override
   public void close() {}
 
-  // @Override
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(this.resolveProps);
+  }
+
+  @Override
   public boolean equals(Object obj) {
     if (this == obj) {
       return true;
@@ -64,6 +73,7 @@ public class CacheXMLPartitionResolver implements PartitionResolver, Serializabl
    *
    * @see org.apache.geode.internal.cache.xmlcache.Declarable2#getConfig()
    */
+  @Override
   public Properties getConfig() {
     return this.resolveProps;
   }
@@ -73,6 +83,7 @@ public class CacheXMLPartitionResolver implements PartitionResolver, Serializabl
    *
    * @see org.apache.geode.cache.Declarable#init(java.util.Properties)
    */
+  @Override
   public void init(Properties props) {
     this.resolveProps.putAll(props);
   }

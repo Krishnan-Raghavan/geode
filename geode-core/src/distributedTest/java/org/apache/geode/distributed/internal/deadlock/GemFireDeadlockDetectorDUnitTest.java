@@ -14,6 +14,7 @@
  */
 package org.apache.geode.distributed.internal.deadlock;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -30,7 +31,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.DataSerializable;
@@ -67,6 +67,7 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
   private void stopStuckThreads() {
     Invoke.invokeInEveryVM(new SerializableRunnable() {
 
+      @Override
       public void run() {
         for (Thread thread : stuckThreads) {
           thread.interrupt();
@@ -129,7 +130,7 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
     AsyncInvocation async2 = lockTheLocks(vm1, member1, gateOnMember2, gateOnMember1);
     try {
       final LinkedList<Dependency> deadlockHolder[] = new LinkedList[1];
-      Awaitility.await("waiting for deadlock").atMost(20, TimeUnit.SECONDS).until(() -> {
+      await("waiting for deadlock").until(() -> {
         GemFireDeadlockDetector detect = new GemFireDeadlockDetector();
         LinkedList<Dependency> deadlock = detect.find().findCycle();
         if (deadlock != null) {
@@ -156,6 +157,7 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
       final String gateToSignal, final String gateToWaitOn) {
     return vm0.invokeAsync(new SerializableRunnable() {
 
+      @Override
       public void run() {
         lock.lock();
         try {
@@ -187,10 +189,10 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
     AsyncInvocation async1 = lockTheDLocks(vm0, "one", "two");
     AsyncInvocation async2 = lockTheDLocks(vm1, "two", "one");
 
-    Awaitility.await("waiting for locks to be acquired").atMost(60, TimeUnit.SECONDS)
+    await("waiting for locks to be acquired")
         .untilAsserted(() -> assertTrue(getBlackboard().isGateSignaled("one")));
 
-    Awaitility.await("waiting for locks to be acquired").atMost(60, TimeUnit.SECONDS)
+    await("waiting for locks to be acquired")
         .untilAsserted(() -> assertTrue(getBlackboard().isGateSignaled("two")));
 
     GemFireDeadlockDetector detect = new GemFireDeadlockDetector();
@@ -222,6 +224,7 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
   private AsyncInvocation lockTheDLocks(VM vm, final String first, final String second) {
     return vm.invokeAsync(new SerializableRunnable() {
 
+      @Override
       public void run() {
         try {
           getCache();
@@ -247,6 +250,7 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
 
   private InternalDistributedMember createCache(VM vm) {
     return (InternalDistributedMember) vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() {
         getCache();
         return getSystem().getDistributedMember();
@@ -260,11 +264,13 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
 
     private static final int LOCK_WAIT_TIME = 1000;
 
+    @Override
     public boolean hasResult() {
       return true;
     }
 
 
+    @Override
     public void execute(FunctionContext context) {
       boolean acquired = false;
       try {
@@ -281,14 +287,17 @@ public class GemFireDeadlockDetectorDUnitTest extends JUnit4CacheTestCase {
       }
     }
 
+    @Override
     public String getId() {
       return getClass().getCanonicalName();
     }
 
+    @Override
     public boolean optimizeForWrite() {
       return false;
     }
 
+    @Override
     public boolean isHA() {
       return false;
     }

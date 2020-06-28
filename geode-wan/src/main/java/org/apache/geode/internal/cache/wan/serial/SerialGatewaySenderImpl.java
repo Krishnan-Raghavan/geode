@@ -31,14 +31,14 @@ import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.RegionQueue;
 import org.apache.geode.internal.cache.UpdateAttributesProcessor;
 import org.apache.geode.internal.cache.ha.ThreadIdentifier;
+import org.apache.geode.internal.cache.wan.AbstractGatewaySenderEventProcessor;
 import org.apache.geode.internal.cache.wan.AbstractRemoteGatewaySender;
 import org.apache.geode.internal.cache.wan.GatewaySenderAdvisor.GatewaySenderProfile;
 import org.apache.geode.internal.cache.wan.GatewaySenderAttributes;
 import org.apache.geode.internal.cache.wan.GatewaySenderConfigurationException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.monitoring.ThreadsMonitoring;
+import org.apache.geode.internal.statistics.StatisticsClock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * @since GemFire 7.0
@@ -47,12 +47,22 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
 
   private static final Logger logger = LogService.getLogger();
 
-  public SerialGatewaySenderImpl(InternalCache cache, GatewaySenderAttributes attrs) {
-    super(cache, attrs);
+  public SerialGatewaySenderImpl(InternalCache cache, StatisticsClock statisticsClock,
+      GatewaySenderAttributes attrs) {
+    super(cache, statisticsClock, attrs);
   }
 
   @Override
   public void start() {
+    this.start(false);
+  }
+
+  @Override
+  public void startWithCleanQueue() {
+    this.start(true);
+  }
+
+  private void start(boolean cleanQueues) {
     if (logger.isDebugEnabled()) {
       logger.debug("Starting gatewaySender : {}", this);
     }
@@ -60,16 +70,14 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
     this.getLifeCycleLock().writeLock().lock();
     try {
       if (isRunning()) {
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.GatewaySender_SENDER_0_IS_ALREADY_RUNNING, this.getId()));
+        logger.warn("Gateway Sender {} is already running", this.getId());
         return;
       }
       if (this.remoteDSId != DEFAULT_DISTRIBUTED_SYSTEM_ID) {
         String locators = this.cache.getInternalDistributedSystem().getConfig().getLocators();
         if (locators.length() == 0) {
           throw new GatewaySenderConfigurationException(
-              LocalizedStrings.AbstractGatewaySender_LOCATOR_SHOULD_BE_CONFIGURED_BEFORE_STARTING_GATEWAY_SENDER
-                  .toLocalizedString());
+              "Locators must be configured before starting gateway-sender.");
         }
       }
       getSenderAdvisor().initDLockService();
@@ -80,12 +88,11 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
           getSenderAdvisor().makeSecondary();
         }
       }
-      if (getDispatcherThreads() > 1) {
-        eventProcessor = new RemoteConcurrentSerialGatewaySenderEventProcessor(
-            SerialGatewaySenderImpl.this, getThreadMonitorObj());
-      } else {
-        eventProcessor = new RemoteSerialGatewaySenderEventProcessor(SerialGatewaySenderImpl.this,
-            getId(), getThreadMonitorObj());
+
+      eventProcessor = createEventProcessor(cleanQueues);
+
+      if (isStartEventProcessorInPausedState()) {
+        this.pauseEvenIfProcessorStopped();
       }
       eventProcessor.start();
       waitForRunningStatus();
@@ -101,12 +108,24 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
       system.handleResourceEvent(ResourceEvent.GATEWAYSENDER_START, this);
 
       logger
-          .info(LocalizedMessage.create(LocalizedStrings.SerialGatewaySenderImpl_STARTED__0, this));
+          .info("Started  {}", this);
 
       enqueueTempEvents();
     } finally {
       this.getLifeCycleLock().writeLock().unlock();
     }
+  }
+
+  protected AbstractGatewaySenderEventProcessor createEventProcessor(boolean cleanQueues) {
+    AbstractGatewaySenderEventProcessor eventProcessor;
+    if (getDispatcherThreads() > 1) {
+      eventProcessor = new RemoteConcurrentSerialGatewaySenderEventProcessor(
+          SerialGatewaySenderImpl.this, getThreadMonitorObj(), cleanQueues);
+    } else {
+      eventProcessor = new RemoteSerialGatewaySenderEventProcessor(SerialGatewaySenderImpl.this,
+          getId(), getThreadMonitorObj(), cleanQueues);
+    }
+    return eventProcessor;
   }
 
   @Override
@@ -125,7 +144,7 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
       for (AsyncEventListener listener : this.listeners) {
         listener.close();
       }
-      logger.info(LocalizedMessage.create(LocalizedStrings.GatewayImpl_STOPPED__0, this));
+      logger.info("Stopped  {}", this);
 
       clearTempEventsAfterSenderStopped();
     } finally {
@@ -159,8 +178,7 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
         Thread.currentThread().interrupt();
       }
       if (lockObtainingThread.isAlive()) {
-        logger.info(LocalizedMessage.create(
-            LocalizedStrings.GatewaySender_COULD_NOT_STOP_LOCK_OBTAINING_THREAD_DURING_GATEWAY_SENDER_STOP));
+        logger.info("Could not stop lock obtaining thread during gateway sender stop");
       }
     }
 
@@ -168,7 +186,7 @@ public class SerialGatewaySenderImpl extends AbstractRemoteGatewaySender {
         (InternalDistributedSystem) this.cache.getDistributedSystem();
     system.handleResourceEvent(ResourceEvent.GATEWAYSENDER_STOP, this);
 
-    this.eventProcessor = null;
+    // this.eventProcessor = null;
   }
 
   @Override

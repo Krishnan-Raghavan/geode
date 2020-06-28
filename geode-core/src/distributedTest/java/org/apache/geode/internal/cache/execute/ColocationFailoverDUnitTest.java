@@ -40,7 +40,7 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.partitioned.RegionAdvisor;
-import org.apache.geode.internal.logging.InternalLogWriter;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
@@ -50,7 +50,6 @@ import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-
 
 public class ColocationFailoverDUnitTest extends JUnit4DistributedTestCase {
 
@@ -198,21 +197,22 @@ public class ColocationFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   private static void verifyPrimaryColocation() {
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         return tryVerifyPrimaryColocation();
       }
 
+      @Override
       public String description() {
         dump();
         return excuse;
       }
     };
-    Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
 
   protected static void dump() {
-    final InternalLogWriter logger = LogWriterUtils.getLogWriter();
     ((PartitionedRegion) customerPR).dumpAllBuckets(false);
     ((PartitionedRegion) orderPR).dumpAllBuckets(false);
     ((PartitionedRegion) shipmentPR).dumpAllBuckets(false);
@@ -339,15 +339,17 @@ public class ColocationFailoverDUnitTest extends JUnit4DistributedTestCase {
   private static void verifyColocation() {
     // TODO does having this WaitCriterion help?
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         return tryVerifyColocation();
       }
 
+      @Override
       public String description() {
         return excuse;
       }
     };
-    Wait.waitForCriterion(wc, 2 * 60 * 1000, 1000, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   public static void createCacheInAllVms() {
@@ -461,6 +463,7 @@ public class ColocationFailoverDUnitTest extends JUnit4DistributedTestCase {
   public final void preTearDown() throws Exception {
     closeCache();
     Invoke.invokeInEveryVM(new SerializableRunnable() {
+      @Override
       public void run() {
         closeCache();
       }
@@ -473,16 +476,19 @@ class KeyPartitionResolver implements PartitionResolver {
 
   public KeyPartitionResolver() {}
 
+  @Override
   public String getName() {
     return this.getClass().getName();
   }
 
+  @Override
   public Serializable getRoutingObject(EntryOperation opDetails) {
     // Serializable routingbject = null;
     String key = (String) opDetails.getKey();
     return new RoutingObject("" + key.charAt(key.length() - 1));
   }
 
+  @Override
   public void close() {}
 
   public boolean equals(Object o) {
@@ -503,10 +509,12 @@ class RoutingObject implements DataSerializable {
 
   private String value;
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     this.value = DataSerializer.readString(in);
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     DataSerializer.writeString(this.value, out);
   }

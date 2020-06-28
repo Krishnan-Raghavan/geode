@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.tier.sockets.command;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -29,7 +30,6 @@ import org.mockito.MockitoAnnotations;
 
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.cache.AttributesFactory;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerStats;
@@ -38,6 +38,7 @@ import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.ServerConnection;
 import org.apache.geode.internal.security.AuthorizeRequest;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.security.NotAuthorizedException;
 import org.apache.geode.security.ResourcePermission.Operation;
 import org.apache.geode.security.ResourcePermission.Resource;
@@ -87,9 +88,9 @@ public class CreateRegionTest {
 
     when(this.parentRegion.getAttributes()).thenReturn(new AttributesFactory().create());
 
-    when(this.parentRegionNamePart.getString()).thenReturn(PARENT_REGION_NAME);
+    when(this.parentRegionNamePart.getCachedString()).thenReturn(PARENT_REGION_NAME);
 
-    when(this.regionNamePart.getString()).thenReturn(REGION_NAME);
+    when(this.regionNamePart.getCachedString()).thenReturn(REGION_NAME);
 
     when(this.serverConnection.getCache()).thenReturn(this.cache);
     when(this.serverConnection.getAuthzRequest()).thenReturn(this.authzRequest);
@@ -142,7 +143,8 @@ public class CreateRegionTest {
 
     this.createRegion.cmdExecute(this.message, this.serverConnection, this.securityService, 0);
 
-    verify(this.authzRequest).createRegionAuthorize(eq(PARENT_REGION_NAME + '/' + REGION_NAME));
+    verify(this.authzRequest)
+        .createRegionAuthorize(eq(PARENT_REGION_NAME + SEPARATOR + REGION_NAME));
     verify(this.responseMessage).send(this.serverConnection);
   }
 
@@ -151,11 +153,12 @@ public class CreateRegionTest {
     when(this.securityService.isClientSecurityRequired()).thenReturn(true);
     when(this.securityService.isIntegratedSecurity()).thenReturn(false);
     doThrow(new NotAuthorizedException("")).when(this.authzRequest)
-        .createRegionAuthorize(eq(PARENT_REGION_NAME + '/' + REGION_NAME));
+        .createRegionAuthorize(eq(PARENT_REGION_NAME + SEPARATOR + REGION_NAME));
 
     this.createRegion.cmdExecute(this.message, this.serverConnection, this.securityService, 0);
 
-    verify(this.authzRequest).createRegionAuthorize(eq(PARENT_REGION_NAME + '/' + REGION_NAME));
+    verify(this.authzRequest)
+        .createRegionAuthorize(eq(PARENT_REGION_NAME + SEPARATOR + REGION_NAME));
     verify(this.errorResponseMessage).send(eq(this.serverConnection));
   }
 

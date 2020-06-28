@@ -37,9 +37,10 @@ import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.RemoteOperationException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is used be a replicate region to send a contains key/value request to another peer.
@@ -88,7 +89,7 @@ public class RemoteContainsKeyValueMessage extends RemoteOperationMessageWithDir
 
     Set<?> failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
-      throw new RemoteOperationException(LocalizedStrings.FAILED_SENDING_0.toLocalizedString(m));
+      throw new RemoteOperationException(String.format("Failed sending < %s >", m));
     }
     return p;
   }
@@ -132,20 +133,23 @@ public class RemoteContainsKeyValueMessage extends RemoteOperationMessageWithDir
     buff.append("; valueCheck=").append(this.valueCheck).append("; key=").append(this.key);
   }
 
+  @Override
   public int getDSFID() {
     return R_CONTAINS_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.key = DataSerializer.readObject(in);
     this.valueCheck = (flags & VALUE_CHECK) != 0;
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.key, out);
   }
 
@@ -208,14 +212,16 @@ public class RemoteContainsKeyValueMessage extends RemoteOperationMessageWithDir
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.containsKeyValue = in.readBoolean();
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeBoolean(this.containsKeyValue);
     }
 
@@ -277,14 +283,12 @@ public class RemoteContainsKeyValueMessage extends RemoteOperationMessageWithDir
       } catch (CacheException ce) {
         logger.debug("ContainsKeyValueResponse got remote CacheException", ce);
         throw new RemoteOperationException(
-            LocalizedStrings.RemoteContainsKeyValueMessage_CONTAINSKEYVALUERESPONSE_GOT_REMOTE_CACHEEXCEPTION
-                .toLocalizedString(),
+            "RemoteContainsKeyResponse got remote CacheException; triggering RemoteOperationException.",
             ce);
       }
       if (!this.returnValueReceived) {
         throw new RemoteOperationException(
-            LocalizedStrings.RemoteContainsKeyValueMessage_NO_RETURN_VALUE_RECEIVED
-                .toLocalizedString());
+            "no return value received");
       }
       return this.returnValue;
     }

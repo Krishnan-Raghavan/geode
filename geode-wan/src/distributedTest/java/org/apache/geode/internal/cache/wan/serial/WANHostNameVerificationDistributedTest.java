@@ -14,22 +14,21 @@
  */
 package org.apache.geode.internal.cache.wan.serial;
 
-import static org.apache.geode.cache.ssl.TestSSLUtils.CertificateBuilder;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DISTRIBUTED_SYSTEM_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.REMOTE_LOCATORS;
 import static org.apache.geode.security.SecurableCommunicationChannels.ALL;
 import static org.apache.geode.security.SecurableCommunicationChannels.GATEWAY;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.rules.ClusterStartupRule.getCache;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.security.GeneralSecurityException;
 import java.util.Properties;
 
-import org.awaitility.Duration;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,11 +37,15 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.ssl.CertStores;
+import org.apache.geode.cache.ssl.CertificateBuilder;
+import org.apache.geode.cache.ssl.CertificateMaterial;
 import org.apache.geode.cache.wan.GatewayReceiverFactory;
 import org.apache.geode.cache.wan.GatewaySenderFactory;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.wan.AbstractGatewaySender;
 import org.apache.geode.internal.cache.wan.GatewaySenderEventRemoteDispatcher;
+import org.apache.geode.internal.inet.LocalHostUtil;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -67,42 +70,38 @@ public class WANHostNameVerificationDistributedTest {
     IgnoredException.addIgnoredException("Unexpected IOException");
   }
 
-  private void setupWanSites(CertificateBuilder locator_ln_cert, CertificateBuilder server_ln_cert,
-      CertificateBuilder locator_ny_cert, CertificateBuilder server_ny_cert)
+  private void setupWanSites(CertificateMaterial ca, CertificateMaterial locator_ln_cert,
+      CertificateMaterial server_ln_cert,
+      CertificateMaterial locator_ny_cert, CertificateMaterial server_ny_cert)
       throws GeneralSecurityException, IOException {
-    CertStores locator_ln_store = new CertStores("ln_locator", "ln_locator");
-    locator_ln_store.withCertificate(locator_ln_cert);
+    CertStores locator_ln_store = new CertStores("ln_locator");
+    locator_ln_store.withCertificate("ln_locator", locator_ln_cert);
+    locator_ln_store.trust("ca", ca);
 
-    CertStores server_ln_store = new CertStores("ln_server", "ln_server");
-    server_ln_store.withCertificate(server_ln_cert);
+    CertStores server_ln_store = new CertStores("ln_server");
+    server_ln_store.withCertificate("ln_server", server_ln_cert);
+    server_ln_store.trust("ca", ca);
 
-    CertStores locator_ny_store = new CertStores("ny_locator", "ny_locator");
-    locator_ny_store.withCertificate(locator_ny_cert);
+    CertStores locator_ny_store = new CertStores("ny_locator");
+    locator_ny_store.withCertificate("ny_locator", locator_ny_cert);
+    locator_ny_store.trust("ca", ca);
 
-    CertStores server_ny_store = new CertStores("ny_server", "ny_server");
-    server_ny_store.withCertificate(server_ny_cert);
+    CertStores server_ny_store = new CertStores("ny_server");
+    server_ny_store.withCertificate("ny_server", server_ny_cert);
+    server_ny_store.trust("ca", ca);
 
     int site1Port =
-        setupWanSite1(locator_ln_store, server_ln_store, locator_ny_store, server_ny_store);
-    setupWanSite2(site1Port, locator_ny_store, server_ny_store, locator_ln_store, server_ln_store);
+        setupWanSite1(locator_ln_store, server_ln_store);
+    setupWanSite2(site1Port, locator_ny_store, server_ny_store);
   }
 
-  private int setupWanSite1(CertStores locator_ln_store, CertStores server_ln_store,
-      CertStores locator_ny_store, CertStores server_ny_store)
+  private int setupWanSite1(CertStores locator_ln_store, CertStores server_ln_store)
       throws GeneralSecurityException, IOException {
 
     Properties locatorSSLProps = locator_ln_store
-        .trustSelf()
-        .trust(server_ln_store.alias(), server_ln_store.certificate())
-        .trust(locator_ny_store.alias(), locator_ny_store.certificate())
-        .trust(server_ny_store.alias(), server_ny_store.certificate())
         .propertiesWith(ALL, true, true);
 
     Properties serverSSLProps = server_ln_store
-        .trustSelf()
-        .trust(locator_ln_store.alias(), locator_ln_store.certificate())
-        .trust(locator_ny_store.alias(), locator_ny_store.certificate())
-        .trust(server_ny_store.alias(), server_ny_store.certificate())
         .propertiesWith(ALL, true, true);
 
     // create a cluster
@@ -112,24 +111,24 @@ public class WANHostNameVerificationDistributedTest {
 
     // create a region
     server_ln.invoke(WANHostNameVerificationDistributedTest::createServerRegion);
-    locator_ln.waitUntilRegionIsReadyOnExactlyThisManyServers("/region", 1);
+    locator_ln.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "region", 1);
 
     // create gateway sender
-    server_ln.invoke(WANHostNameVerificationDistributedTest::createGatewaySender);
+    server_ln.invoke(() -> {
+      GeodeAwaitility.await().until(() -> {
+        WANHostNameVerificationDistributedTest.createGatewaySender();
+        return true;
+      });
+    });
 
     return locator_ln.getPort();
   }
 
   private void setupWanSite2(int site1Port, CertStores locator_ny_store,
-      CertStores server_ny_store,
-      CertStores locator_ln_store, CertStores server_ln_store)
+      CertStores server_ny_store)
       throws GeneralSecurityException, IOException {
 
     Properties locator_ny_props = locator_ny_store
-        .trustSelf()
-        .trust(server_ln_store.alias(), server_ln_store.certificate())
-        .trust(server_ny_store.alias(), server_ny_store.certificate())
-        .trust(locator_ln_store.alias(), locator_ln_store.certificate())
         .propertiesWith(ALL, true, true);
 
     locator_ny_props.setProperty(MCAST_PORT, "0");
@@ -137,10 +136,6 @@ public class WANHostNameVerificationDistributedTest {
     locator_ny_props.setProperty(REMOTE_LOCATORS, "localhost[" + site1Port + "]");
 
     Properties server_ny_props = server_ny_store
-        .trustSelf()
-        .trust(locator_ln_store.alias(), locator_ln_store.certificate())
-        .trust(locator_ny_store.alias(), locator_ny_store.certificate())
-        .trust(server_ln_store.alias(), server_ln_store.certificate())
         .propertiesWith(ALL, true, true);
 
     // create a cluster
@@ -150,10 +145,15 @@ public class WANHostNameVerificationDistributedTest {
 
     // create a region
     server_ny.invoke(WANHostNameVerificationDistributedTest::createServerRegion);
-    locator_ny.waitUntilRegionIsReadyOnExactlyThisManyServers("/region", 1);
+    locator_ny.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "region", 1);
 
     // create gateway sender
-    server_ny.invoke(WANHostNameVerificationDistributedTest::createGatewayReceiver);
+    server_ny.invoke(() -> {
+      GeodeAwaitility.await().until(() -> {
+        WANHostNameVerificationDistributedTest.createGatewayReceiver();
+        return true;
+      });
+    });
   }
 
   private static void createGatewayReceiver() {
@@ -186,16 +186,12 @@ public class WANHostNameVerificationDistributedTest {
   private static void verifySite2Received() {
     Region<String, String> region = ClusterStartupRule.getCache().getRegion("region");
     await()
-        .atMost(Duration.FIVE_SECONDS)
-        .pollInterval(Duration.ONE_SECOND)
         .untilAsserted(() -> assertThat("servervalue").isEqualTo(region.get("serverkey")));
   }
 
   private static void verifySite2DidNotReceived() {
     Region<String, String> region = ClusterStartupRule.getCache().getRegion("region");
     await()
-        .atMost(Duration.FIVE_SECONDS)
-        .pollInterval(Duration.ONE_SECOND)
         .untilAsserted(() -> assertThat(region.keySet().size()).isEqualTo(0));
   }
 
@@ -208,33 +204,63 @@ public class WANHostNameVerificationDistributedTest {
     // server-ln -> locator-ny
     // server-ln -> server-ny
 
-    CertificateBuilder locator_ln_cert = new CertificateBuilder()
+    CertificateMaterial ca = new CertificateBuilder()
+        .commonName("Test CA")
+        .isCA()
+        .generate();
+
+    CertificateMaterial locator_ln_cert = new CertificateBuilder()
         .commonName("locator_ln")
+        .issuedBy(ca)
         // ClusterStartupRule uses 'localhost' as locator host
         .sanDnsName(InetAddress.getLoopbackAddress().getHostName())
         .sanDnsName(InetAddress.getLocalHost().getHostName())
+        .sanDnsName(InetAddress.getLocalHost().getHostAddress())
+        .sanDnsName(LocalHostUtil.getLocalHost().getCanonicalHostName())
         .sanIpAddress(InetAddress.getLocalHost())
-        .sanIpAddress(InetAddress.getByName("0.0.0.0")); // to pass on windows
+        .sanIpAddress(InetAddress.getByName("0.0.0.0")) // to pass on windows
+        .sanIpAddress(LocalHostUtil.getLocalHost())
+        .generate();
 
-    CertificateBuilder server_ln_cert = new CertificateBuilder()
+    CertificateMaterial server_ln_cert = new CertificateBuilder()
         .commonName("server_ln")
+        .issuedBy(ca)
         .sanDnsName(InetAddress.getLocalHost().getHostName())
-        .sanIpAddress(InetAddress.getLocalHost());
+        .sanDnsName(LocalHostUtil.getLocalHostName())
+        .sanDnsName(LocalHostUtil.getLocalHost().getCanonicalHostName())
+        .sanDnsName(InetAddress.getLocalHost().getHostAddress())
+        .sanIpAddress(InetAddress.getLocalHost())
+        .sanIpAddress(LocalHostUtil.getLocalHost())
+        .generate();
 
-    CertificateBuilder locator_ny_cert = new CertificateBuilder()
+    CertificateMaterial locator_ny_cert = new CertificateBuilder()
         .commonName("locator_ny")
+        .issuedBy(ca)
         // ClusterStartupRule uses 'localhost' as locator host
         .sanDnsName(InetAddress.getLoopbackAddress().getHostName())
         .sanDnsName(InetAddress.getLocalHost().getHostName())
+        .sanDnsName(InetAddress.getLocalHost().getCanonicalHostName())
+        .sanDnsName(LocalHostUtil.getLocalHost().getCanonicalHostName())
+        .sanDnsName(LocalHostUtil.getLocalHostName())
+        .sanDnsName(InetAddress.getLocalHost().getHostAddress())
         .sanIpAddress(InetAddress.getLocalHost())
-        .sanIpAddress(InetAddress.getByName("0.0.0.0")); // to pass on windows
+        .sanIpAddress(InetAddress.getByName("0.0.0.0")) // to pass on windows
+        .sanIpAddress(LocalHostUtil.getLocalHost())
+        .generate();
 
-    CertificateBuilder server_ny_cert = new CertificateBuilder()
+    CertificateMaterial server_ny_cert = new CertificateBuilder()
         .commonName("server_ny")
+        .issuedBy(ca)
         .sanDnsName(InetAddress.getLocalHost().getHostName())
-        .sanIpAddress(InetAddress.getLocalHost());
+        .sanDnsName(InetAddress.getLocalHost().getCanonicalHostName())
+        .sanDnsName(LocalHostUtil.getLocalHostName())
+        .sanDnsName(LocalHostUtil.getLocalHost().getCanonicalHostName())
+        .sanDnsName(InetAddress.getLocalHost().getHostAddress())
+        .sanIpAddress(InetAddress.getLocalHost())
+        .sanIpAddress(LocalHostUtil.getLocalHost())
+        .generate();
 
-    setupWanSites(locator_ln_cert, server_ln_cert, locator_ny_cert, server_ny_cert);
+    setupWanSites(ca, locator_ln_cert, server_ln_cert, locator_ny_cert, server_ny_cert);
 
     server_ln.invoke(WANHostNameVerificationDistributedTest::doPutOnSite1);
     server_ny.invoke(WANHostNameVerificationDistributedTest::verifySite2Received);
@@ -242,26 +268,33 @@ public class WANHostNameVerificationDistributedTest {
 
   @Test
   public void gwsenderFailsToConnectIfGWReceiverHasNoHostName() throws Exception {
-    CertificateBuilder gwSenderCertificate = new CertificateBuilder()
-        .commonName("gwsender-ln");
+    CertificateMaterial ca = new CertificateBuilder()
+        .commonName("Test CA")
+        .isCA()
+        .generate();
 
-    CertificateBuilder gwReceiverCertificate = new CertificateBuilder()
-        .commonName("gwreceiver-ny");
+    CertificateMaterial gwSenderCertificate = new CertificateBuilder()
+        .commonName("gwsender-ln")
+        .issuedBy(ca)
+        .generate();
 
-    CertStores gwSender = new CertStores("gwsender", "gwsender");
-    gwSender.withCertificate(gwSenderCertificate);
+    CertificateMaterial gwReceiverCertificate = new CertificateBuilder()
+        .commonName("gwreceiver-ny")
+        .issuedBy(ca)
+        .generate();
 
-    CertStores gwReceiver = new CertStores("gwreceiver", "gwreceiver");
-    gwReceiver.withCertificate(gwReceiverCertificate);
+    CertStores gwSender = new CertStores("gwsender");
+    gwSender.withCertificate("gwsender", gwSenderCertificate);
+    gwSender.trust("ca", ca);
+
+    CertStores gwReceiver = new CertStores("gwreceiver");
+    gwReceiver.withCertificate("gwreceiver", gwReceiverCertificate);
+    gwReceiver.trust("ca", ca);
 
     Properties ln_SSLProps = gwSender
-        .trustSelf()
-        .trust(gwReceiver.alias(), gwReceiver.certificate())
         .propertiesWith(GATEWAY, true, true);
 
     Properties ny_SSLProps = gwReceiver
-        .trustSelf()
-        .trust(gwSender.alias(), gwSender.certificate())
         .propertiesWith(GATEWAY, true, true);
 
     // create a ln cluster
@@ -271,7 +304,7 @@ public class WANHostNameVerificationDistributedTest {
 
     // create a region in ln
     server_ln.invoke(WANHostNameVerificationDistributedTest::createServerRegion);
-    locator_ln.waitUntilRegionIsReadyOnExactlyThisManyServers("/region", 1);
+    locator_ln.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "region", 1);
 
     // create a gateway sender ln
     server_ln.invoke(WANHostNameVerificationDistributedTest::createGatewaySender);
@@ -285,7 +318,7 @@ public class WANHostNameVerificationDistributedTest {
 
     // create a region in ny
     server_ny.invoke(WANHostNameVerificationDistributedTest::createServerRegion);
-    locator_ny.waitUntilRegionIsReadyOnExactlyThisManyServers("/region", 1);
+    locator_ny.waitUntilRegionIsReadyOnExactlyThisManyServers(SEPARATOR + "region", 1);
 
     // create a gateway sender in ny
     server_ny.invoke(WANHostNameVerificationDistributedTest::createGatewayReceiver);

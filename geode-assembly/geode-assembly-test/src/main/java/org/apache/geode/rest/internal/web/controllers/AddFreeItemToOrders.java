@@ -14,6 +14,8 @@
  */
 package org.apache.geode.rest.internal.web.controllers;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -40,6 +42,7 @@ import org.apache.geode.pdx.PdxInstance;
  */
 public class AddFreeItemToOrders implements Function {
 
+  @Override
   public void execute(FunctionContext context) {
     Region region = null;
     List<Object> vals = new ArrayList<Object>();
@@ -71,7 +74,8 @@ public class AddFreeItemToOrders implements Function {
     }
 
     String oql =
-        "SELECT DISTINCT entry.key FROM /orders.entries entry WHERE entry.value.totalPrice > $1";
+        "SELECT DISTINCT entry.key FROM " + SEPARATOR
+            + "orders.entries entry WHERE entry.value.totalPrice > $1";
     Object queryArgs[] = new Object[1];
     queryArgs[0] = argsList.get(0);
 
@@ -133,6 +137,7 @@ public class AddFreeItemToOrders implements Function {
     }
   }
 
+  @Override
   public String getId() {
     return "AddFreeItemToOrders";
   }

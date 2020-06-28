@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.functional;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -21,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 import java.text.ParseException;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
 
 import org.junit.After;
 import org.junit.Before;
@@ -41,8 +43,8 @@ import org.apache.geode.cache.query.Struct;
 import org.apache.geode.cache.query.internal.QueryObserverAdapter;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
 import org.apache.geode.cache.query.internal.index.IndexManager;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 @Category({OQLIndexTest.class})
 public class IndexOnEntrySetJUnitTest {
@@ -54,7 +56,7 @@ public class IndexOnEntrySetJUnitTest {
 
   @Before
   public void setUp() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "Query.VERBOSE", "true");
     CacheUtils.startCache();
   }
 
@@ -70,28 +72,28 @@ public class IndexOnEntrySetJUnitTest {
 
   private String[] getQueriesOnRegion(String regionName) {
     return new String[] {
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.PartitionID > 0 AND "
             + "entry.key.Index > 1 ORDER BY entry.key.Index ASC LIMIT 2",
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.Index > 1 ORDER BY entry.key.Index ASC LIMIT 2",
-        "SELECT DISTINCT * FROM /" + regionName
+        "SELECT DISTINCT * FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.PartitionID > 0 AND "
             + "entry.key.Index > 1 ORDER BY entry.key.Index ASC LIMIT 2",
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.PartitionID > 0 AND "
             + "entry.key.Index > 1 LIMIT 2",
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.PartitionID > 0 AND "
             + "entry.key.Index > 1 ORDER BY entry.key.Index ASC",};
   }
 
   private String[] getQueriesOnRegionForPut(String regionName) {
     return new String[] {
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.key.PartitionID = 50 AND "
             + "entry.key.Index > 1 ORDER BY entry.key.Index ASC LIMIT 2",
-        "SELECT DISTINCT entry.value, entry.key FROM /" + regionName
+        "SELECT DISTINCT entry.value, entry.key FROM " + SEPARATOR + regionName
             + ".entrySet entry WHERE entry.value = 50 AND "
             + "entry.key.Index > 1 ORDER BY entry.key.Index ASC LIMIT 2"};
   }
@@ -103,14 +105,14 @@ public class IndexOnEntrySetJUnitTest {
   @Test
   public void testQueriesOnReplicatedRegion() throws Exception {
     testRegion = createReplicatedRegion(testRegionName);
-    String regionPath = "/" + testRegionName + ".entrySet entry";
+    String regionPath = SEPARATOR + testRegionName + ".entrySet entry";
     executeQueryTest(getQueriesOnRegion(testRegionName), "entry.key.Index", regionPath, 200);
   }
 
   @Test
   public void testEntryDestroyedRaceWithSizeEstimateReplicatedRegion() throws Exception {
     testRegion = createReplicatedRegion(testRegionName);
-    String regionPath = "/" + testRegionName + ".entrySet entry";
+    String regionPath = SEPARATOR + testRegionName + ".entrySet entry";
     executeQueryTestDestroyDuringSizeEstimation(getQueriesOnRegion(testRegionName),
         "entry.key.Index", regionPath, 201);
   }
@@ -122,7 +124,7 @@ public class IndexOnEntrySetJUnitTest {
   @Test
   public void testQueriesOnPartitionedRegion() throws Exception {
     testRegion = createPartitionedRegion(testRegionName);
-    String regionPath = "/" + testRegionName + ".entrySet entry";
+    String regionPath = SEPARATOR + testRegionName + ".entrySet entry";
     executeQueryTest(getQueriesOnRegion(testRegionName), "entry.key.Index", regionPath, 200);
   }
 
@@ -250,6 +252,7 @@ public class IndexOnEntrySetJUnitTest {
   class MyQueryObserverAdapter extends QueryObserverAdapter {
     public boolean indexUsed = false;
 
+    @Override
     public void afterIndexLookup(Collection results) {
       super.afterIndexLookup(results);
       indexUsed = true;
@@ -284,7 +287,6 @@ public class IndexOnEntrySetJUnitTest {
    */
   abstract class AbstractTestHook implements IndexManager.TestHook {
     boolean isTestHookCalled = false;
-    Object waitObj = new Object();
     Region r;
 
     private int testHookSpot;
@@ -307,28 +309,13 @@ public class IndexOnEntrySetJUnitTest {
     public abstract void doOp();
 
     @Override
-    public void hook(int spot) throws RuntimeException {
+    public void hook(int spot) {
       if (spot == testHookSpot) {
         if (!isTestHookCalled) {
           isTestHookCalled = true;
-          try {
-            new Thread(new Runnable() {
-              public void run() {
-                doOp();
-                synchronized (waitObj) {
-                  waitObj.notifyAll();
-                }
-              }
-            }).start();
-            synchronized (waitObj) {
-              waitObj.wait();
-            }
-          } catch (InterruptedException e) {
-            throw new Error(e);
-          }
+          CompletableFuture.runAsync(this::doOp).join();
         }
       }
-
     }
 
   }
@@ -341,6 +328,7 @@ public class IndexOnEntrySetJUnitTest {
       this.r = r;
     }
 
+    @Override
     public void doOp() {
       Iterator it = r.entrySet().iterator();
       while (it.hasNext()) {
@@ -357,6 +345,7 @@ public class IndexOnEntrySetJUnitTest {
       this.r = r;
     }
 
+    @Override
     public void doOp() {
       Iterator it = r.entrySet().iterator();
       while (it.hasNext()) {
@@ -373,6 +362,7 @@ public class IndexOnEntrySetJUnitTest {
       this.r = r;
     }
 
+    @Override
     public void doOp() {
       Iterator it = r.entrySet().iterator();
       while (it.hasNext()) {

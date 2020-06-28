@@ -26,6 +26,7 @@ import org.apache.geode.CancelException;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.InternalGemFireError;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.distributed.LockServiceDestroyedException;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DistributionManager;
@@ -38,10 +39,10 @@ import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Provides handling of remote and local lock requests. <br>
@@ -355,8 +356,8 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
           break;
         default:
           throw new InternalGemFireError(
-              LocalizedStrings.DLockRequestProcessor_UNKNOWN_RESPONSE_CODE_0
-                  .toLocalizedString(Integer.valueOf(reply.responseCode)));
+              String.format("Unknown response code %s",
+                  Integer.valueOf(reply.responseCode)));
       } // switch
 
     } finally {
@@ -575,7 +576,8 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
      */
     private void executeBasicProcess(final DistributionManager dm) {
       final DLockRequestMessage msg = this;
-      dm.getWaitingThreadPool().execute(new Runnable() {
+      dm.getExecutors().getWaitingThreadPool().execute(new Runnable() {
+        @Override
         public void run() {
           if (logger.isTraceEnabled(LogMarker.DLS_VERBOSE)) {
             logger.trace(LogMarker.DLS_VERBOSE, "calling waitForGrantor {}", msg);
@@ -711,8 +713,7 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
         }
       } catch (RuntimeException e) {
         logger.warn(LogMarker.DLS_MARKER,
-            LocalizedMessage.create(
-                LocalizedStrings.DLockRequestProcessor_DLOCKREQUESTMESSAGEPROCESS_CAUGHT_THROWABLE),
+            "[DLockRequestMessage.process] Caught throwable:",
             e);
         respondWithException(e);
       }
@@ -767,8 +768,7 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
           }
         } else {
           logger.warn(LogMarker.DLS_VERBOSE,
-              LocalizedMessage.create(
-                  LocalizedStrings.DLockRequestProcessor_MORE_THAN_ONE_EXCEPTION_THROWN_IN__0,
+              String.format("More than one exception thrown in %s",
                   this),
               t);
         }
@@ -861,23 +861,19 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
           if (processor == null) {
             // lock request was probably interrupted so we need to release it...
             logger.warn(LogMarker.DLS_MARKER,
-                LocalizedMessage.create(
-                    LocalizedStrings.DLockRequestProcessor_FAILED_TO_FIND_PROCESSOR_FOR__0,
-                    this.response));
+                "Failed to find processor for {}",
+                this.response);
             if (this.response.responseCode == DLockResponseMessage.GRANT) {
               logger.info(LogMarker.DLS_MARKER,
-                  LocalizedMessage.create(
-                      LocalizedStrings.DLockRequestProcessor_RELEASING_LOCAL_ORPHANED_GRANT_FOR_0,
-                      this));
+                  "Releasing local orphaned grant for {}.",
+                  this);
               try {
                 this.grantor.releaseIfLocked(this.objectName, getSender(), this.lockId);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.warn(LocalizedMessage.create(
-                    LocalizedStrings.DLockRequestProcess_INTERRUPTED_WHILE_RELEASING_GRANT), e);
+                logger.warn("Interrupted while releasing grant.", e);
               }
-              logger.info(LocalizedMessage
-                  .create(LocalizedStrings.DLockRequestProcessor_HANDLED_LOCAL_ORPHANED_GRANT));
+              logger.info("Handled local orphaned grant.");
             }
             endGrantWaitStatistic();
             return;
@@ -921,13 +917,15 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
       return this.responded;
     }
 
+    @Override
     public int getDSFID() {
       return DLOCK_REQUEST_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeUTF(this.serviceName);
       DataSerializer.writeObject(this.objectName, out);
       out.writeLong(this.startTime);
@@ -944,8 +942,9 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.serviceName = in.readUTF();
       this.objectName = DataSerializer.readObject(in);
       this.startTime = in.readLong();
@@ -1053,15 +1052,13 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
       }
       if (!this.processed) {
         if (this.responseCode == GRANT) {
-          logger.warn(LocalizedMessage.create(
-              LocalizedStrings.DLockRequestProcessor_NO_PROCESSOR_FOUND_FOR_DLOCKRESPONSEMESSAGE__0,
-              this));
+          logger.warn("No processor found for DLockResponseMessage: {}",
+              this);
           // got a problem... response prolly came in after client side timed out
           releaseOrphanedGrant(dm);
         } else {
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.DLockRequestProcessor_NO_PROCESSOR_FOUND_FOR_DLOCKRESPONSEMESSAGE__0,
-              this));
+          logger.info("No processor found for DLockResponseMessage: {}",
+              this);
         }
       }
     }
@@ -1080,8 +1077,7 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
       InternalDistributedMember grantor = getSender();
       // method is rewritten to fix bug 35252
       boolean released = false;
-      logger.info(LocalizedMessage
-          .create(LocalizedStrings.DLockRequestProcessor_RELEASING_ORPHANED_GRANT_FOR__0, this));
+      logger.info("Releasing orphaned grant for  {}", this);
       try {
         while (!released) {
           dm.getCancelCriterion().checkCancelInProgress(null);
@@ -1118,11 +1114,9 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
         }
       } finally {
         if (released) {
-          logger.info(LocalizedMessage
-              .create(LocalizedStrings.DLockRequestProcessor_HANDLED_ORPHANED_GRANT_WITH_RELEASE));
+          logger.info("Handled orphaned grant with release.");
         } else {
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.DLockRequestProcessor_HANDLED_ORPHANED_GRANT_WITHOUT_RELEASE));
+          logger.info("Handled orphaned grant without release.");
         }
       }
     }
@@ -1176,8 +1170,9 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeByte(this.responseCode);
       out.writeUTF(this.serviceName);
       DataSerializer.writeObject(this.objectName, out);
@@ -1188,8 +1183,9 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.responseCode = in.readByte();
       this.serviceName = in.readUTF();
       this.objectName = DataSerializer.readObject(in);
@@ -1210,8 +1206,10 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
     }
   }
 
+  @MutableForTesting
   private static boolean debugReleaseOrphanedGrant = false;
   private static final Object waitToProcessDLockResponseLock = new Object();
+  @MutableForTesting
   private static volatile boolean waitToProcessDLockResponse = false;
 
   public static boolean debugReleaseOrphanedGrant() {
@@ -1235,8 +1233,7 @@ public class DLockRequestProcessor extends ReplyProcessor21 {
         dm.getCancelCriterion().checkCancelInProgress(null);
         boolean interrupted = Thread.interrupted();
         try {
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.DLockRequestProcessor_WAITING_TO_PROCESS_DLOCKRESPONSEMESSAGE));
+          logger.info("Waiting to process DLockResponseMessage");
           waitToProcessDLockResponseLock.wait();
         } catch (InterruptedException e) {
           interrupted = true;

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -27,13 +28,13 @@ import org.apache.geode.cache.query.CqException;
 import org.apache.geode.cache.query.CqServiceStatistics;
 import org.apache.geode.cache.query.CqStatistics;
 import org.apache.geode.cache.query.QueryService;
+import org.apache.geode.cache.query.cq.internal.CqQueryImpl;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.CqServiceVsdStats;
 import org.apache.geode.cache.query.internal.CqQueryVsdStats;
 import org.apache.geode.cache.query.internal.CqStateImpl;
 import org.apache.geode.cache.query.internal.DefaultQueryService;
-import org.apache.geode.cache.query.internal.cq.CqQueryImpl;
 import org.apache.geode.cache.query.internal.cq.CqService;
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
-import org.apache.geode.cache.query.internal.cq.CqServiceVsdStats;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.test.dunit.Host;
@@ -186,8 +187,9 @@ public class CqStatsDUnitTest extends JUnit4CacheTestCase {
                 + " CQs active: " + cqServiceStats.numCqsActive() + " CQs stopped: "
                 + cqServiceStats.numCqsStopped() + " CQs closed: " + cqServiceStats.numCqsClosed()
                 + " CQs on Client: " + cqServiceStats.numCqsOnClient()
-                + " CQs on region /root/regionA : "
-                + cqServiceVsdStats.numCqsOnRegion(getCache(), "/root/regionA")
+                + " CQs on region " + SEPARATOR + "root" + SEPARATOR + "regionA : "
+                + cqServiceVsdStats.numCqsOnRegion(getCache(),
+                    SEPARATOR + "root" + SEPARATOR + "regionA")
                 + " Clients with CQs: " + cqServiceVsdStats.getNumClientsWithCqs());
 
 
@@ -220,8 +222,11 @@ public class CqStatsDUnitTest extends JUnit4CacheTestCase {
 
         // Check for CQs on region.
         if (cqsOnRegion != CqQueryDUnitTest.noTest) {
-          assertEquals("Number of CQs on region /root/regionA mismatch", cqsOnRegion,
-              cqServiceVsdStats.numCqsOnRegion(getCache(), "/root/regionA"));
+          assertEquals(
+              "Number of CQs on region " + SEPARATOR + "root" + SEPARATOR + "regionA mismatch",
+              cqsOnRegion,
+              cqServiceVsdStats.numCqsOnRegion(getCache(),
+                  SEPARATOR + "root" + SEPARATOR + "regionA"));
         }
 
         // Check for clients with CQs count.

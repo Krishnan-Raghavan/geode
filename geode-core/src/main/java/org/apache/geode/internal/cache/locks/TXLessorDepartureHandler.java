@@ -26,7 +26,7 @@ import org.apache.geode.distributed.internal.locks.DLockGrantor;
 import org.apache.geode.distributed.internal.locks.DLockLessorDepartureHandler;
 import org.apache.geode.distributed.internal.locks.DLockService;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Handles departure of lessor (lease holder) by sending a message asking each participant if it's
@@ -48,6 +48,7 @@ public class TXLessorDepartureHandler implements DLockLessorDepartureHandler {
     }
   }
 
+  @Override
   public void handleDepartureOf(InternalDistributedMember owner, DLockGrantor grantor) {
     // get DTLS
     TXLockService dtls = TXLockService.getDTLS();
@@ -101,7 +102,7 @@ public class TXLessorDepartureHandler implements DLockLessorDepartureHandler {
     };
 
     try {
-      dm.getWaitingThreadPool().execute(recoverTx);
+      dm.getExecutors().getWaitingThreadPool().execute(recoverTx);
     } catch (RejectedExecutionException e) {
       // this shouldn't happen unless we're shutting down or someone has set a size constraint
       // on the waiting-pool using a system property

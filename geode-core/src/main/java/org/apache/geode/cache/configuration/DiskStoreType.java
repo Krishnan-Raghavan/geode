@@ -1,22 +1,22 @@
 
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work for additional information regarding
+ * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 package org.apache.geode.cache.configuration;
+
+import java.util.List;
 
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
@@ -24,8 +24,9 @@ import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlType;
 
-import org.apache.geode.annotations.Experimental;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+import org.apache.geode.annotations.Experimental;
 
 /**
  *
@@ -66,7 +67,7 @@ import org.apache.geode.annotations.Experimental;
 @XmlType(name = "disk-store-type", namespace = "http://geode.apache.org/schema/cache",
     propOrder = {"diskDirs"})
 @Experimental
-public class DiskStoreType implements CacheElement {
+public class DiskStoreType extends CacheElement {
 
   @XmlElement(name = "disk-dirs", namespace = "http://geode.apache.org/schema/cache")
   protected DiskDirsType diskDirs;
@@ -92,30 +93,9 @@ public class DiskStoreType implements CacheElement {
   protected String diskUsageCriticalPercentage;
 
   @Override
+  @JsonProperty(value = "name")
   public String getId() {
     return getName();
-  }
-
-  /**
-   * Gets the value of the diskDirs property.
-   *
-   * possible object is
-   * {@link DiskDirsType }
-   *
-   */
-  public DiskDirsType getDiskDirs() {
-    return diskDirs;
-  }
-
-  /**
-   * Sets the value of the diskDirs property.
-   *
-   * allowed object is
-   * {@link DiskDirsType }
-   *
-   */
-  public void setDiskDirs(DiskDirsType value) {
-    this.diskDirs = value;
   }
 
   /**
@@ -127,6 +107,18 @@ public class DiskStoreType implements CacheElement {
    */
   public String getName() {
     return name;
+  }
+
+  public List<DiskDirType> getDiskDirs() {
+    if (diskDirs == null) {
+      diskDirs = new DiskDirsType();
+    }
+    return diskDirs.getDiskDirs();
+  }
+
+  public void setDiskDirs(List<DiskDirType> diskDirs) {
+    getDiskDirs().clear();
+    getDiskDirs().addAll(diskDirs);
   }
 
   /**

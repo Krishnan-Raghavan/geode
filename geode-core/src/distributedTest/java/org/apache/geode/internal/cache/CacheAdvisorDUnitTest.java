@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -23,9 +24,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.AttributesFactory;
@@ -99,6 +98,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
     for (int i = 0; i < vms.length; i++) {
       vms[i].invoke(
           new CacheSerializableRunnable("CacheAdvisorDUnitTest.testGenericAdvice;createRegion") {
+            @Override
             public void run2() throws CacheException {
               final RegionAttributes attrs = new AttributesFactory().create();
               createRegion(rgnName, attrs);
@@ -131,6 +131,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
       }
       final int index = i;
       vm.invoke(new CacheSerializableRunnable("CacheAdvisorDUnitTest.testNetWriteAdvice") {
+        @Override
         public void run2() throws CacheException {
           AttributesFactory fac = new AttributesFactory();
           if (index % 2 == 0) {
@@ -158,14 +159,17 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
       }
       final int index = i;
       vm.invoke(new CacheSerializableRunnable("CacheAdvisorDUnitTest.testNetLoadAdvice") {
+        @Override
         public void run2() throws CacheException {
           AttributesFactory fac = new AttributesFactory();
           if (index % 2 == 1) {
             fac.setCacheLoader(new CacheLoader() {
+              @Override
               public Object load(LoaderHelper helper) throws CacheLoaderException {
                 return null;
               }
 
+              @Override
               public void close() {}
             });
           }
@@ -190,6 +194,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
 
     Invoke.invokeInEveryVM(new CacheSerializableRunnable(
         "CachAdvisorTest.testNetLoadAdviceWithAttributesMutator;createRegion") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory f = new AttributesFactory();
         f.setScope(Scope.DISTRIBUTED_ACK);
@@ -206,24 +211,26 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
       // final int index = i;
       vm.invoke(new CacheSerializableRunnable(
           "CacheAdvisorDUnitTest.testNetLoadAdviceWithAttributesMutator;mutate") {
+        @Override
         public void run2() throws CacheException {
           Region rgn1 = getRootRegion().getSubregion(rgnName);
           assertEquals(numVMsMinusOne,
               ((DistributedRegion) rgn1).getDistributionAdvisor().adviseGeneric().size());
           AttributesMutator mut = rgn1.getAttributesMutator();
           mut.setCacheLoader(new CacheLoader() {
+            @Override
             public Object load(LoaderHelper helper) throws CacheLoaderException {
               return null;
             }
 
+            @Override
             public void close() {}
           });
         }
       });
     }
 
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
-        .atMost(30, TimeUnit.SECONDS)
+    await()
         .untilAsserted(
             () -> assertEquals(expected, rgn.getCacheDistributionAdvisor().adviseNetLoad()));
   }
@@ -236,6 +243,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
     for (int i = 0; i < vms.length; i++) {
       vms[i].invoke(
           new CacheSerializableRunnable("CacheAdvisorDUnitTest.basicTestClose; createRegion") {
+            @Override
             public void run2() throws CacheException {
               final RegionAttributes attrs = new AttributesFactory().create();
               createRegion(rgnName, attrs);
@@ -252,6 +260,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
     // assert that other VMs advisors have test member id
     Invoke.invokeInEveryVM(
         new CacheSerializableRunnable("CacheAdvisorDUnitTest.basicTestClose;verify1") {
+          @Override
           public void run2() throws CacheException {
             DistributedRegion rgn1 = (DistributedRegion) getRootRegion();
             assertTrue(rgn1.getDistributionAdvisor().adviseGeneric().contains(myMemberId));
@@ -271,6 +280,7 @@ public class CacheAdvisorDUnitTest extends JUnit4CacheTestCase {
     final InternalDistributedMember closedMemberId = getSystem().getDistributionManager().getId();
     Invoke.invokeInEveryVM(
         new CacheSerializableRunnable("CacheAdvisorDUnitTest.basicTestClose;verify") {
+          @Override
           public void run2() throws CacheException {
             DistributedRegion rgn1 = (DistributedRegion) getRootRegion();
             assertTrue(!rgn1.getDistributionAdvisor().adviseGeneric().contains(closedMemberId));

@@ -21,17 +21,20 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.UnknownHostException;
 
 import org.junit.After;
 import org.junit.Test;
 
-import org.apache.geode.admin.internal.InetAddressUtil;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.internal.inet.LocalHostUtil;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * multicast availability is tested in JGroupsMessengerJUnitTest
  */
 public class AvailablePortJUnitTest {
+  private static final String LOOPBACK_ADDRESS =
+      LocalHostUtil.preferIPv6Addresses() ? "::1" : "127.0.0.1";
 
   private ServerSocket socket;
 
@@ -42,14 +45,18 @@ public class AvailablePortJUnitTest {
     }
   }
 
+  private InetAddress getLoopback() throws UnknownHostException {
+    return InetAddress.getByName(LOOPBACK_ADDRESS);
+  }
+
   @Test
   public void testIsPortAvailable() throws IOException {
     socket = new ServerSocket();
     int port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    socket.bind(new InetSocketAddress(InetAddressUtil.LOOPBACK, port));
+    socket.bind(new InetSocketAddress(getLoopback(), port));
 
     assertFalse(AvailablePort.isPortAvailable(port, AvailablePort.SOCKET,
-        InetAddress.getByName(InetAddressUtil.LOOPBACK_ADDRESS)));
+        InetAddress.getByName(LOOPBACK_ADDRESS)));
     // Get local host will return the hostname for the server, so this should succeed, since we're
     // bound to the loopback address only.
     assertTrue(
@@ -65,7 +72,7 @@ public class AvailablePortJUnitTest {
     int port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
     socket.bind(new InetSocketAddress((InetAddress) null, port));
     System.out.println(
-        "bind addr=" + System.getProperty(DistributionConfig.GEMFIRE_PREFIX + "bind-address"));
+        "bind addr=" + System.getProperty(GeodeGlossary.GEMFIRE_PREFIX + "bind-address"));
     assertFalse(AvailablePort.isPortAvailable(port, AvailablePort.SOCKET));
   }
 

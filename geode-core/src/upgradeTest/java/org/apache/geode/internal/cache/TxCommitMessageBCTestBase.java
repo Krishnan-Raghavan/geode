@@ -44,13 +44,12 @@ import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
-import org.apache.geode.internal.Version;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.BackwardCompatibilityTest;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.VersionManager;
 
 /**
  * This test class tests the communication pattern of a transaction for replicate and partition
@@ -305,8 +304,8 @@ public abstract class TxCommitMessageBCTestBase extends JUnit4DistributedTestCas
     return Arrays.asList(value1, value2);
   }
 
-  protected static void setVersion(String field, Version value) throws Exception {
-    Field targetField = Version.class.getDeclaredField(field);
+  protected static void setVersion(String field, Object value) throws Exception {
+    Field targetField = value.getClass().getDeclaredField(field);
     Field modifiersField = Field.class.getDeclaredField("modifiers");
     modifiersField.setAccessible(true);
     modifiersField.set(targetField,

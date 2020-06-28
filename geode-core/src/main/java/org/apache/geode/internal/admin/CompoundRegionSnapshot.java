@@ -23,7 +23,6 @@ import org.apache.geode.cache.CacheListener;
 import org.apache.geode.cache.CacheLoader;
 import org.apache.geode.cache.CacheWriter;
 import org.apache.geode.cache.RegionAttributes;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * Presents an amalgam snapshot of all the {@linkplain org.apache.geode.cache.Region regions} in a
@@ -85,8 +84,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
   public void addCache(GemFireVM systemEntity, RegionSnapshot snap) {
     if (!snap.getName().equals(this.name)) {
       throw new IllegalArgumentException(
-          LocalizedStrings.CompoundRegionSnapshot_ALL_SNAPSHOTS_IN_A_COMPOUND_SNAPSHOT_MUST_HAVE_THE_SAME_NAME
-              .toLocalizedString());
+          "All snapshots in a compound snapshot must have the same name");
     }
     // individuals.put(systemEntity, snap);
 
@@ -162,6 +160,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
   /**
    * Returns the name of the <code>Region</code> whose information is amalgamated in this snapshot.
    */
+  @Override
   public Object getName() {
     return this.name;
   }
@@ -170,6 +169,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Since a compound snapshot does not have <code>RegionAttributes</code>, this method returns
    * <code>null</code>.
    */
+  @Override
   public RegionAttributes getAttributes() {
     return null;
   }
@@ -178,6 +178,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Since a compound snapshot does not have a <code>userAttributes</code>, this method returns
    * <code>null</code>.
    */
+  @Override
   public Object getUserAttribute() {
     return null;
   }
@@ -335,6 +336,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Returns the most recent <code>lastModifiedTime</code> of any instance of this snapshot's
    * <code>Region</code> across the distributed system.
    */
+  @Override
   public long getLastModifiedTime() {
     return this.lastModifiedTime;
   }
@@ -343,6 +345,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Returns the most recent <code>lastAccessTime</code> of any instance of this snapshot's
    * <code>Region</code> across the distributed system.
    */
+  @Override
   public long getLastAccessTime() {
     return this.lastAccessTime;
   }
@@ -351,6 +354,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Returns the cumulative number of hits across all instances of the snapshot's
    * <code>Region</code>.
    */
+  @Override
   public long getNumberOfHits() {
     return this.numHits;
   }
@@ -359,6 +363,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
    * Returns the cumulative number of misses across all instances of this snapshot's
    * <code>Region</code>.
    */
+  @Override
   public long getNumberOfMisses() {
     return this.numMisses;
   }
@@ -366,6 +371,7 @@ public class CompoundRegionSnapshot implements RegionSnapshot {
   /**
    * Returns the aggregate hit ratio across all instances of this snapshot's <code>Region</code>.
    */
+  @Override
   public float getHitRatio() {
     return this.hitRatio;
   }

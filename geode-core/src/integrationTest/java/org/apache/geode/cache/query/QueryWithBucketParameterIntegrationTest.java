@@ -15,6 +15,7 @@
 
 package org.apache.geode.cache.query;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.cache.query.data.TestData.createAndPopulateSet;
 import static org.apache.geode.cache.query.data.TestData.populateRegion;
 import static org.junit.Assert.assertFalse;
@@ -36,6 +37,7 @@ import org.apache.geode.cache.PartitionResolver;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.query.internal.DefaultQuery;
+import org.apache.geode.cache.query.internal.ExecutionContext;
 import org.apache.geode.internal.cache.LocalDataSet;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.test.junit.categories.OQLQueryTest;
@@ -67,7 +69,7 @@ public class QueryWithBucketParameterIntegrationTest {
     PartitionedRegion pr1 = (PartitionedRegion) rf.create(regionName);
     populateRegion(pr1, numValues);
     QueryService qs = pr1.getCache().getQueryService();
-    String query = "select distinct e1.value from /pr1 e1";
+    String query = "select distinct e1.value from " + SEPARATOR + "pr1 e1";
     queryExecutor = (DefaultQuery) CacheUtils.getQueryService().newQuery(query);
     Set<Integer> set = createAndPopulateSet(totalBuckets);
     lds = new LocalDataSet(pr1, set);
@@ -88,37 +90,45 @@ public class QueryWithBucketParameterIntegrationTest {
 
   private PartitionResolver getPartitionResolver() {
     return new PartitionResolver() {
+      @Override
       public String getName() {
         return "PartitionResolverForTest";
       }
 
+      @Override
       public Serializable getRoutingObject(EntryOperation opDetails) {
         return (Serializable) opDetails.getKey();
       }
 
+      @Override
       public void close() {}
     };
   }
 
   @Test
   public void testQueryExecuteWithEmptyBucketListExpectNoResults() throws Exception {
-    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, null, new HashSet<Integer>());
+    final ExecutionContext executionContext = new ExecutionContext(null, CacheUtils.getCache());
+    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, executionContext, null,
+        new HashSet<Integer>());
     assertTrue("Received: A non-empty result collection, expected : Empty result collection",
         r.isEmpty());
   }
 
   @Test
   public void testQueryExecuteWithNullBucketListExpectNonEmptyResultSet() throws Exception {
-    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, null, null);
+    final ExecutionContext executionContext = new ExecutionContext(null, CacheUtils.getCache());
+    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, executionContext, null, null);
     assertFalse("Received: An empty result collection, expected : Non-empty result collection",
         r.isEmpty());
   }
 
   @Test
   public void testQueryExecuteWithNonEmptyBucketListExpectNonEmptyResultSet() throws Exception {
+    final ExecutionContext executionContext = new ExecutionContext(null, CacheUtils.getCache());
     int nTestBucketNumber = 15;
     Set<Integer> nonEmptySet = createAndPopulateSet(nTestBucketNumber);
-    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, null, nonEmptySet);
+    SelectResults r =
+        (SelectResults) lds.executeQuery(queryExecutor, executionContext, null, nonEmptySet);
     assertFalse("Received: An empty result collection, expected : Non-empty result collection",
         r.isEmpty());
   }
@@ -126,8 +136,10 @@ public class QueryWithBucketParameterIntegrationTest {
   @Test(expected = QueryInvocationTargetException.class)
   public void testQueryExecuteWithLargerBucketListThanExistingExpectQueryInvocationTargetException()
       throws Exception {
+    final ExecutionContext executionContext = new ExecutionContext(null, CacheUtils.getCache());
     int nTestBucketNumber = 45;
     Set<Integer> overflowSet = createAndPopulateSet(nTestBucketNumber);
-    SelectResults r = (SelectResults) lds.executeQuery(queryExecutor, null, overflowSet);
+    SelectResults r =
+        (SelectResults) lds.executeQuery(queryExecutor, executionContext, null, overflowSet);
   }
 }

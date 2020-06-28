@@ -73,20 +73,31 @@ else
 fi
 
 pushd ${SCRIPTDIR} 2>&1 > /dev/null
-  # Template and output share a directory with this script, but variables are shared in the parent directory.
-  python3 ../render.py $(basename ${SCRIPTDIR}) || exit 1
 
-  fly login -t ${TARGET} \
-            -c https://concourse.apachegeode-ci.info \
-            -u ${CONCOURSE_USERNAME} \
-            -p ${CONCOURSE_PASSWORD}
+  cat > repository.yml <<YML
+repository:
+  project: 'geode'
+  fork: ${GEODE_FORK}
+  branch: ${GEODE_BRANCH}
+  upstream_fork: ${UPSTREAM_FORK}
+  public: ${REPOSITORY_PUBLIC}
+YML
 
-  fly -t ${TARGET} set-pipeline \
-    --non-interactive \
-    --pipeline ${PIPELINE_NAME} \
-    --config ${SCRIPTDIR}/generated-pipeline.yml \
-    --var docker-image-prefix=${DOCKER_IMAGE_PREFIX}
+  python3 ../render.py jinja.template.yml --variable-file ../shared/jinja.variables.yml repository.yml --environment ../shared/ --output ${SCRIPTDIR}/generated-pipeline.yml || exit 1
 
 popd 2>&1 > /dev/null
 
+cp ${SCRIPTDIR}/generated-pipeline.yml ${OUTPUT_DIRECTORY}/generated-pipeline.yml
+
+cat > ${OUTPUT_DIRECTORY}/pipeline-vars.yml <<YML
+geode-build-branch: ${GEODE_BRANCH}
+geode-fork: ${GEODE_FORK}
+geode-repo-name: ${GEODE_REPO_NAME}
+upstream-fork: ${UPSTREAM_FORK}
+pipeline-prefix: "${PIPELINE_PREFIX}"
+public-pipelines: ${PUBLIC_PIPELINES}
+gcp-project: ${GCP_PROJECT}
+artifact-bucket: ${ARTIFACT_BUCKET}
+gradle-global-args: ${GRADLE_GLOBAL_ARGS}
+YML
 

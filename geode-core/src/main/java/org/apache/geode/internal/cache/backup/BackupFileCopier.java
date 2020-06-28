@@ -38,7 +38,8 @@ import org.apache.geode.internal.cache.DirectoryHolder;
 import org.apache.geode.internal.cache.DiskStoreImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.Oplog;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.lang.SystemUtils;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 class BackupFileCopier {
   private static final Logger logger = LogService.getLogger();
@@ -82,7 +83,7 @@ class BackupFileCopier {
     }
 
     try {
-      Path source = Paths.get(fileUrl.toURI());
+      Path source = getSource(fileUrl);
       if (Files.notExists(source)) {
         return;
       }
@@ -166,17 +167,32 @@ class BackupFileCopier {
     }
 
     Path tempDiskDir = temporaryFiles.getDiskStoreDirectory(diskStore, dirHolder);
-    try {
-      Files.createLink(tempDiskDir.resolve(file.getName()), file.toPath());
-    } catch (IOException e) {
-      logger.warn("Unable to create hard link for {}. Reverting to file copy",
-          tempDiskDir.toString());
+    if (!SystemUtils.isWindows()) {
+      try {
+        createLink(tempDiskDir.resolve(file.getName()), file.toPath());
+      } catch (IOException e) {
+        logger.warn("Unable to create hard link for {}. Reverting to file copy",
+            tempDiskDir.toString());
+        FileUtils.copyFileToDirectory(file, tempDiskDir.toFile());
+      }
+    } else {
+      // Hard links cannot be deleted on Windows if the process is still running, so prefer to
+      // actually copy the files.
       FileUtils.copyFileToDirectory(file, tempDiskDir.toFile());
     }
+
     backupDefinition.addOplogFileToBackup(diskStore, tempDiskDir.resolve(file.getName()));
   }
 
   JarDeployer getJarDeployer() {
     return ClassPathLoader.getLatest().getJarDeployer();
+  }
+
+  void createLink(Path link, Path existing) throws IOException {
+    Files.createLink(link, existing);
+  }
+
+  Path getSource(URL fileUrl) throws URISyntaxException {
+    return Paths.get(fileUrl.toURI());
   }
 }

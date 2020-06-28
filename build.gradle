@@ -15,52 +15,45 @@
  * limitations under the License.
  */
 
-buildscript {
-  repositories {
-    maven { url "https://plugins.gradle.org/m2/" }
-    maven { url "https://dl.bintray.com/palantir/releases" }
-    jcenter()
-    maven { url "http://geode-maven.s3-website-us-west-2.amazonaws.com" }
-  }
-
-  dependencies {
-    classpath "gradle.plugin.org.nosphere.apache:creadur-rat-gradle:0.2.0"
-    classpath 'com.bmuschko:gradle-nexus-plugin:2.3.1'
-    classpath 'org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:2.6.2'
-    classpath "com.diffplug.spotless:spotless-plugin-gradle:3.10.0"
-    classpath "me.champeau.gradle:jmh-gradle-plugin:0.4.7"
-    classpath "com.pedjak.gradle.plugins:dockerized-test:0.5.6.2-SNAPSHOT"
-    classpath 'com.github.ben-manes:gradle-versions-plugin:0.17.0'
-    classpath "com.netflix.nebula:nebula-project-plugin:4.0.1"
-  }
+plugins {
+  id "wrapper"
+  id "nebula.facet" version "6.0.2" apply false
+  id "base"
+  id "idea"
+  id "eclipse"
+  id "com.diffplug.gradle.spotless" version "3.28.0" apply false
+  id "com.github.ben-manes.versions" version "0.28.0" apply false
+  id "nebula.lint" version "16.4.0" apply false
+  id "com.palantir.docker" version "0.22.1" apply false
+  id "io.spring.dependency-management" version "1.0.9.RELEASE" apply false
+  id "org.ajoberstar.grgit" version "4.0.1" apply false
+  id "org.nosphere.apache.rat" version "0.6.0" apply false
+  id "org.sonarqube" version "2.8" apply false
+  id "me.champeau.gradle.japicmp" apply false // Version defined in buildSrc/build.gradle
 }
 
-apply plugin: 'wrapper'
-apply plugin: 'nebula.facet'
+
+apply from: "${scriptDir}/lint.gradle"
+apply from: "${scriptDir}/resolve-dependencies.gradle"
+apply from: "${scriptDir}/sonar.gradle"
+apply from: "${scriptDir}/rat.gradle"
 
 wrapper {
   gradleVersion = minimumGradleVersion
+  distributionType = "all"
 }
 
-// Load all properties in dependency-version.properties as project properties, so all projects can read them
-Properties dependencyVersions = new Properties()
-dependencyVersions.load(new FileInputStream("${project.projectDir}/gradle/dependency-versions.properties"))
-dependencyVersions.keys().each{ k -> project.ext[k] = dependencyVersions[k]}
-
 allprojects {
-  version = versionNumber + releaseQualifier + releaseType
-  ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
-
-  // We want to see all test results.  This is equivalent to setting --continue
-  // on the command line.
-  gradle.startParameter.continueOnFailure = true
-
-  repositories {
-    mavenCentral()
-    maven { url "http://repo.spring.io/release" }
+  ext.isReleaseVersion = true
+  if(version.contains("build")) {
+    ext.isReleaseVersion = false
   }
 
-  group = "org.apache.geode"
+  repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://repo.spring.io/release" }
+  }
 
   buildRoot = buildRoot.trim()
   if (!buildRoot.isEmpty()) {
@@ -68,35 +61,115 @@ allprojects {
   }
 }
 
-// allow external projects to override include location
-if (name == 'geode') {
-  ext.scriptDir = 'gradle'
+task combineReports(type: TestReport) {
+  description 'Combines the test reports.'
+  destinationDir = file "${rootProject.buildDir}/reports/combined"
+
+  doLast {
+    println "All test reports at ${rootProject.buildDir}/reports/combined"
+  }
 }
 
-// utilities.gradle MUST be read before publish.gradle for reasons
-apply from: "${scriptDir}/utilities.gradle"
-apply from: "${scriptDir}/java.gradle"
-apply from: "${scriptDir}/ide.gradle"
-apply from: "${scriptDir}/dependency-resolution.gradle"
-apply from: "${scriptDir}/test.gradle"
-apply from: "${scriptDir}/test-by-category.gradle"
-apply from: "${scriptDir}/publish.gradle"
-apply from: "${scriptDir}/code-analysis.gradle"
-apply from: "${scriptDir}/sonar.gradle"
-apply from: "${scriptDir}/rat.gradle"
-apply from: "${scriptDir}/docker.gradle"
-apply from: "${scriptDir}/spotless.gradle"
-
-subprojects {
-  apply plugin: 'com.github.ben-manes.versions'
+ext.readScmInfo = { proj ->
+  // Attempt to read git information, or else return UNKNOWN
+  try {
+    def git = org.ajoberstar.grgit.Grgit.open(currentDir: project(proj).projectDir)
+    try {
+      return [
+          'Source-Repository': git.branch.current.name,
+          'Source-Revision'  : git.head().id,
+          'Source-Date'      : git.head().date.format('yyyy-MM-dd HH:mm:ss Z')
+      ] as Properties
+    } finally {
+      git.close()
+    }
+  } catch (IllegalStateException ignoredDistributionBuild) {
+    // If we're building from the source distribution, we don't have git.
+    // Instead, we use the .buildinfo copied to the root directory during the distribution build
+    // from the writeBuildInfo task below (from build/.buildinfo)
+    def buildInfo = file "$rootDir/.buildinfo"
+    if (buildInfo.exists()) {
+      def props = new Properties()
+      new FileInputStream(buildInfo).withStream { fis ->
+        props.load(fis)
+      }
+      return props
+    }
+    throw new GradleException("Cannot get SCM information when neither git nor source distribution is available")
+  }
 }
 
-task devBuild(dependsOn: [":assemble"]) {
-  description "A convenience target for a typical developer workflow: apply spotless and assemble all classes."
-  // spotless targets are not available until after evaluation.
-  subprojects {
-    afterEvaluate {
-      this.devBuild.dependsOn(project.spotlessApply)
+tasks.register('writeBuildInfo') {
+  def buildInfo = file "$buildDir/.buildinfo"
+  def scmInfo = this.readScmInfo("geode-core")
+
+  inputs.property("Source-Revision", scmInfo.getProperty("Source-Revision"))
+  outputs.file buildInfo
+  doLast {
+    buildInfo.getParentFile().mkdirs()
+    new FileOutputStream(buildInfo).withStream { fos ->
+      scmInfo.store(fos, '')
     }
   }
 }
+tasks.register('test') {
+  description "An all-project target for unit tests"
+}
+
+tasks.register('devBuild') {
+  group 'Build'
+  description "A convenience target for a typical developer workflow: apply spotless and assemble all classes."
+  dependsOn tasks.named('assemble')
+  // Each subproject injects its SpotlessApply as a dependency to this task in the standard config
+}
+
+tasks.register('generate') {
+  group = 'Build'
+  description = "Top-level target for all source generation. Helps IDE integration"
+  // This task is a no-op, with other tasks (such as geode-protobuf-messages:generateProto)
+  // injecting themselves as a task dependency into this task.  E.g., via
+  // `afterEvaluate.rootProject.generate.dependsOn(generateProto)`
+}
+
+// Prompt the user for a publication passsword to sign archives or upload artifacts, if requested
+if (project.hasProperty('askpass')) {
+  gradle.taskGraph.whenReady { taskGraph ->
+    if(taskGraph.allTasks.any {it instanceof Sign}) {
+      if(!project.hasProperty('signing.keyId') || !project.hasProperty('signing.secretKeyRingFile')) {
+        println "You must configure your signing.keyId and signing.secretKeyRingFile"
+        println "in ~/.gradle/gradle.properties in order to sign jars\n"
+        println "See https://cwiki.apache.org/confluence/display/GEODE/Release+Steps"
+        throw new GradleException("Signing key/keyring is missing")
+      }
+
+      if(!project.hasProperty('signing.password')) {
+        def password = PasswordDialog.askPassword("Please enter your password to unlock your gpg keyring for signing artifacts")
+
+        subprojects { ext."signing.password" = password }
+      }
+    }
+
+    if(taskGraph.allTasks.any {it instanceof PublishToMavenRepository}) {
+      if(!project.hasProperty('mavenUsername')) {
+        println "You must configure your mavenUsername in ~/.gradle/gradle.properties in order to publish\n"
+        println "See https://cwiki.apache.org/confluence/display/GEODE/Release+Steps"
+        throw new GradleException("mavenUsername is missing")
+      }
+      if(!project.hasProperty('mavenPassword')) {
+        def getPassword = PasswordDialog.askPassword("Please enter your apache password to publish to Apache Maven")
+
+        taskGraph.allTasks.each {
+          if(it instanceof PublishToMavenRepository) {
+            (it as PublishToMavenRepository).repository.credentials.password = getPassword
+          }
+        }
+      }
+    }
+  }
+}
+
+gradle.taskGraph.whenReady({ graph ->
+  tasks.getByName('combineReports').reportOn rootProject.subprojects.collect {
+    it.tasks.withType(Test)
+  }.flatten()
+})

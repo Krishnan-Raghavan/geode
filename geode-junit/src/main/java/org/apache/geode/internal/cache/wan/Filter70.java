@@ -15,6 +15,7 @@
 package org.apache.geode.internal.cache.wan;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.apache.geode.cache.wan.GatewayEventFilter;
 import org.apache.geode.cache.wan.GatewayQueueEvent;
@@ -25,6 +26,7 @@ public class Filter70 implements GatewayEventFilter, Serializable {
 
   public int eventTransmitted = 0;
 
+  @Override
   public boolean beforeEnqueue(GatewayQueueEvent event) {
     if ((Long) event.getKey() >= 0 && (Long) event.getKey() < 500) {
       return false;
@@ -32,11 +34,13 @@ public class Filter70 implements GatewayEventFilter, Serializable {
     return true;
   }
 
+  @Override
   public boolean beforeTransmit(GatewayQueueEvent event) {
     eventEnqued++;
     return true;
   }
 
+  @Override
   public void close() {
 
   }
@@ -46,6 +50,7 @@ public class Filter70 implements GatewayEventFilter, Serializable {
     return Id;
   }
 
+  @Override
   public void afterAcknowledgement(GatewayQueueEvent event) {}
 
   @Override
@@ -57,5 +62,10 @@ public class Filter70 implements GatewayEventFilter, Serializable {
       return false;
     Filter70 filter = (Filter70) obj;
     return this.Id.equals(filter.Id);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(Id);
   }
 }

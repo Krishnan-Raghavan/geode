@@ -16,7 +16,6 @@ package org.apache.geode.management;
 
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.REDUNDANCY_ZONE;
-import static org.apache.geode.management.MXBeanAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.Serializable;
@@ -45,11 +44,13 @@ import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.management.internal.LocalManager;
 import org.apache.geode.management.internal.MBeanJMXAdapter;
 import org.apache.geode.management.internal.ManagementConstants;
 import org.apache.geode.management.internal.NotificationHub.NotificationHubListener;
 import org.apache.geode.management.internal.SystemManagementService;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.rules.serializable.SerializableTemporaryFolder;
 import org.apache.geode.test.junit.rules.serializable.SerializableTestName;
@@ -354,17 +355,18 @@ public class CacheManagementDUnitTest implements Serializable {
 
       assertThat(service.getLocalManager().isRunning()).isTrue();
 
-      assertThat(service.getLocalManager().getFederationSheduler().isShutdown()).isFalse();
+      assertThat(service.getLocalManager().getFederationScheduler().isShutdown()).isFalse();
 
       ObjectName memberMBeanName = service.getMemberMBeanName(otherMember);
 
-      await().untilAsserted(
+      GeodeAwaitility.await().untilAsserted(
           () -> assertThat(service.getMBeanProxy(memberMBeanName, MemberMXBean.class)).isNotNull());
       MemberMXBean memberMXBean = service.getMBeanProxy(memberMBeanName, MemberMXBean.class);
 
       // Ensure Data getting federated from Managing node
       long start = memberMXBean.getMemberUpTime();
-      await().untilAsserted(() -> assertThat(memberMXBean.getMemberUpTime()).isGreaterThan(start));
+      GeodeAwaitility.await()
+          .untilAsserted(() -> assertThat(memberMXBean.getMemberUpTime()).isGreaterThan(start));
     });
   }
 
@@ -377,7 +379,7 @@ public class CacheManagementDUnitTest implements Serializable {
 
       assertThat(service.isManager()).isFalse();
       assertThat(service.getLocalManager().isRunning()).isTrue();
-      assertThat(service.getLocalManager().getFederationSheduler().isShutdown()).isFalse();
+      assertThat(service.getLocalManager().getFederationScheduler().isShutdown()).isFalse();
 
       // Check for Proxies
       Set<DistributedMember> otherMembers = this.managementTestRule.getOtherNormalMembers();
@@ -574,8 +576,9 @@ public class CacheManagementDUnitTest implements Serializable {
   private void verifyExpectedMembers(final int otherMembersCount) {
     String alias = "awaiting " + this.managementTestRule.getOtherNormalMembers() + " to have size "
         + otherMembersCount;
-    await(alias).untilAsserted(() -> assertThat(this.managementTestRule.getOtherNormalMembers())
-        .hasSize(otherMembersCount));
+    GeodeAwaitility.await(alias)
+        .untilAsserted(() -> assertThat(this.managementTestRule.getOtherNormalMembers())
+            .hasSize(otherMembersCount));
   }
 
   private void invokeRemoteMemberMXBeanOps() {
@@ -616,9 +619,12 @@ public class CacheManagementDUnitTest implements Serializable {
 
   private void verifyNotificationsAndRegionSize(final VM memberVM1, final VM memberVM2,
       final VM memberVM3, final VM managerVM) {
-    DistributedMember member1 = this.managementTestRule.getDistributedMember(memberVM1);
-    DistributedMember member2 = this.managementTestRule.getDistributedMember(memberVM2);
-    DistributedMember member3 = this.managementTestRule.getDistributedMember(memberVM3);
+    InternalDistributedMember member1 =
+        (InternalDistributedMember) managementTestRule.getDistributedMember(memberVM1);
+    InternalDistributedMember member2 =
+        (InternalDistributedMember) managementTestRule.getDistributedMember(memberVM2);
+    InternalDistributedMember member3 =
+        (InternalDistributedMember) managementTestRule.getDistributedMember(memberVM3);
 
     String memberId1 = MBeanJMXAdapter.getUniqueIDForMember(member1);
     String memberId2 = MBeanJMXAdapter.getUniqueIDForMember(member2);
@@ -629,7 +635,7 @@ public class CacheManagementDUnitTest implements Serializable {
     memberVM3.invoke("createNotificationRegion", () -> createNotificationRegion(memberId3));
 
     managerVM.invoke("verify notifications size", () -> {
-      await().untilAsserted(() -> assertThat(notifications.size()).isEqualTo(45));
+      GeodeAwaitility.await().untilAsserted(() -> assertThat(notifications.size()).isEqualTo(45));
 
       Cache cache = this.managementTestRule.getCache();
 
@@ -640,9 +646,9 @@ public class CacheManagementDUnitTest implements Serializable {
       // Even though we got 15 notification only 10 should be there due to
       // eviction attributes set in notification region
 
-      await().untilAsserted(() -> assertThat(region1).hasSize(10));
-      await().untilAsserted(() -> assertThat(region2).hasSize(10));
-      await().untilAsserted(() -> assertThat(region3).hasSize(10));
+      GeodeAwaitility.await().untilAsserted(() -> assertThat(region1).hasSize(10));
+      GeodeAwaitility.await().untilAsserted(() -> assertThat(region2).hasSize(10));
+      GeodeAwaitility.await().untilAsserted(() -> assertThat(region3).hasSize(10));
     });
   }
 
@@ -651,7 +657,8 @@ public class CacheManagementDUnitTest implements Serializable {
     Map<ObjectName, NotificationHubListener> notificationHubListenerMap =
         service.getNotificationHub().getListenerObjectMap();
 
-    await().untilAsserted(() -> assertThat(notificationHubListenerMap.size()).isEqualTo(1));
+    GeodeAwaitility.await()
+        .untilAsserted(() -> assertThat(notificationHubListenerMap.size()).isEqualTo(1));
 
     RegionFactory regionFactory =
         this.managementTestRule.getCache().createRegionFactory(RegionShortcut.REPLICATE);

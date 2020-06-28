@@ -14,14 +14,13 @@
  */
 package org.apache.geode.internal.process;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.io.File;
 
@@ -67,7 +66,7 @@ public class ControlFileWatchdogIntegrationTest {
     // act: nothing
 
     // assert
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
+    await().untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
   }
 
   @Test
@@ -80,7 +79,7 @@ public class ControlFileWatchdogIntegrationTest {
     watchdog.start();
 
     // assert
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(watchdog.isAlive()).isTrue());
+    await().untilAsserted(() -> assertThat(watchdog.isAlive()).isTrue());
   }
 
   @Test
@@ -94,7 +93,7 @@ public class ControlFileWatchdogIntegrationTest {
     watchdog.stop();
 
     // assert
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
+    await().untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
   }
 
   @Test
@@ -105,7 +104,7 @@ public class ControlFileWatchdogIntegrationTest {
     // act/assert
     assertThatThrownBy(
         () -> new ControlFileWatchdog(directory, requestFileName, requestHandler, stopAfterRequest))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(NullPointerException.class);
   }
 
   @Test
@@ -116,7 +115,7 @@ public class ControlFileWatchdogIntegrationTest {
     // act/assert
     assertThatThrownBy(
         () -> new ControlFileWatchdog(directory, requestFileName, requestHandler, stopAfterRequest))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(NullPointerException.class);
   }
 
   @Test
@@ -127,7 +126,7 @@ public class ControlFileWatchdogIntegrationTest {
     // act/assert
     assertThatThrownBy(
         () -> new ControlFileWatchdog(directory, requestFileName, requestHandler, stopAfterRequest))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(NullPointerException.class);
   }
 
   @Test
@@ -143,7 +142,7 @@ public class ControlFileWatchdogIntegrationTest {
 
     // assert
     verify(requestHandler, timeout(TEN_MINUTES_MILLIS)).handleRequest();
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(file).doesNotExist());
+    await().untilAsserted(() -> assertThat(file).doesNotExist());
   }
 
   @Test
@@ -159,7 +158,7 @@ public class ControlFileWatchdogIntegrationTest {
 
     // assert
     verify(requestHandler, timeout(TEN_MINUTES_MILLIS)).handleRequest();
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(file).doesNotExist());
+    await().untilAsserted(() -> assertThat(file).doesNotExist());
   }
 
   @Test
@@ -172,7 +171,7 @@ public class ControlFileWatchdogIntegrationTest {
     watchdog.start();
 
     // assert
-    verifyZeroInteractions(requestHandler); // would be prefer to wait some time
+    verifyNoMoreInteractions(requestHandler); // would be prefer to wait some time
   }
 
   @Test
@@ -185,7 +184,7 @@ public class ControlFileWatchdogIntegrationTest {
     File file = new EmptyFileWriter(requestFile).createNewFile();
 
     // assert
-    verifyZeroInteractions(requestHandler); // would be prefer to wait some time
+    verifyNoMoreInteractions(requestHandler); // would be prefer to wait some time
     assertThat(file).exists();
   }
 
@@ -203,8 +202,8 @@ public class ControlFileWatchdogIntegrationTest {
 
     // assert
     verify(requestHandler, timeout(TEN_MINUTES_MILLIS)).handleRequest();
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(file).doesNotExist());
+    await().untilAsserted(() -> assertThat(watchdog.isAlive()).isFalse());
+    await().untilAsserted(() -> assertThat(file).doesNotExist());
   }
 
   @Test
@@ -220,8 +219,8 @@ public class ControlFileWatchdogIntegrationTest {
 
     // assert
     verify(requestHandler, timeout(TEN_MINUTES_MILLIS)).handleRequest();
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(watchdog.isAlive()).isTrue());
-    await().atMost(10, MINUTES).untilAsserted(() -> assertThat(file).doesNotExist());
+    await().untilAsserted(() -> assertThat(watchdog.isAlive()).isTrue());
+    await().untilAsserted(() -> assertThat(file).doesNotExist());
   }
 
   @Test

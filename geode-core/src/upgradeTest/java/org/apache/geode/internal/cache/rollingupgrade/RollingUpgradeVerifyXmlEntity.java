@@ -14,23 +14,20 @@
  */
 package org.apache.geode.internal.cache.rollingupgrade;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.execute.Function;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.Version;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.version.VersionManager;
 
 public class RollingUpgradeVerifyXmlEntity extends RollingUpgrade2DUnitTestBase {
 
@@ -47,7 +44,7 @@ public class RollingUpgradeVerifyXmlEntity extends RollingUpgrade2DUnitTestBase 
     int[] locatorPorts = AvailablePortHelper.getRandomAvailableTCPPorts(1);
     String hostName = NetworkUtils.getServerHostName();
     String locatorsString = getLocatorString(locatorPorts);
-    DistributedTestUtils.deleteLocatorStateFile(locatorPorts);
+    oldLocator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPorts));
 
     try {
       // Start locator
@@ -57,7 +54,7 @@ public class RollingUpgradeVerifyXmlEntity extends RollingUpgrade2DUnitTestBase 
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -65,8 +62,10 @@ public class RollingUpgradeVerifyXmlEntity extends RollingUpgrade2DUnitTestBase 
       // Start servers
       invokeRunnableInVMs(invokeCreateCache(getSystemProperties(locatorPorts)), oldServer,
           currentServer1, currentServer2);
-      currentServer1.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
-      currentServer2.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+      currentServer1
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
+      currentServer2
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
 
       // Get DistributedMembers of the servers
       DistributedMember oldServerMember = oldServer.invoke(() -> getDistributedMember());

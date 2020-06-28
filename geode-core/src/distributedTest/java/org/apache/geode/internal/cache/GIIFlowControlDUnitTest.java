@@ -14,6 +14,9 @@
  */
 package org.apache.geode.internal.cache;
 
+import static java.lang.Thread.sleep;
+import static org.apache.geode.distributed.internal.InternalDistributedSystem.getDMStats;
+import static org.apache.geode.test.dunit.Assert.fail;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -33,6 +36,7 @@ import org.apache.geode.distributed.internal.DMStats;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionMessageObserver;
 import org.apache.geode.internal.cache.InitialImageOperation.ImageReplyMessage;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -40,7 +44,6 @@ import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 
@@ -60,6 +63,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
   @Override
   public final void preTearDownCacheTestCase() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("reset chunk size") {
+      @Override
       public void run() {
         InitialImageOperation.CHUNK_SIZE_IN_BYTES = origChunkSize;
         InitialImageOperation.CHUNK_PERMITS = origNumChunks;
@@ -73,6 +77,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
     VM vm0 = host.getVM(0);
     VM vm1 = host.getVM(1);
     Invoke.invokeInEveryVM(new SerializableRunnable("reset chunk size") {
+      @Override
       public void run() {
         InitialImageOperation.CHUNK_SIZE_IN_BYTES = 10;
         InitialImageOperation.CHUNK_PERMITS = 2;
@@ -95,6 +100,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
     VM vm0 = host.getVM(0);
     VM vm1 = host.getVM(1);
     Invoke.invokeInEveryVM(new SerializableRunnable("set chunk size") {
+      @Override
       public void run() {
         InitialImageOperation.CHUNK_SIZE_IN_BYTES = 10;
         InitialImageOperation.CHUNK_PERMITS = 2;
@@ -103,6 +109,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Add flow control observer") {
 
+      @Override
       public void run() {
         observer = new FlowControlObserver();
         DistributionMessageObserver.setInstance(observer);
@@ -122,24 +129,27 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Wait for chunks") {
 
+      @Override
       public void run() {
-        Wait.waitForCriterion(new WaitCriterion() {
+        GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+          @Override
           public String description() {
             return "Waiting for messages to be at least 2: " + observer.messageCount.get();
           }
 
+          @Override
           public boolean done() {
             return observer.messageCount.get() >= 2;
           }
 
-        }, MAX_WAIT, 100, true);
+        });
 
         // Make sure no more messages show up
         try {
-          Thread.sleep(500);
+          sleep(500);
         } catch (InterruptedException e) {
-          Assert.fail("interrupted", e);
+          fail("interrupted", e);
         }
         assertEquals(2, observer.messageCount.get());
         observer.allowMessages.countDown();
@@ -152,6 +162,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Add flow control observer") {
 
+      @Override
       public void run() {
         assertTrue("Message count should be greater than 2 now", observer.messageCount.get() > 2);
       }
@@ -165,6 +176,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
     VM vm0 = host.getVM(0);
     VM vm1 = host.getVM(1);
     Invoke.invokeInEveryVM(new SerializableRunnable("set chunk size") {
+      @Override
       public void run() {
         InitialImageOperation.CHUNK_SIZE_IN_BYTES = 10;
         InitialImageOperation.CHUNK_PERMITS = 2;
@@ -173,6 +185,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Add flow control observer") {
 
+      @Override
       public void run() {
         observer = new FlowControlObserver();
         DistributionMessageObserver.setInstance(observer);
@@ -190,24 +203,27 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Wait to flow control messages") {
 
+      @Override
       public void run() {
-        Wait.waitForCriterion(new WaitCriterion() {
+        GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+          @Override
           public String description() {
             return "Waiting for messages to be at least 2: " + observer.messageCount.get();
           }
 
+          @Override
           public boolean done() {
             return observer.messageCount.get() >= 2;
           }
 
-        }, MAX_WAIT, 100, true);
+        });
 
         // Make sure no more messages show up
         try {
-          Thread.sleep(500);
+          sleep(500);
         } catch (InterruptedException e) {
-          Assert.fail("interrupted", e);
+          fail("interrupted", e);
         }
         assertEquals(2, observer.messageCount.get());
       }
@@ -217,6 +233,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("release flow control") {
 
+      @Override
       public void run() {
         observer.allowMessages.countDown();
       }
@@ -248,6 +265,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
     VM vm0 = host.getVM(0);
     VM vm1 = host.getVM(1);
     Invoke.invokeInEveryVM(new SerializableRunnable("set chunk size") {
+      @Override
       public void run() {
         InitialImageOperation.CHUNK_SIZE_IN_BYTES = 10;
         InitialImageOperation.CHUNK_PERMITS = 2;
@@ -259,6 +277,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
     vm1.invoke(new SerializableRunnable("Add flow control observer") {
 
+      @Override
       public void run() {
         observer = new FlowControlObserver();
         DistributionMessageObserver.setInstance(observer);
@@ -277,24 +296,27 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
       vm1.invoke(new SerializableRunnable("Wait to flow control messages") {
 
+        @Override
         public void run() {
-          Wait.waitForCriterion(new WaitCriterion() {
+          GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+            @Override
             public String description() {
               return "Waiting for messages to be at least 2: " + observer.messageCount.get();
             }
 
+            @Override
             public boolean done() {
               return observer.messageCount.get() >= 2;
             }
 
-          }, MAX_WAIT, 100, true);
+          });
 
           // Make sure no more messages show up
           try {
-            Thread.sleep(500);
+            sleep(500);
           } catch (InterruptedException e) {
-            Assert.fail("interrupted", e);
+            fail("interrupted", e);
           }
           assertEquals(2, observer.messageCount.get());
         }
@@ -302,6 +324,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
       try {
         vm0.invoke(new SerializableRunnable("check for in progress messages") {
+          @Override
           public void run() {
             final DMStats stats = getSystem().getDMStats();
             assertEquals(2, stats.getInitialImageMessagesInFlight());
@@ -309,6 +332,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
         });
       } catch (Exception e) {
         vm1.invoke(new SerializableRunnable("release flow control due to exception") {
+          @Override
           public void run() {
             observer.allowMessages.countDown();
           }
@@ -325,6 +349,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
       vm1.invoke(new SerializableRunnable("release flow control") {
 
+        @Override
         public void run() {
           observer.allowMessages.countDown();
         }
@@ -332,19 +357,22 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
       vm0.invoke(new SerializableRunnable("check for in progress messages") {
 
+        @Override
         public void run() {
-          final DMStats stats = getSystem().getDMStats();
-          Wait.waitForCriterion(new WaitCriterion() {
+          final DMStats stats = getDMStats();
+          GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+            @Override
             public boolean done() {
               return stats.getInitialImageMessagesInFlight() == 0;
             }
 
+            @Override
             public String description() {
               return "Timeout waiting for all initial image messages to be processed: "
                   + stats.getInitialImageMessagesInFlight();
             }
-          }, MAX_WAIT, 100, true);
+          });
         }
       });
 
@@ -360,6 +388,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
   protected void closeCache(final VM vm) {
     SerializableRunnable closeCache = new SerializableRunnable("close cache") {
+      @Override
       public void run() {
         Cache cache = getCache();
         cache.close();
@@ -370,6 +399,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
   protected void disconnect(final VM vm) {
     SerializableRunnable closeCache = new SerializableRunnable("close cache") {
+      @Override
       public void run() {
         disconnectFromDS();
       }
@@ -384,6 +414,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
 
   private SerializableRunnable getCreateRegionRunnable() {
     SerializableRunnable createRegion = new SerializableRunnable("Create non persistent region") {
+      @Override
       public void run() {
         getCache();
         RegionFactory rf = new RegionFactory();
@@ -403,6 +434,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
   protected void createData(VM vm, final int startKey, final int endKey, final Object value) {
     SerializableRunnable createData = new SerializableRunnable() {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(REGION_NAME);
@@ -418,6 +450,7 @@ public class GIIFlowControlDUnitTest extends JUnit4CacheTestCase {
   protected void checkData(VM vm0, final int startKey, final int endKey, final String value) {
     SerializableRunnable checkData = new SerializableRunnable() {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(REGION_NAME);

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR_CHAR;
 import static org.apache.geode.internal.lang.SystemPropertyHelper.HA_REGION_QUEUE_EXPIRY_TIME_PROPERTY;
 import static org.apache.geode.internal.lang.SystemPropertyHelper.THREAD_ID_EXPIRY_TIME_PROPERTY;
 import static org.apache.geode.internal.lang.SystemPropertyHelper.getProductIntegerProperty;
@@ -49,9 +50,12 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.CancelException;
 import org.apache.geode.InternalGemFireError;
-import org.apache.geode.InternalGemFireException;
 import org.apache.geode.StatisticsFactory;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.annotations.VisibleForTesting;
+import org.apache.geode.annotations.internal.MakeNotStatic;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.CacheListener;
@@ -76,8 +80,6 @@ import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.Conflatable;
@@ -94,15 +96,19 @@ import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl;
 import org.apache.geode.internal.cache.tier.sockets.ClientUpdateMessageImpl.CqNameToOp;
 import org.apache.geode.internal.cache.tier.sockets.HAEventWrapper;
 import org.apache.geode.internal.cache.tier.sockets.Handshake;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.internal.statistics.StatisticsClock;
 import org.apache.geode.internal.util.BlobHelper;
 import org.apache.geode.internal.util.concurrent.StoppableCondition;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantLock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock.StoppableWriteLock;
+import org.apache.geode.logging.internal.executors.LoggingThread;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * An implementation of Queue using Gemfire Region as the underlying datastructure. The key will be
@@ -182,6 +188,7 @@ public class HARegionQueue implements RegionQueue {
    * Map of HA queue region-name and value as a MapWrapper object (whose underlying map contains
    * ThreadIdentifier as key & value as the last dispatched sequence ID)
    */
+  @MakeNotStatic
   static ConcurrentMap dispatchedMessagesMap;
 
   /**
@@ -213,6 +220,7 @@ public class HARegionQueue implements RegionQueue {
   /**
    * Thread which creates the {@code QueueRemovalMessage} and sends it to other nodes in the system
    */
+  @MakeNotStatic
   private static QueueRemovalThread qrmThread;
 
   /** protects from modification during GII chunking */
@@ -255,6 +263,7 @@ public class HARegionQueue implements RegionQueue {
    * The frequency (in seconds) at which a message will be sent by the primary to all the secondary
    * nodes to remove the events which have already been dispatched from the queue.
    */
+  @MakeNotStatic
   protected static volatile int messageSyncInterval = DEFAULT_MESSAGE_SYNC_INTERVAL;
 
   /**
@@ -296,7 +305,9 @@ public class HARegionQueue implements RegionQueue {
    *
    * @since GemFire 6.0
    */
+  @MutableForTesting
   static boolean testMarkerMessageReceived = false;
+  @MutableForTesting
   static boolean isUsedByTest = false;
 
   /**
@@ -315,24 +326,66 @@ public class HARegionQueue implements RegionQueue {
    * @return legal region name
    */
   public static String createRegionName(String regionName) {
-    return regionName.replace('/', '#');
+    return regionName.replace(SEPARATOR_CHAR, '#');
   }
 
+  /**
+   * @param isPrimary whether this is the primary queue for a client
+   */
+  protected HARegionQueue(String regionName, InternalCache cache, Map haContainer,
+      ClientProxyMembershipID clientProxyId, final byte clientConflation, boolean isPrimary,
+      StatisticsClock statisticsClock)
+      throws IOException, ClassNotFoundException, CacheException, InterruptedException {
+
+    String processedRegionName = createRegionName(regionName);
+
+    // Initialize the statistics
+    StatisticsFactory factory = cache.getInternalDistributedSystem().getStatisticsManager();
+
+    AttributesFactory af = new AttributesFactory();
+    af.setMirrorType(MirrorType.KEYS_VALUES);
+    af.addCacheListener(createCacheListenerForHARegion());
+    af.setStatisticsEnabled(true);
+    RegionAttributes ra = af.create();
+
+    this.region = HARegion.getInstance(processedRegionName, cache, this, ra, statisticsClock);
+
+    if (this.isPrimary) {// fix for 41878
+      // since it's primary queue, we will disable the EntryExpiryTask
+      // this should be done after region creation
+      disableEntryExpiryTasks();
+    }
+
+    this.regionName = processedRegionName;
+    this.threadIdToSeqId = new MapWrapper();
+    this.idsAvailable = new LinkedHashSet();
+    setClientConflation(clientConflation);
+    this.isPrimary = isPrimary;
+    // Initialize the statistics
+    this.stats = new HARegionQueueStats(factory, processedRegionName);
+    this.haContainer = haContainer;
+    this.giiLock = new StoppableReentrantReadWriteLock(cache.getCancelCriterion());
+    this.clientProxyID = clientProxyId;
+
+    this.stopper = this.region.getCancelCriterion();
+    this.rwLock = new StoppableReentrantReadWriteLock(region.getCancelCriterion());
+    this.readLock = this.rwLock.readLock();
+    this.writeLock = this.rwLock.writeLock();
+
+    putGIIDataInRegion();
+
+    if (this.getClass() == HARegionQueue.class) {
+      initialized.set(true);
+    }
+  }
+
+  @VisibleForTesting
   HARegionQueue(String regionName, HARegion haRegion, InternalCache cache, Map haContainer,
       ClientProxyMembershipID clientProxyId, final byte clientConflation, boolean isPrimary,
       HARegionQueueStats stats, StoppableReentrantReadWriteLock giiLock,
       StoppableReentrantReadWriteLock rwLock, CancelCriterion cancelCriterion,
-      boolean puttingGIIDataInQueue)
+      boolean puttingGIIDataInQueue, StatisticsClock statisticsClock)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-    initializeHARegionQueue(regionName, haRegion, haContainer, clientProxyId, clientConflation,
-        isPrimary, stats, giiLock, rwLock, cancelCriterion, puttingGIIDataInQueue);
-  }
-
-  private void initializeHARegionQueue(String regionName, HARegion haRegion, Map haContainer,
-      ClientProxyMembershipID clientProxyId, byte clientConflation, boolean isPrimary,
-      HARegionQueueStats stats, StoppableReentrantReadWriteLock giiLock,
-      StoppableReentrantReadWriteLock rwLock, CancelCriterion cancelCriterion,
-      boolean putGIIDataInQueue) throws InterruptedException {
     this.regionName = regionName;
     this.region = haRegion;
     this.threadIdToSeqId = new MapWrapper();
@@ -351,75 +404,13 @@ public class HARegionQueue implements RegionQueue {
     this.writeLock = this.rwLock.writeLock();
 
     // false specifically set in tests only
-    if (putGIIDataInQueue) {
+    if (puttingGIIDataInQueue) {
       putGIIDataInRegion();
     }
     if (this.getClass() == HARegionQueue.class) {
       initialized.set(true);
     }
   }
-
-  /**
-   * @param isPrimary whether this is the primary queue for a client
-   */
-  protected HARegionQueue(String regionName, InternalCache cache, Map haContainer,
-      ClientProxyMembershipID clientProxyId, final byte clientConflation, boolean isPrimary)
-      throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-
-    String processedRegionName = createRegionName(regionName);
-
-    // Initialize the statistics
-    StatisticsFactory factory = cache.getDistributedSystem();
-    createHARegion(processedRegionName, cache);
-
-    initializeHARegionQueue(processedRegionName, this.region, haContainer, clientProxyId,
-        clientConflation, isPrimary, new HARegionQueueStats(factory, processedRegionName),
-        new StoppableReentrantReadWriteLock(cache.getCancelCriterion()),
-        new StoppableReentrantReadWriteLock(region.getCancelCriterion()),
-        this.region.getCancelCriterion(), true);
-  }
-
-  private void createHARegion(String processedRegionName, InternalCache cache)
-      throws IOException, ClassNotFoundException {
-    AttributesFactory af = new AttributesFactory();
-    af.setMirrorType(MirrorType.KEYS_VALUES);
-    af.addCacheListener(createCacheListenerForHARegion());
-    af.setStatisticsEnabled(true);
-    RegionAttributes ra = af.create();
-    this.region = HARegion.getInstance(processedRegionName, cache, this, ra);
-
-    if (isPrimary) {// fix for 41878
-      // since it's primary queue, we will disable the EntryExpiryTask
-      // this should be done after region creation
-      disableEntryExpiryTasks();
-    }
-  }
-
-  /**
-   * reinitialize the queue, presumably pulling current information from seconaries
-   */
-  public void reinitializeRegion() {
-    InternalCache cache = this.region.getCache();
-    String regionName = this.region.getName();
-    this.region.destroyRegion();
-    Exception problem = null;
-    try {
-      createHARegion(regionName, cache);
-    } catch (IOException | ClassNotFoundException e) {
-      problem = e;
-    }
-    if (problem != null) {
-      throw new InternalGemFireException("Problem recreating region queue '" + regionName + "'");
-    }
-    try {
-      this.putGIIDataInRegion();
-    } catch (InterruptedException e) {
-      cache.getCancelCriterion().checkCancelInProgress(e);
-      Thread.currentThread().interrupt();
-    }
-  }
-
-
 
   /**
    * install DACE information from an initial image provider
@@ -613,14 +604,7 @@ public class HARegionQueue implements RegionQueue {
 
         if (object instanceof HAEventWrapper) {
           HAEventWrapper wrapper = (HAEventWrapper) object;
-          wrapper.incrementPutInProgressCounter();
-          if (logger.isDebugEnabled()) {
-            logger
-                .debug("Incremented PutInProgressCounter during GII queueing. Event ID hash code: "
-                    + wrapper.hashCode() + "; System ID hash code: "
-                    + System.identityHashCode(wrapper)
-                    + "; Wrapper details: " + wrapper);
-          }
+          wrapper.incrementPutInProgressCounter("GII queue");
         }
 
         this.giiQueue.add(object);
@@ -967,9 +951,7 @@ public class HARegionQueue implements RegionQueue {
           // ignore, we're done
         } catch (CacheException ce) {
           if (!destroyInProgress) {
-            logger.error(
-                LocalizedMessage.create(
-                    LocalizedStrings.HARegionQueue_HAREGIONQUEUECREATECACHELISTNEREXCEPTION_IN_THE_EXPIRY_THREAD),
+            logger.error("HAREgionQueue::createCacheListner::Exception in the expiry thread",
                 ce);
           }
         }
@@ -1353,9 +1335,7 @@ public class HARegionQueue implements RegionQueue {
           dace.setLastDispatchedIDAndRemoveEvents(removedEvents, lastDispatchedId);
         } catch (CacheException e) {
           // ignore and log
-          logger.error(
-              LocalizedMessage.create(
-                  LocalizedStrings.HARegionQueue_EXCEPTION_OCCURRED_WHILE_TRYING_TO_SET_THE_LAST_DISPATCHED_ID),
+          logger.error("Exception occurred while trying to set the last dispatched id",
               e);
         }
       }
@@ -1968,7 +1948,7 @@ public class HARegionQueue implements RegionQueue {
    * @return an instance of HARegionQueue
    */
   public static HARegionQueue getHARegionQueueInstance(String regionName, InternalCache cache,
-      final int haRgnQType, final boolean isDurable)
+      final int haRgnQType, final boolean isDurable, StatisticsClock statisticsClock)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
     Map container = null;
     if (haRgnQType == HARegionQueue.BLOCKING_HA_QUEUE) {
@@ -1981,7 +1961,7 @@ public class HARegionQueue implements RegionQueue {
 
     return getHARegionQueueInstance(regionName, cache,
         HARegionQueueAttributes.DEFAULT_HARQ_ATTRIBUTES, haRgnQType, isDurable, container, null,
-        Handshake.CONFLATION_DEFAULT, false, Boolean.FALSE);
+        Handshake.CONFLATION_DEFAULT, false, Boolean.FALSE, statisticsClock);
   }
 
   /**
@@ -1999,7 +1979,7 @@ public class HARegionQueue implements RegionQueue {
   public static HARegionQueue getHARegionQueueInstance(String regionName, InternalCache cache,
       HARegionQueueAttributes hrqa, final int haRgnQType, final boolean isDurable, Map haContainer,
       ClientProxyMembershipID clientProxyId, final byte clientConflation, boolean isPrimary,
-      boolean canHandleDelta)
+      boolean canHandleDelta, StatisticsClock statisticsClock)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
 
     HARegionQueue hrq = null;
@@ -2007,20 +1987,20 @@ public class HARegionQueue implements RegionQueue {
       case BLOCKING_HA_QUEUE:
         if (!isDurable && !canHandleDelta) {
           hrq = new BlockingHARegionQueue(regionName, cache, hrqa, haContainer, clientProxyId,
-              clientConflation, isPrimary);
+              clientConflation, isPrimary, statisticsClock);
         } else {
           hrq = new DurableHARegionQueue(regionName, cache, hrqa, haContainer, clientProxyId,
-              clientConflation, isPrimary);
+              clientConflation, isPrimary, statisticsClock);
         }
         break;
       case NON_BLOCKING_HA_QUEUE:
         hrq = new HARegionQueue(regionName, cache, haContainer, clientProxyId, clientConflation,
-            isPrimary);
+            isPrimary, statisticsClock);
         break;
       default:
         throw new IllegalArgumentException(
-            LocalizedStrings.HARegionQueue_HARGNQTYPE_CAN_EITHER_BE_BLOCKING_0_OR_NON_BLOCKING_1
-                .toLocalizedString(new Object[] {BLOCKING_HA_QUEUE, NON_BLOCKING_HA_QUEUE}));
+            String.format("haRgnQType can either be BLOCKING ( %s ) or NON BLOCKING ( %s )",
+                new Object[] {BLOCKING_HA_QUEUE, NON_BLOCKING_HA_QUEUE}));
     }
     if (!isDurable) {
       Optional<Integer> expiryTime =
@@ -2040,7 +2020,8 @@ public class HARegionQueue implements RegionQueue {
    * @since GemFire 5.7
    */
   public static HARegionQueue getHARegionQueueInstance(String regionName, InternalCache cache,
-      HARegionQueueAttributes hrqa, final int haRgnQType, final boolean isDurable)
+      HARegionQueueAttributes hrqa, final int haRgnQType, final boolean isDurable,
+      StatisticsClock statisticsClock)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
     Map container = null;
     if (haRgnQType == HARegionQueue.BLOCKING_HA_QUEUE) {
@@ -2052,7 +2033,7 @@ public class HARegionQueue implements RegionQueue {
     }
 
     return getHARegionQueueInstance(regionName, cache, hrqa, haRgnQType, isDurable, container, null,
-        Handshake.CONFLATION_DEFAULT, false, Boolean.FALSE);
+        Handshake.CONFLATION_DEFAULT, false, Boolean.FALSE, statisticsClock);
   }
 
   public boolean isEmptyAckList() {
@@ -2224,9 +2205,10 @@ public class HARegionQueue implements RegionQueue {
      */
     protected BlockingHARegionQueue(String regionName, InternalCache cache,
         HARegionQueueAttributes hrqa, Map haContainer, ClientProxyMembershipID clientProxyId,
-        final byte clientConflation, boolean isPrimary)
+        final byte clientConflation, boolean isPrimary, StatisticsClock statisticsClock)
         throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      super(regionName, cache, haContainer, clientProxyId, clientConflation, isPrimary);
+      super(regionName, cache, haContainer, clientProxyId, clientConflation, isPrimary,
+          statisticsClock);
       this.capacity = hrqa.getBlockingQueueCapacity();
       this.putPermits = this.capacity;
       this.lock = new StoppableReentrantLock(this.region.getCancelCriterion());
@@ -2282,9 +2264,8 @@ public class HARegionQueue implements RegionQueue {
                       logFrequency = ccn.getLogFrequency();
                     }
                     if ((this.maxQueueSizeHitCount % logFrequency) == 0) {
-                      logger.warn(LocalizedMessage.create(
-                          LocalizedStrings.HARegionQueue_CLIENT_QUEUE_FOR_0_IS_FULL,
-                          new Object[] {region.getName()}));
+                      logger.warn("Client queue for {} client is full.",
+                          new Object[] {region.getName()});
                       this.maxQueueSizeHitCount = 0;
                     }
                     ++this.maxQueueSizeHitCount;
@@ -2298,8 +2279,7 @@ public class HARegionQueue implements RegionQueue {
                     // deadlock scenario mentioned in the ticket.
                     reconcilePutPermits();
                     if ((this.maxQueueSizeHitCount % logFrequency) == 1) {
-                      logger.info(LocalizedMessage
-                          .create(LocalizedStrings.HARegionQueue_RESUMING_WITH_PROCESSING_PUTS));
+                      logger.info("Resuming with processing puts ...");
                     }
                   } catch (InterruptedException ex) {
                     // TODO: The line below is meaningless. Comment it out later
@@ -2455,9 +2435,10 @@ public class HARegionQueue implements RegionQueue {
 
     protected DurableHARegionQueue(String regionName, InternalCache cache,
         HARegionQueueAttributes hrqa, Map haContainer, ClientProxyMembershipID clientProxyId,
-        final byte clientConflation, boolean isPrimary)
+        final byte clientConflation, boolean isPrimary, StatisticsClock statisticsClock)
         throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      super(regionName, cache, hrqa, haContainer, clientProxyId, clientConflation, isPrimary);
+      super(regionName, cache, hrqa, haContainer, clientProxyId, clientConflation, isPrimary,
+          statisticsClock);
 
       this.threadIdToSeqId.keepPrevAcks = true;
       this.durableIDsList = new LinkedHashSet();
@@ -2606,9 +2587,8 @@ public class HARegionQueue implements RegionQueue {
           this.durableIDsList = new LinkedHashSet();
           long end = System.currentTimeMillis();
           if ((end - start) > 3000) {
-            logger.warn(LocalizedMessage.create(
-                LocalizedStrings.HARegionQueue_DURABLE_CLIENT_QUEUE_INITIALIZATION_TOOK_0_MS,
-                Long.toString(end - start)));
+            logger.warn("Durable client queue initialization took {} ms.",
+                Long.toString(end - start));
           }
         } finally {
           this.releaseWriteLock();
@@ -2680,54 +2660,6 @@ public class HARegionQueue implements RegionQueue {
   }
 
   /**
-   * A static class which is created only for for testing prposes as some existing tests extend the
-   * HARegionQueue. Since the constructors of HAregionQueue are private , this class can act as a
-   * bridge between the user defined HARegionQueue class & the actual class. This class object will
-   * be buggy as it will tend to publish the Object o QRM thread & the expiry thread before the
-   * complete creation of the HARegionQueue instance
-   */
-  static class TestOnlyHARegionQueue extends HARegionQueue {
-    /**
-     * Overloaded constructor to accept haContainer.
-     *
-     * @since GemFire 5.7
-     */
-    TestOnlyHARegionQueue(String regionName, InternalCache cache, Map haContainer)
-        throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      this(regionName, cache, HARegionQueueAttributes.DEFAULT_HARQ_ATTRIBUTES, haContainer,
-          Handshake.CONFLATION_DEFAULT, false);
-      this.initialized.set(true);
-    }
-
-    TestOnlyHARegionQueue(String regionName, InternalCache cache)
-        throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      this(regionName, cache, HARegionQueueAttributes.DEFAULT_HARQ_ATTRIBUTES, new HashMap(),
-          Handshake.CONFLATION_DEFAULT, false);
-    }
-
-    TestOnlyHARegionQueue(String regionName, InternalCache cache, HARegionQueueAttributes hrqa,
-        Map haContainer, final byte clientConflation, boolean isPrimary)
-        throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      super(regionName, cache, haContainer, null, clientConflation, isPrimary);
-      ExpirationAttributes ea =
-          new ExpirationAttributes(hrqa.getExpiryTime(), ExpirationAction.LOCAL_INVALIDATE);
-      this.region.setOwner(this);
-      this.region.getAttributesMutator().setEntryTimeToLive(ea);
-      this.initialized.set(true);
-    }
-
-    /**
-     * Overloaded constructor to pass an {@code HashMap} instance as a haContainer.
-     *
-     * @since GemFire 5.7
-     */
-    TestOnlyHARegionQueue(String regionName, InternalCache cache, HARegionQueueAttributes hrqa)
-        throws IOException, ClassNotFoundException, CacheException, InterruptedException {
-      this(regionName, cache, hrqa, new HashMap(), Handshake.CONFLATION_DEFAULT, false);
-    }
-  }
-
-  /**
    * This thread will check for messages which have been dispatched. After a configurable time or
    * size is reached, it will create a new {@code QueueRemovalMessage} and send it to all the nodes
    * in the DistributedSystem
@@ -2780,16 +2712,14 @@ public class HARegionQueue implements RegionQueue {
             boolean interrupted = Thread.interrupted();
             try {
               synchronized (this) {
-                this.wait(messageSyncInterval * 1000);
+                this.wait(1000 * (long) messageSyncInterval);
               }
             } catch (InterruptedException e) {
               interrupted = true;
               if (checkCancelled()) {
                 break;
               }
-              logger.warn(
-                  LocalizedMessage.create(
-                      LocalizedStrings.HARegionQueue_INTERRUPTEDEXCEPTION_OCCURRED_IN_QUEUEREMOVALTHREAD_WHILE_WAITING),
+              logger.warn("InterruptedException occurred in QueueRemovalThread  while waiting ",
                   e);
               break; // desperation...we must be trying to shut down...?
             } finally {
@@ -2849,8 +2779,7 @@ public class HARegionQueue implements RegionQueue {
           logger.debug("QueueRemovalThread exiting due to cancellation: ", e);
         }
       } finally {
-        logger.info(
-            LocalizedMessage.create(LocalizedStrings.HARegionQueue_THE_QUEUEREMOVALTHREAD_IS_DONE));
+        logger.info("The QueueRemovalThread is done.");
       }
     }
 
@@ -2934,8 +2863,7 @@ public class HARegionQueue implements RegionQueue {
         }
       }
       if (this.isAlive()) {
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.HARegionQueue_QUEUEREMOVALTHREAD_IGNORED_CANCELLATION));
+        logger.warn("QueueRemovalThread ignored cancellation");
       }
     }
   }
@@ -3197,9 +3125,9 @@ public class HARegionQueue implements RegionQueue {
             }
           } catch (EntryNotFoundException enfe) {
             if (!owningQueue.destroyInProgress) {
-              logger.error(LocalizedMessage.create(
-                  LocalizedStrings.HARegionQueue_DISPATCHEDANDCURRENTEVENTSEXPIREORUPDATE_UNEXPECTEDLY_ENCOUNTERED_EXCEPTION_WHILE_REMOVING_EXPIRY_ENTRY_FOR_THREADIDENTIFIER_0_AND_EXPIRY_VALUE_1,
-                  new Object[] {ti, expVal, enfe}));
+              logger.error(
+                  "DispatchedAndCurrentEvents::expireOrUpdate: Unexpectedly encountered exception while removing expiry entry for ThreadIdentifier={} and expiry value={}",
+                  new Object[] {ti, expVal, enfe});
             }
           }
         }
@@ -3212,9 +3140,10 @@ public class HARegionQueue implements RegionQueue {
           throw e;
         } catch (Exception e) {
           if (!owningQueue.destroyInProgress) {
-            logger.error(LocalizedMessage.create(
-                LocalizedStrings.HARegionQueue_DISPATCHEDANDCURRENTEVENTSEXPIREORUPDATE_UNEXPECTEDLY_ENCOUNTERED_EXCEPTION_WHILE_UPDATING_EXPIRY_ID_FOR_THREADIDENTIFIER_0,
-                ti), e);
+            logger.error(String.format(
+                "DispatchedAndCurrentEvents::expireOrUpdate: Unexpectedly encountered exception while updating expiry ID for ThreadIdentifier=%s",
+                ti),
+                e);
           }
         }
       }
@@ -3364,8 +3293,7 @@ public class HARegionQueue implements RegionQueue {
       } catch (EntryNotFoundException enfe) {
         if (!owningQueue.destroyInProgress) {
           logger.error(
-              LocalizedMessage.create(
-                  LocalizedStrings.HARegionQueue_DACEREMOVEEVENTANDSETSEQUENCEID_SINCE_THE_EVENT_WAS_SUCCESSULY_REMOVED_BY_TAKE_OPERATION_IT_SHOULD_HAVE_EXISTED_IN_THE_REGION),
+              "DACE::removeEventAndSetSequenceID: Since the event was successuly removed by a take operation, it should have existed in the region",
               enfe);
         }
       }
@@ -3380,10 +3308,12 @@ public class HARegionQueue implements RegionQueue {
     /*
      * (non-Javadoc)
      *
-     * @see org.apache.geode.internal.DataSerializableFixedID#fromData(java.io.DataInput)
+     * @see
+     * org.apache.geode.internal.serialization.DataSerializableFixedID#fromData(java.io.DataInput)
      */
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       synchronized (this) {
         this.lastDispatchedSequenceId = in.readLong();
         this.lastSequenceIDPut = in.readLong();
@@ -3393,7 +3323,7 @@ public class HARegionQueue implements RegionQueue {
     /*
      * (non-Javadoc)
      *
-     * @see org.apache.geode.internal.DataSerializableFixedID#getDSFID()
+     * @see org.apache.geode.internal.serialization.DataSerializableFixedID#getDSFID()
      */
     @Override
     public int getDSFID() {
@@ -3403,10 +3333,12 @@ public class HARegionQueue implements RegionQueue {
     /*
      * (non-Javadoc)
      *
-     * @see org.apache.geode.internal.DataSerializableFixedID#toData(java.io.DataOutput)
+     * @see
+     * org.apache.geode.internal.serialization.DataSerializableFixedID#toData(java.io.DataOutput)
      */
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       synchronized (this) { // fix for bug #41621
         out.writeLong(this.lastDispatchedSequenceId);
         out.writeLong(this.lastSequenceIDPut);
@@ -3429,8 +3361,7 @@ public class HARegionQueue implements RegionQueue {
   @Override
   public void remove(int top) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.HARegionQueue_HAREGIONQUEUE_AND_ITS_DERIVED_CLASS_DO_NOT_SUPPORT_THIS_OPERATION
-            .toLocalizedString());
+        "HARegionQueue and its derived class do not support this operation ");
 
   }
 
@@ -3502,26 +3433,28 @@ public class HARegionQueue implements RegionQueue {
     }
   }
 
-  private void addClientCQsAndInterestList(ClientUpdateMessageImpl msg,
+  protected void addClientCQsAndInterestList(ClientUpdateMessageImpl msg,
       HAEventWrapper haEventWrapper, Map haContainer, String regionName) {
 
     ClientProxyMembershipID proxyID = ((HAContainerWrapper) haContainer).getProxyID(regionName);
-    if (haEventWrapper.getClientCqs() != null) {
-      CqNameToOp clientCQ = haEventWrapper.getClientCqs().get(proxyID);
-      if (clientCQ != null) {
-        msg.addClientCqs(proxyID, clientCQ);
+    if (proxyID != null) {
+      if (haEventWrapper.getClientCqs() != null) {
+        CqNameToOp clientCQ = haEventWrapper.getClientCqs().get(proxyID);
+        if (clientCQ != null) {
+          msg.addClientCqs(proxyID, clientCQ);
+        }
       }
-    }
 
-    // This is a remote HAEventWrapper.
-    // Add new Interested client lists.
-    ClientUpdateMessageImpl clientMsg =
-        (ClientUpdateMessageImpl) haEventWrapper.getClientUpdateMessage();
-    if (clientMsg != null) {
-      if (clientMsg.isClientInterestedInUpdates(proxyID)) {
-        msg.addClientInterestList(proxyID, true);
-      } else if (clientMsg.isClientInterestedInInvalidates(proxyID)) {
-        msg.addClientInterestList(proxyID, false);
+      // This is a remote HAEventWrapper.
+      // Add new Interested client lists.
+      ClientUpdateMessageImpl clientMsg =
+          (ClientUpdateMessageImpl) haEventWrapper.getClientUpdateMessage();
+      if (clientMsg != null) {
+        if (clientMsg.isClientInterestedInUpdates(proxyID)) {
+          msg.addClientInterestList(proxyID, true);
+        } else if (clientMsg.isClientInterestedInInvalidates(proxyID)) {
+          msg.addClientInterestList(proxyID, false);
+        }
       }
     }
   }
@@ -3666,28 +3599,26 @@ public class HARegionQueue implements RegionQueue {
 
         // Start a new thread which will update the clientMessagesRegion for
         // each of the HAEventWrapper instances present in the wrapperSet
-        Thread regionCleanupTask = new Thread(new Runnable() {
-          @Override
-          public void run() {
-            try {
-              Iterator iter = wrapperSet.iterator();
-              while (iter.hasNext()) {
-                Conflatable conflatable = (Conflatable) iter.next();
-                if (conflatable instanceof HAEventWrapper) {
-                  decAndRemoveFromHAContainer((HAEventWrapper) conflatable, "Destroy");
+        Thread regionCleanupTask =
+            new LoggingThread("HA Region Cleanup for " + regionName, false, () -> {
+              try {
+                Iterator iter = wrapperSet.iterator();
+                while (iter.hasNext()) {
+                  Conflatable conflatable = (Conflatable) iter.next();
+                  if (conflatable instanceof HAEventWrapper) {
+                    decAndRemoveFromHAContainer((HAEventWrapper) conflatable, "Destroy");
+                  }
+                }
+              } catch (CancelException ignore) {
+                return; // we're done
+              } catch (Exception e) {
+                if (logger.isDebugEnabled()) {
+                  logger.debug(
+                      "Exception in regionCleanupTask thread of HARegionQueue.updateHAContainer$run()",
+                      e);
                 }
               }
-            } catch (CancelException ignore) {
-              return; // we're done
-            } catch (Exception e) {
-              if (logger.isDebugEnabled()) {
-                logger.debug(
-                    "Exception in regionCleanupTask thread of HARegionQueue.updateHAContainer$run()",
-                    e);
-              }
-            }
-          }
-        }, "HA Region Cleanup for " + regionName);
+            });
         regionCleanupTask.start();
       }
     } catch (CancelException e) {
@@ -3704,8 +3635,7 @@ public class HARegionQueue implements RegionQueue {
       logger.warn("HARegionQueue.updateHAContainer: underlying region has been destroyed", e);
     } catch (Exception e) {
       logger.warn(
-          LocalizedMessage.create(
-              LocalizedStrings.HARegionQueue_TASK_TO_DECREMENT_THE_REF_COUNT_MAY_NOT_HAVE_BEEN_STARTED),
+          "Exception in HARegionQueue.updateHAContainer(). The task to decrement the ref count by one for all the HAEventWrapper instances of this queue present in the haContainer may not have been started",
           e);
     }
   }
@@ -3822,9 +3752,9 @@ public class HARegionQueue implements RegionQueue {
           ExpirationAction.LOCAL_INVALIDATE);
       this.region.setEntryTimeToLive(ea);
       this.region.setCustomEntryTimeToLive(new ThreadIdentifierCustomExpiry());
-      logger.info(LocalizedMessage.create(
-          LocalizedStrings.HARegionQueue_ENYTRY_EXPIRY_TASKS_DISABLED_BECAUSE_QUEUE_BECAME_PRIMARY_OLD_MSG_TTL_0,
-          new Object[] {oldTimeToLive}));
+      logger.info(
+          "Entry expiry tasks disabled because the queue became primary. Old messageTimeToLive was: {}",
+          oldTimeToLive);
     }
   }
 
@@ -3931,9 +3861,11 @@ public class HARegionQueue implements RegionQueue {
      */
     static final int DEFAULT_THREAD_ID_EXPIRY_TIME = 300;
 
+    @Immutable
     private static final ExpirationAttributes DEFAULT_THREAD_ID_EXP_ATTS =
         new ExpirationAttributes(DEFAULT_THREAD_ID_EXPIRY_TIME, ExpirationAction.LOCAL_INVALIDATE);
 
+    @MutableForTesting
     private static volatile ExpirationAttributes testExpAtts;
 
     private final int expTime;

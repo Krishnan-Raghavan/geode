@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentMap;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.InternalGemFireException;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.FixedPartitionAttributes;
 import org.apache.geode.cache.PartitionResolver;
 import org.apache.geode.cache.Region;
@@ -34,8 +35,7 @@ import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.internal.ClassPathLoader;
 import org.apache.geode.internal.cache.BucketServerLocation66;
 import org.apache.geode.internal.cache.FixedPartitionAttributesImpl;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Stores the information such as partition attributes and meta data details
@@ -82,8 +82,8 @@ public class ClientPartitionAdvisor {
       }
 
       throw new InternalGemFireException(
-          LocalizedStrings.ClientPartitionAdvisor_CANNOT_CREATE_AN_INSTANCE_OF_PARTITION_RESOLVER_0
-              .toLocalizedString(partitionResolverName));
+          String.format("Cannot create an instance of PartitionResolver : %s",
+              partitionResolverName));
     }
     if (fpaSet != null) {
       fixedPAMap = new ConcurrentHashMap<String, List<Integer>>();
@@ -204,6 +204,7 @@ public class ClientPartitionAdvisor {
     }
   }
 
+  @VisibleForTesting
   public Map<Integer, List<BucketServerLocation66>> getBucketServerLocationsMap_TEST_ONLY() {
     return this.bucketServerLocationsMap;
   }

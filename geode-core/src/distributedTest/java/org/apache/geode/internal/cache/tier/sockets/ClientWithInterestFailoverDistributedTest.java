@@ -14,13 +14,13 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Disconnect.disconnectAllFromDS;
 import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
 import static org.apache.geode.test.dunit.NetworkUtils.getServerHostName;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -174,7 +174,7 @@ public class ClientWithInterestFailoverDistributedTest implements Serializable {
   }
 
   private PoolFactory createPoolFactory() {
-    return PoolManager.createFactory().setThreadLocalConnections(true).setMinConnections(3)
+    return PoolManager.createFactory().setMinConnections(3)
         .setSubscriptionEnabled(true).setSubscriptionRedundancy(0).setReadTimeout(10000)
         .setSocketBufferSize(32768);
   }
@@ -240,7 +240,7 @@ public class ClientWithInterestFailoverDistributedTest implements Serializable {
   }
 
   private void awaitServerMetaDataToContainClient() {
-    await().atMost(30, SECONDS)
+    await()
         .untilAsserted(() -> assertThat(
             getCacheServer().getAcceptor().getCacheClientNotifier().getClientProxies().size())
                 .isEqualTo(1));
@@ -248,8 +248,8 @@ public class ClientWithInterestFailoverDistributedTest implements Serializable {
     CacheClientProxy proxy = getClientProxy();
     assertThat(proxy).isNotNull();
 
-    await().atMost(30, SECONDS).until(() -> getClientProxy().isAlive() && getClientProxy()
-        .getRegionsWithEmptyDataPolicy().containsKey(Region.SEPARATOR + PROXY_REGION_NAME));
+    await().until(() -> getClientProxy().isAlive() && getClientProxy()
+        .getRegionsWithEmptyDataPolicy().containsKey(SEPARATOR + PROXY_REGION_NAME));
   }
 
   private void validateServerMetaDataKnowsThatClientRegisteredInterest() {
@@ -260,12 +260,12 @@ public class ClientWithInterestFailoverDistributedTest implements Serializable {
   private void validateServerMetaDataKnowsWhichClientRegionIsEmpty() {
     CacheClientProxy proxy = getClientProxy();
     assertThat(proxy.getRegionsWithEmptyDataPolicy())
-        .containsKey(Region.SEPARATOR + PROXY_REGION_NAME);
+        .containsKey(SEPARATOR + PROXY_REGION_NAME);
     assertThat(proxy.getRegionsWithEmptyDataPolicy())
-        .doesNotContainKey(Region.SEPARATOR + CACHING_PROXY_REGION_NAME);
+        .doesNotContainKey(SEPARATOR + CACHING_PROXY_REGION_NAME);
     assertThat(proxy.getRegionsWithEmptyDataPolicy()).hasSize(1);
     assertThat(proxy.getRegionsWithEmptyDataPolicy())
-        .containsEntry(Region.SEPARATOR + PROXY_REGION_NAME, 0);
+        .containsEntry(SEPARATOR + PROXY_REGION_NAME, 0);
   }
 
   private InternalCacheServer getCacheServer() {

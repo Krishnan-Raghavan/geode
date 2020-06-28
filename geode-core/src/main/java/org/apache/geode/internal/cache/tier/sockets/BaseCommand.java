@@ -37,6 +37,8 @@ import org.apache.geode.CopyException;
 import org.apache.geode.InternalGemFireError;
 import org.apache.geode.SerializationException;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.CacheLoaderException;
 import org.apache.geode.cache.CacheWriterException;
 import org.apache.geode.cache.InterestResultPolicy;
@@ -47,11 +49,9 @@ import org.apache.geode.cache.TransactionException;
 import org.apache.geode.cache.persistence.PartitionOfflineException;
 import org.apache.geode.cache.query.types.CollectionType;
 import org.apache.geode.distributed.DistributedSystemDisconnectedException;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.EntryEventImpl;
@@ -61,7 +61,7 @@ import org.apache.geode.internal.cache.FindVersionTagOperation;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.InternalRegion;
 import org.apache.geode.internal.cache.LocalRegion;
-import org.apache.geode.internal.cache.LocalRegion.NonTXEntry;
+import org.apache.geode.internal.cache.NonTXEntry;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionHelper;
 import org.apache.geode.internal.cache.TXManagerImpl;
@@ -75,17 +75,18 @@ import org.apache.geode.internal.cache.tier.InterestType;
 import org.apache.geode.internal.cache.tier.MessageType;
 import org.apache.geode.internal.cache.versions.VersionStamp;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.offheap.OffHeapHelper;
 import org.apache.geode.internal.security.SecurityService;
 import org.apache.geode.internal.sequencelog.EntryLogger;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.security.GemFireSecurityException;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 public abstract class BaseCommand implements Command {
   protected static final Logger logger = LogService.getLogger();
 
+  @Immutable
   private static final byte[] OK_BYTES = new byte[] {0};
 
   public static final int MAXIMUM_CHUNK_SIZE =
@@ -93,10 +94,10 @@ public abstract class BaseCommand implements Command {
 
   /** Whether to suppress logging of IOExceptions */
   private static final boolean SUPPRESS_IO_EXCEPTION_LOGGING =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "bridge.suppressIOExceptionLogging");
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "bridge.suppressIOExceptionLogging");
 
   /**
-   * Maximum number of concurrent incoming client message bytes that a bridge server will allow.
+   * Maximum number of concurrent incoming client message bytes that a cache server will allow.
    * Once a server is working on this number additional incoming client messages will wait until one
    * of them completes or fails. The bytes are computed based in the size sent in the incoming msg
    * header.
@@ -105,15 +106,17 @@ public abstract class BaseCommand implements Command {
       Integer.getInteger("BridgeServer.MAX_INCOMING_DATA", -1);
 
   /**
-   * Maximum number of concurrent incoming client messages that a bridge server will allow. Once a
+   * Maximum number of concurrent incoming client messages that a cache server will allow. Once a
    * server is working on this number additional incoming client messages will wait until one of
    * them completes or fails.
    */
   private static final int MAX_INCOMING_MESSAGES =
       Integer.getInteger("BridgeServer.MAX_INCOMING_MSGS", -1);
 
+  @MakeNotStatic
   private static final Semaphore INCOMING_DATA_LIMITER;
 
+  @MakeNotStatic
   private static final Semaphore INCOMING_MSG_LIMITER;
 
   static {
@@ -212,7 +215,7 @@ public abstract class BaseCommand implements Command {
    */
   protected boolean shouldMasqueradeForTx(Message clientMessage,
       ServerConnection serverConnection) {
-    return serverConnection.getClientVersion().compareTo(Version.GFE_66) >= 0
+    return serverConnection.getClientVersion().isNotOlderThan(Version.GFE_66)
         && clientMessage.getTransactionId() > TXManagerImpl.NOTX;
   }
 
@@ -322,15 +325,14 @@ public abstract class BaseCommand implements Command {
       if (!SUPPRESS_IO_EXCEPTION_LOGGING) {
         if (potentialModification) {
           int transId = msg != null ? msg.getTransactionId() : Integer.MIN_VALUE;
-          logger.warn(LocalizedMessage.create(
-              LocalizedStrings.BaseCommand_0_EOFEXCEPTION_DURING_A_WRITE_OPERATION_ON_REGION__1_KEY_2_MESSAGEID_3,
+          logger.warn(
+              "{}: EOFException during a write operation on region : {} key: {} messageId: {}",
               new Object[] {serverConnection.getName(), serverConnection.getModRegion(),
-                  serverConnection.getModKey(), transId}));
+                  serverConnection.getModKey(), transId});
         } else {
           logger.debug("EOF exception", eof);
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.BaseCommand_0_CONNECTION_DISCONNECT_DETECTED_BY_EOF,
-              serverConnection.getName()));
+          logger.warn("{}: connection disconnect detected by EOF.",
+              serverConnection.getName());
         }
       }
     }
@@ -359,13 +361,13 @@ public abstract class BaseCommand implements Command {
       if (!SUPPRESS_IO_EXCEPTION_LOGGING) {
         if (potentialModification) {
           int transId = msg != null ? msg.getTransactionId() : Integer.MIN_VALUE;
-          logger.warn(LocalizedMessage.create(
-              LocalizedStrings.BaseCommand_0_UNEXPECTED_IOEXCEPTION_DURING_OPERATION_FOR_REGION_1_KEY_2_MESSID_3,
+          logger.warn(String.format(
+              "%s: Unexpected IOException during operation for region: %s key: %s messId: %s",
               new Object[] {serverConnection.getName(), serverConnection.getModRegion(),
                   serverConnection.getModKey(), transId}),
               e);
         } else {
-          logger.warn(LocalizedMessage.create(LocalizedStrings.BaseCommand_0_UNEXPECTED_IOEXCEPTION,
+          logger.warn(String.format("%s: Unexpected IOException: ",
               serverConnection.getName()), e);
         }
       }
@@ -382,15 +384,14 @@ public abstract class BaseCommand implements Command {
     if (!crHelper.isShutdown()) {
       if (potentialModification) {
         int transId = msg != null ? msg.getTransactionId() : Integer.MIN_VALUE;
-        logger.warn(LocalizedMessage.create(
-            LocalizedStrings.BaseCommand_0_UNEXPECTED_SHUTDOWNEXCEPTION_DURING_OPERATION_ON_REGION_1_KEY_2_MESSAGEID_3,
+        logger.warn(String.format(
+            "%s: Unexpected ShutdownException during operation on region: %s key: %s messageId: %s",
             new Object[] {serverConnection.getName(), serverConnection.getModRegion(),
                 serverConnection.getModKey(), transId}),
             e);
       } else {
-        logger.warn(
-            LocalizedMessage.create(LocalizedStrings.BaseCommand_0_UNEXPECTED_SHUTDOWNEXCEPTION,
-                serverConnection.getName()),
+        logger.warn(String.format("%s: Unexpected ShutdownException: ",
+            serverConnection.getName()),
             e);
       }
     }
@@ -421,8 +422,8 @@ public abstract class BaseCommand implements Command {
         if (potentialModification) {
           int transId = msg != null ? msg.getTransactionId() : Integer.MIN_VALUE;
           if (!wroteExceptionResponse) {
-            logger.warn(LocalizedMessage.create(
-                LocalizedStrings.BaseCommand_0_UNEXPECTED_EXCEPTION_DURING_OPERATION_ON_REGION_1_KEY_2_MESSAGEID_3,
+            logger.warn(String.format(
+                "%s: Unexpected Exception during operation on region: %s key: %s messageId: %s",
                 new Object[] {serverConnection.getName(), serverConnection.getModRegion(),
                     serverConnection.getModKey(), transId}),
                 e);
@@ -435,7 +436,7 @@ public abstract class BaseCommand implements Command {
           }
         } else {
           if (!wroteExceptionResponse) {
-            logger.warn(LocalizedMessage.create(LocalizedStrings.BaseCommand_0_UNEXPECTED_EXCEPTION,
+            logger.warn(String.format("%s: Unexpected Exception",
                 serverConnection.getName()), e);
           } else {
             if (logger.isDebugEnabled()) {
@@ -462,9 +463,8 @@ public abstract class BaseCommand implements Command {
     try {
       try {
         if (th instanceof Error) {
-          logger.fatal(
-              LocalizedMessage.create(LocalizedStrings.BaseCommand_0_UNEXPECTED_ERROR_ON_SERVER,
-                  serverConnection.getName()),
+          logger.fatal(String.format("%s : Unexpected Error on server",
+              serverConnection.getName()),
               th);
         }
         if (requiresResponse && !responded) {
@@ -479,13 +479,13 @@ public abstract class BaseCommand implements Command {
         if (!(th instanceof Error || th instanceof CacheLoaderException)) {
           if (potentialModification) {
             int transId = msg != null ? msg.getTransactionId() : Integer.MIN_VALUE;
-            logger.warn(LocalizedMessage.create(
-                LocalizedStrings.BaseCommand_0_UNEXPECTED_EXCEPTION_DURING_OPERATION_ON_REGION_1_KEY_2_MESSAGEID_3,
+            logger.warn(String.format(
+                "%s: Unexpected Exception during operation on region: %s key: %s messageId: %s",
                 new Object[] {serverConnection.getName(), serverConnection.getModRegion(),
                     serverConnection.getModKey(), transId}),
                 th);
           } else {
-            logger.warn(LocalizedMessage.create(LocalizedStrings.BaseCommand_0_UNEXPECTED_EXCEPTION,
+            logger.warn(String.format("%s: Unexpected Exception",
                 serverConnection.getName()), th);
           }
         }
@@ -584,8 +584,7 @@ public abstract class BaseCommand implements Command {
       if (msg == null) {
         msg = theException.toString();
       }
-      logger.fatal(
-          LocalizedMessage.create(LocalizedStrings.BaseCommand_SEVERE_CACHE_EXCEPTION_0, msg));
+      logger.fatal("Severe cache exception : {}", msg);
     }
     errorMsg.addObjPart(theException);
     errorMsg.addStringPart(getExceptionTrace(theException));
@@ -605,8 +604,7 @@ public abstract class BaseCommand implements Command {
     errorMsg.setNumberOfParts(1);
     errorMsg.setTransactionId(origMsg.getTransactionId());
     errorMsg.addStringPart(
-        LocalizedStrings.BaseCommand_INVALID_DATA_RECEIVED_PLEASE_SEE_THE_CACHE_SERVER_LOG_FILE_FOR_ADDITIONAL_DETAILS
-            .toLocalizedString());
+        "Invalid data received. Please see the cache server log file for additional details.");
     errorMsg.send(serverConnection);
   }
 
@@ -903,7 +901,7 @@ public abstract class BaseCommand implements Command {
       sendRegisterInterestResponseChunk(region, riKey, new ArrayList(), true, servConn);
       return;
     }
-    if (policy.isKeysValues() && servConn.getClientVersion().compareTo(Version.GFE_80) >= 0) {
+    if (policy.isKeysValues() && servConn.getClientVersion().isNotOlderThan(Version.GFE_80)) {
       handleKeysValuesPolicy(region, riKey, interestType, serializeValues, servConn);
       return;
     }
@@ -920,11 +918,11 @@ public abstract class BaseCommand implements Command {
       case InterestType.OQL_QUERY:
         // Not supported yet
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_NOT_YET_SUPPORTED.toLocalizedString());
+            "not yet supported");
 
       case InterestType.FILTER_CLASS:
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_NOT_YET_SUPPORTED.toLocalizedString());
+            "not yet supported");
 
       case InterestType.REGULAR_EXPRESSION:
         String regEx = (String) riKey;
@@ -945,7 +943,7 @@ public abstract class BaseCommand implements Command {
 
       default:
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_UNKNOWN_INTEREST_TYPE.toLocalizedString());
+            "unknown interest type");
     }
   }
 
@@ -963,11 +961,11 @@ public abstract class BaseCommand implements Command {
     switch (interestType) {
       case InterestType.OQL_QUERY:
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_NOT_YET_SUPPORTED.toLocalizedString());
+            "not yet supported");
 
       case InterestType.FILTER_CLASS:
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_NOT_YET_SUPPORTED.toLocalizedString());
+            "not yet supported");
 
       case InterestType.REGULAR_EXPRESSION:
         String regEx = (String) riKey;
@@ -988,7 +986,7 @@ public abstract class BaseCommand implements Command {
 
       default:
         throw new InternalGemFireError(
-            LocalizedStrings.BaseCommand_UNKNOWN_INTEREST_TYPE.toLocalizedString());
+            "unknown interest type");
     }
   }
 
@@ -1020,7 +1018,7 @@ public abstract class BaseCommand implements Command {
   private static boolean sendTombstonesInRIResults(ServerConnection servConn,
       InterestResultPolicy policy) {
     return policy == InterestResultPolicy.KEYS_VALUES
-        && servConn.getClientVersion().compareTo(Version.GFE_80) >= 0;
+        && servConn.getClientVersion().isNotOlderThan(Version.GFE_80);
   }
 
   /**

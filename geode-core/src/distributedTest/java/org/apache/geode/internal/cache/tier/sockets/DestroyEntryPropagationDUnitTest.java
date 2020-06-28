@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.cache.client.PoolManager.find;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
@@ -51,12 +53,12 @@ import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.EventIDHolder;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -199,6 +201,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
     // Wait for 10 seconds to allow fail over. This would mean that Interest
     // has failed over to Server2.
     vm2.invoke(new CacheSerializableRunnable("Wait for server on port1 to be dead") {
+      @Override
       public void run2() throws CacheException {
         Region r = cache.getRegion(REGION_NAME);
 
@@ -213,18 +216,20 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
         String poolName = r.getAttributes().getPoolName();
         assertNotNull(poolName);
-        final PoolImpl pool = (PoolImpl) PoolManager.find(poolName);
+        final PoolImpl pool = (PoolImpl) find(poolName);
         assertNotNull(pool);
         WaitCriterion ev = new WaitCriterion() {
+          @Override
           public boolean done() {
             return pool.getConnectedServerCount() != 2;
           }
 
+          @Override
           public String description() {
             return null;
           }
         };
-        Wait.waitForCriterion(ev, maxWaitTime, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
       }
     });
 
@@ -233,22 +238,25 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
     vm0.invoke(() -> DestroyEntryPropagationDUnitTest.startServer(new Integer(PORT1)));
 
     vm2.invoke(new CacheSerializableRunnable("Wait for server on port1 to spring to life") {
+      @Override
       public void run2() throws CacheException {
         Region r = cache.getRegion(REGION_NAME);
         String poolName = r.getAttributes().getPoolName();
         assertNotNull(poolName);
-        final PoolImpl pool = (PoolImpl) PoolManager.find(poolName);
+        final PoolImpl pool = (PoolImpl) find(poolName);
         assertNotNull(pool);
         WaitCriterion ev = new WaitCriterion() {
+          @Override
           public boolean done() {
             return pool.getConnectedServerCount() == 2;
           }
 
+          @Override
           public String description() {
             return null;
           }
         };
-        Wait.waitForCriterion(ev, maxWaitTime, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
       }
     });
 
@@ -265,7 +273,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
   private void acquireConnectionsAndDestroyEntriesK1andK2() {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       String poolName = r1.getAttributes().getPoolName();
       assertNotNull(poolName);
@@ -280,7 +288,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
       }
       assertNotNull(conn1);
       assertEquals(PORT2, conn1.getServer().getPort());
-      ServerRegionProxy srp = new ServerRegionProxy(Region.SEPARATOR + REGION_NAME, pool);
+      ServerRegionProxy srp = new ServerRegionProxy(SEPARATOR + REGION_NAME, pool);
       srp.destroyOnForTestsOnly(conn1, "key1", null, Operation.DESTROY,
           new EventIDHolder(new EventID(new byte[] {1}, 100000, 1)), null);
       srp.destroyOnForTestsOnly(conn1, "key2", null, Operation.DESTROY,
@@ -324,7 +332,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
    */
   private static void createEntriesK1andK2() {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r1);
       if (!r1.containsKey("key1")) {
         r1.create("key1", "key-1");
@@ -344,7 +352,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
    */
   private static void destroyEntriesK1andK2() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.destroy("key1");
       r.destroy("key2");
@@ -355,7 +363,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
   private static void verifyNoDestroyEntryInSender() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       assertNotNull(r.getEntry("key1"));
       assertNotNull(r.getEntry("key2"));
@@ -366,7 +374,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
   private static void verifyEntriesAreDestroyed() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       waitForDestroyEvent(r, "key1");
       assertNull(r.getEntry("key1"));
@@ -378,7 +386,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
   private static void verifyOnlyRegisteredEntriesAreDestroyed() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       waitForDestroyEvent(r, "key1");
       assertNull(r.getEntry("key1"));
@@ -392,16 +400,18 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
     final CertifiableTestCacheListener ccl =
         (CertifiableTestCacheListener) r.getAttributes().getCacheListener();
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        return ccl.destroys.contains(key);
+        return ccl.getDestroys().contains(key);
       }
 
+      @Override
       public String description() {
         return "waiting for destroy event for " + key;
       }
     };
-    Wait.waitForCriterion(ev, 10 * 1000, 200, true);
-    ccl.destroys.remove(key);
+    GeodeAwaitility.await().untilAsserted(ev);
+    ccl.getDestroys().remove(key);
   }
 
   private static void createClientCache(String host, Integer port1, Integer port2)
@@ -428,7 +438,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setPoolName(p.getName());
-    factory.setCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+    factory.setCacheListener(new CertifiableTestCacheListener());
     RegionAttributes attrs = factory.create();
     cache.createRegion(REGION_NAME, attrs);
 
@@ -439,7 +449,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setDataPolicy(DataPolicy.REPLICATE);
-    factory.setCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+    factory.setCacheListener(new CertifiableTestCacheListener());
     RegionAttributes attrs = factory.create();
     cache.createRegion(REGION_NAME, attrs);
 
@@ -453,7 +463,7 @@ public class DestroyEntryPropagationDUnitTest extends JUnit4DistributedTestCase 
 
   private static void registerKey1() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       List list = new ArrayList();
       list.add("key1");

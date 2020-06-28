@@ -14,14 +14,13 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.geode.cache.RegionShortcut.REPLICATE;
 import static org.apache.geode.cache.client.ClientRegionShortcut.LOCAL;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.apache.geode.test.dunit.VM.getHostName;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -134,7 +133,7 @@ public class HARegionQueueStatsCloseRegressionTest implements Serializable {
     clientCacheRule.createClientCache();
 
     Pool pool = PoolManager.createFactory().addServer(hostName, port).setSubscriptionEnabled(true)
-        .setThreadLocalConnections(true).setReadTimeout(10000).setSocketBufferSize(32768)
+        .setReadTimeout(10000).setSocketBufferSize(32768)
         .setMinConnections(3).setSubscriptionRedundancy(-1).create(uniqueName);
 
     ClientRegionFactory<Object, ?> clientRegionFactory =
@@ -177,7 +176,7 @@ public class HARegionQueueStatsCloseRegressionTest implements Serializable {
   }
 
   private void verifyDispatchedMessagesMapIsEmpty() {
-    await().atMost(1, MINUTES)
+    await()
         .untilAsserted(
             () -> assertThat(HARegionQueue.getDispatchedMessagesMapForTesting()).isEmpty());
   }

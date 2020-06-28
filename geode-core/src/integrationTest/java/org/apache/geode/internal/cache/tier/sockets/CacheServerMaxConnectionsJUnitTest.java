@@ -41,7 +41,7 @@ import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
-import org.apache.geode.test.dunit.Wait;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 
@@ -92,7 +92,6 @@ public class CacheServerMaxConnectionsJUnitTest {
     pf.addServer("localhost", PORT);
     pf.setMinConnections(0);
     pf.setPingInterval(10000);
-    pf.setThreadLocalConnections(true);
     pf.setReadTimeout(2000);
     pf.setSocketBufferSize(32768);
     proxy = (PoolImpl) pf.create("junitPool");
@@ -147,15 +146,17 @@ public class CacheServerMaxConnectionsJUnitTest {
       this.system.getLogWriter().info("acquired connection[" + i + "]=" + cnxs[i]);
     }
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return s.getInt("currentClientConnections") == MAX_CNXS;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     assertEquals(MAX_CNXS, s.getInt("currentClientConnections"));
     assertEquals(1, s.getInt("currentClients"));
     this.system.getLogWriter().info(
@@ -185,15 +186,17 @@ public class CacheServerMaxConnectionsJUnitTest {
       cnxs[i].close(false);
     }
     ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return s.getInt("currentClients") == 0;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 3 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     this.system.getLogWriter().info("currentClients=" + s.getInt("currentClients")
         + " currentClientConnections=" + s.getInt("currentClientConnections"));
     assertEquals(0, s.getInt("currentClientConnections"));

@@ -14,9 +14,11 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -33,7 +35,6 @@ import org.apache.geode.cache.client.Pool;
 import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * Tests the proper intialization of redundancyLevel property.
@@ -42,9 +43,9 @@ import org.apache.geode.util.test.TestUtil;
 @Category({ClientSubscriptionTest.class})
 public class RedundancyLevelJUnitTest {
   private static final String expectedRedundantErrorMsg =
-      "Could not find any server to create redundant client queue on.";
+      "Could not find any server to host redundant client queue.";
   private static final String expectedPrimaryErrorMsg =
-      "Could not find any server to create primary client queue on.";
+      "Could not find any server to host primary client queue.";
 
   final String expected =
       "Could not initialize a primary queue on startup. No queue servers available";
@@ -87,7 +88,9 @@ public class RedundancyLevelJUnitTest {
    */
   @Test
   public void testRedundancyLevelSetThroughXML() {
-    String path = TestUtil.getResourcePath(getClass(), "RedundancyLevelJUnitTest.xml");
+    String path =
+        createTempFileFromResource(getClass(), "RedundancyLevelJUnitTest.xml")
+            .getAbsolutePath();
 
     Properties p = new Properties();
     p.setProperty(MCAST_PORT, "0");
@@ -109,7 +112,7 @@ public class RedundancyLevelJUnitTest {
 
       cache = CacheFactory.create(system);
       assertNotNull("cache was null", cache);
-      Region region = cache.getRegion("/root/exampleRegion");
+      Region region = cache.getRegion(SEPARATOR + "root" + SEPARATOR + "exampleRegion");
       assertNotNull(region);
       Pool pool = PoolManager.find("clientPool");
       assertEquals("Redundancy level not matching the one specified in cache-xml", 6,

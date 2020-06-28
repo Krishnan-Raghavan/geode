@@ -44,9 +44,11 @@ import org.apache.geode.internal.cache.ha.HARegionQueue;
 import org.apache.geode.internal.cache.ha.ThreadIdentifier;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.HAEventWrapper;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.statistics.StatisticsClock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This region is being implemented to suppress distribution of puts and to allow localDestroys on
@@ -91,10 +93,11 @@ public class HARegion extends DistributedRegion {
   private volatile HARegionQueue owningQueue;
 
   private HARegion(String regionName, RegionAttributes attrs, LocalRegion parentRegion,
-      InternalCache cache) {
+      InternalCache cache, StatisticsClock statisticsClock) {
     super(regionName, attrs, parentRegion, cache,
         new InternalRegionArguments().setDestroyLockFlag(true).setRecreateFlag(false)
-            .setSnapshotInputStream(null).setImageTarget(null));
+            .setSnapshotInputStream(null).setImageTarget(null),
+        statisticsClock);
     this.haRegionStats = new DummyCachePerfStats();
   }
 
@@ -123,7 +126,7 @@ public class HARegion extends DistributedRegion {
    *
    */
   @Override
-  protected void checkIfReplicatedAndLocalDestroy(EntryEventImpl event) {}
+  void checkIfReplicatedAndLocalDestroy(EntryEventImpl event) {}
 
   @Override
   void checkEntryTimeoutAction(String mode, ExpirationAction ea) {}
@@ -140,18 +143,16 @@ public class HARegion extends DistributedRegion {
     // checkReadiness();
     if (timeToLive == null) {
       throw new IllegalArgumentException(
-          LocalizedStrings.HARegion_TIMETOLIVE_MUST_NOT_BE_NULL.toLocalizedString());
+          "timeToLive must not be null");
     }
     if ((timeToLive.getAction() == ExpirationAction.LOCAL_DESTROY
         && this.getDataPolicy().withReplication())) {
       throw new IllegalArgumentException(
-          LocalizedStrings.HARegion_TIMETOLIVE_ACTION_IS_INCOMPATIBLE_WITH_THIS_REGIONS_MIRROR_TYPE
-              .toLocalizedString());
+          "timeToLive action is incompatible with this region's mirror type");
     }
     if (!this.statisticsEnabled) {
       throw new IllegalStateException(
-          LocalizedStrings.HARegion_CANNOT_SET_TIME_TO_LIVE_WHEN_STATISTICS_ARE_DISABLED
-              .toLocalizedString());
+          "Cannot set time to live when statistics are disabled");
     }
     ExpirationAttributes oldAttrs = getEntryTimeToLive();
     this.entryTimeToLive = timeToLive.getTimeout();
@@ -247,10 +248,10 @@ public class HARegion extends DistributedRegion {
    * @throws RegionExistsException if a region of the same name exists in the same Cache
    */
   public static HARegion getInstance(String regionName, InternalCache cache, HARegionQueue hrq,
-      RegionAttributes ra)
+      RegionAttributes ra, StatisticsClock statisticsClock)
       throws TimeoutException, RegionExistsException, IOException, ClassNotFoundException {
 
-    HARegion haRegion = new HARegion(regionName, ra, null, cache);
+    HARegion haRegion = new HARegion(regionName, ra, null, cache, statisticsClock);
     haRegion.setOwner(hrq);
     Region region = cache.createVMRegion(regionName, ra,
         new InternalRegionArguments().setInternalMetaRegion(haRegion).setDestroyLockFlag(true)
@@ -345,7 +346,7 @@ public class HARegion extends DistributedRegion {
    *
    */
   @Override
-  protected Object findObjectInSystem(KeyInfo keyInfo, boolean isCreate, TXStateInterface txState,
+  Object findObjectInSystem(KeyInfo keyInfo, boolean isCreate, TXStateInterface txState,
       boolean generateCallbacks, Object localValue, boolean disableCopyOnRead, boolean preferCD,
       ClientProxyMembershipID requestingClient, EntryEventImpl clientEvent,
       boolean returnTombstones) throws CacheLoaderException, TimeoutException {
@@ -455,7 +456,7 @@ public class HARegion extends DistributedRegion {
    *
    */
   @Override
-  public void recordEventState(InternalDistributedMember sender, Map eventState) {
+  void recordEventState(InternalDistributedMember sender, Map eventState) {
     if (eventState != null && this.owningQueue != null) {
       this.owningQueue.recordEventState(sender, eventState);
     }
@@ -525,8 +526,8 @@ public class HARegion extends DistributedRegion {
     }
 
     public static class HAProfile extends CacheProfile {
-      private static int HAS_REGISTERED_INTEREST_BIT = 0x01;
-      private static int IS_PRIMARY_BIT = 0x02;
+      private static final int HAS_REGISTERED_INTEREST_BIT = 0x01;
+      private static final int IS_PRIMARY_BIT = 0x02;
 
       boolean hasRegisteredInterest;
 
@@ -548,8 +549,9 @@ public class HARegion extends DistributedRegion {
        * DataInput)
        */
       @Override
-      public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-        super.fromData(in);
+      public void fromData(DataInput in,
+          DeserializationContext context) throws IOException, ClassNotFoundException {
+        super.fromData(in, context);
         int flags = in.readByte();
         hasRegisteredInterest = (flags & HAS_REGISTERED_INTEREST_BIT) != 0;
         isPrimary = (flags & IS_PRIMARY_BIT) != 0;
@@ -562,8 +564,9 @@ public class HARegion extends DistributedRegion {
        * DataOutput)
        */
       @Override
-      public void toData(DataOutput out) throws IOException {
-        super.toData(out);
+      public void toData(DataOutput out,
+          SerializationContext context) throws IOException {
+        super.toData(out, context);
         int flags = 0;
         if (hasRegisteredInterest) {
           flags |= HAS_REGISTERED_INTEREST_BIT;

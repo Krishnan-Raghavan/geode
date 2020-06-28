@@ -18,11 +18,13 @@ package org.apache.geode.cache.lucene.internal.distributed;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Set;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.Query;
 
+import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.execute.FunctionContext;
@@ -43,15 +45,16 @@ import org.apache.geode.cache.lucene.internal.repository.IndexRepository;
 import org.apache.geode.cache.lucene.internal.repository.IndexResultCollector;
 import org.apache.geode.cache.lucene.internal.repository.RepositoryManager;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.BucketNotFoundException;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PrimaryBucketException;
 import org.apache.geode.internal.cache.execute.InternalFunction;
 import org.apache.geode.internal.cache.execute.InternalFunctionInvocationTargetException;
 import org.apache.geode.internal.cache.execute.PartitionedRegionFunctionResultSender;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.management.internal.security.ResourcePermissions;
+import org.apache.geode.security.ResourcePermission;
 
 /**
  * {@link LuceneQueryFunction} coordinates text search on a member. It receives text search query
@@ -71,11 +74,12 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
       PartitionedRegionFunctionResultSender resultSender =
           (PartitionedRegionFunctionResultSender) context.getResultSender();
       Version clientVersion = resultSender.getClientVersion();
-      if (clientVersion != null) { // is a client server connection
-        if (clientVersion.ordinal() < Version.GEODE_160.ordinal()) {
-          execute(context, true);
-          return;
-        }
+      if (LuceneServiceImpl.LUCENE_REINDEX == false
+          || (clientVersion != null && clientVersion
+              .ordinal() < LuceneServiceImpl.LUCENE_REINDEX_ENABLED_VERSION_ORDINAL)) {
+        // is a client server connection (or reindex disabled)
+        execute(context, true);
+        return;
       }
     }
     execute(context, false);
@@ -92,7 +96,7 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
     // Hence the query waits for the repositories to be ready instead of throwing the exception
     if (!remoteMembers.isEmpty()) {
       for (InternalDistributedMember remoteMember : remoteMembers) {
-        if (remoteMember.getVersionObject().ordinal() < Version.GEODE_160.ordinal()) {
+        if (remoteMember.getVersionObject().ordinal() < Version.GEODE_1_6_0.ordinal()) {
           // re-execute but wait till indexing is complete
           execute(ctx, true);
           return;
@@ -102,8 +106,7 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
     // Cannot send IndexingInProgressException as the function may have been executed a new server
     // on behalf of an old version client.
     throw new FunctionException(new LuceneQueryException(
-        LocalizedStrings.LuceneQueryException_INDEX_NOT_AVAILABLE_CURRENTLY_INDEXING
-            .toLocalizedString()));
+        "Lucene Index is not available, currently indexing"));
   }
 
   public void execute(FunctionContext<LuceneFunctionContext> context, boolean waitForRepository) {
@@ -123,7 +126,7 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
       throw new IllegalArgumentException("Missing query provider");
     }
 
-    InternalLuceneIndex index = getLuceneIndex(region, searchContext);
+    InternalLuceneIndex index = getLuceneIndex(context.getCache(), region, searchContext);
     if (index == null) {
       throw new LuceneIndexNotFoundException(searchContext.getIndexName(), region.getFullPath());
     }
@@ -137,7 +140,7 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
     }
 
     int resultLimit = searchContext.getLimit();
-    CollectorManager manager = (searchContext == null) ? null : searchContext.getCollectorManager();
+    CollectorManager manager = searchContext.getCollectorManager();
     if (manager == null) {
       manager = new TopEntriesCollectorManager(null, resultLimit);
     }
@@ -175,15 +178,14 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
       } else {
         logger.warn("The lucene query should have waited for the index to be created");
         throw new FunctionException(new LuceneQueryException(
-            LocalizedStrings.LuceneQueryException_INDEX_NOT_AVAILABLE_CURRENTLY_INDEXING
-                .toLocalizedString()));
+            "Lucene Index is not available, currently indexing"));
       }
     }
   }
 
-  private InternalLuceneIndex getLuceneIndex(final Region region,
+  private InternalLuceneIndex getLuceneIndex(final Cache cache, final Region region,
       final LuceneFunctionContext<IndexResultCollector> searchContext) {
-    LuceneService service = LuceneServiceProvider.get(region.getCache());
+    LuceneService service = LuceneServiceProvider.get(cache);
     InternalLuceneIndex index = null;
     try {
       index = (InternalLuceneIndex) service.getIndex(searchContext.getIndexName(),
@@ -196,7 +198,7 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
           } catch (InterruptedException e) {
             return null;
           }
-          region.getCache().getCancelCriterion().checkCancelInProgress(null);
+          cache.getCancelCriterion().checkCancelInProgress(null);
         }
         index = (InternalLuceneIndex) service.getIndex(searchContext.getIndexName(),
             region.getFullPath());
@@ -229,5 +231,10 @@ public class LuceneQueryFunction implements InternalFunction<LuceneFunctionConte
   @Override
   public boolean optimizeForWrite() {
     return true;
+  }
+
+  @Override
+  public Collection<ResourcePermission> getRequiredPermissions(String regionName) {
+    return Collections.singletonList(ResourcePermissions.DATA_READ);
   }
 }

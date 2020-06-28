@@ -32,10 +32,8 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.DiskAccessException;
-import org.apache.geode.cache.UnsupportedVersionException;
 import org.apache.geode.internal.ExitCode;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CountingDataInputStream;
 import org.apache.geode.internal.cache.DiskInitFile;
 import org.apache.geode.internal.cache.DiskInitFile.DiskRegionFlag;
@@ -43,9 +41,10 @@ import org.apache.geode.internal.cache.DiskStoreImpl;
 import org.apache.geode.internal.cache.Oplog.OPLOG_TYPE;
 import org.apache.geode.internal.cache.ProxyBucketRegion;
 import org.apache.geode.internal.cache.versions.RegionVersionHolder;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.UnsupportedSerializationVersionException;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class DiskInitFileParser {
   private static final Logger logger = LogService.getLogger();
@@ -434,10 +433,10 @@ public class DiskInitFileParser {
                 ver);
           }
           try {
-            gfversion = Version.fromOrdinal(ver, false);
-          } catch (UnsupportedVersionException e) {
+            gfversion = Version.fromOrdinal(ver);
+          } catch (UnsupportedSerializationVersionException e) {
             throw new DiskAccessException(
-                LocalizedStrings.Oplog_UNEXPECTED_PRODUCT_VERSION_0.toLocalizedString(ver), e,
+                String.format("Unknown version ordinal %s found when recovering Oplogs", ver), e,
                 this.interpreter.getNameForError());
           }
           interpreter.cmnGemfireVersion(gfversion);
@@ -476,7 +475,7 @@ public class DiskInitFileParser {
           break;
         default:
           throw new DiskAccessException(
-              LocalizedStrings.DiskInitFile_UNKNOWN_OPCODE_0_FOUND.toLocalizedString(opCode),
+              String.format("Unknown opCode %s found in disk initialization file.", opCode),
               this.interpreter.getNameForError());
       }
       if (interpreter.isClosing()) {

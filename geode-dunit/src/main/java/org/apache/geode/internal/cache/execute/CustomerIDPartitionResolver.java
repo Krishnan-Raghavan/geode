@@ -15,6 +15,7 @@
 package org.apache.geode.internal.cache.execute;
 
 import java.io.Serializable;
+import java.util.Objects;
 
 import org.apache.geode.cache.EntryOperation;
 import org.apache.geode.cache.PartitionResolver;
@@ -36,10 +37,12 @@ public class CustomerIDPartitionResolver implements PartitionResolver {
     id = resolverID;
   }
 
+  @Override
   public String getName() {
     return this.resolverName;
   }
 
+  @Override
   public Serializable getRoutingObject(EntryOperation opDetails) {
 
     Serializable routingbject = null;
@@ -58,6 +61,7 @@ public class CustomerIDPartitionResolver implements PartitionResolver {
     return routingbject;
   }
 
+  @Override
   public void close() {}
 
   public boolean equals(Object o) {
@@ -70,6 +74,11 @@ public class CustomerIDPartitionResolver implements PartitionResolver {
     CustomerIDPartitionResolver otherCustomerIDPartitionResolver = (CustomerIDPartitionResolver) o;
     return otherCustomerIDPartitionResolver.id.equals(this.id);
 
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(id);
   }
 
 }

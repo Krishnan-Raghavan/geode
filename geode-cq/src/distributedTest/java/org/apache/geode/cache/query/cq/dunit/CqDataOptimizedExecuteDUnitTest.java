@@ -16,7 +16,7 @@ package org.apache.geode.cache.query.cq.dunit;
 
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.SerializableRunnable;
@@ -39,6 +39,7 @@ public class CqDataOptimizedExecuteDUnitTest extends CqDataDUnitTest {
     // disconnects.
     IgnoredException.addIgnoredException("Connection reset");
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = false;
       }
@@ -48,6 +49,7 @@ public class CqDataOptimizedExecuteDUnitTest extends CqDataDUnitTest {
   @Override
   public final void preTearDownCacheTestCase() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = true;
       }

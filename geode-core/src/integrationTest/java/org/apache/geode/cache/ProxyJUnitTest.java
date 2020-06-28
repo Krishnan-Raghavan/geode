@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
@@ -39,7 +40,6 @@ import org.apache.geode.internal.cache.CachePerfStats;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
-import org.apache.geode.internal.util.StopWatch;
 
 /**
  * Unit test for basic DataPolicy.EMPTY feature. NOTE: these tests using a loner DistributedSystem
@@ -152,26 +152,32 @@ public class ProxyJUnitTest {
       assertEquals(isDistributed(), other.getOperation().isDistributed());
     }
 
+    @Override
     public Region getRegion() {
       return this.r;
     }
 
+    @Override
     public Operation getOperation() {
       return this.op;
     }
 
+    @Override
     public Object getCallbackArgument() {
       return this.cbArg;
     }
 
+    @Override
     public boolean isCallbackArgumentAvailable() {
       return true;
     }
 
+    @Override
     public boolean isOriginRemote() {
       return false;
     }
 
+    @Override
     public DistributedMember getDistributedMember() {
       return c.getDistributedSystem().getDistributedMember();
     }
@@ -202,20 +208,24 @@ public class ProxyJUnitTest {
 
     public Object key;
 
+    @Override
     public Object getKey() {
       return this.key;
     }
 
+    @Override
     public Object getOldValue() {
       return null;
     }
 
+    @Override
     public boolean isOldValueAvailable() {
       return true;
     }
 
     public Object newValue;
 
+    @Override
     public Object getNewValue() {
       return this.newValue;
     }
@@ -238,6 +248,7 @@ public class ProxyJUnitTest {
 
     public TransactionId txId;
 
+    @Override
     public TransactionId getTransactionId() {
       return this.txId;
     }
@@ -246,6 +257,7 @@ public class ProxyJUnitTest {
       return hasClientOrigin();
     }
 
+    @Override
     public boolean hasClientOrigin() {
       return false;
     }
@@ -255,10 +267,12 @@ public class ProxyJUnitTest {
       return null;
     }
 
+    @Override
     public SerializedCacheValue getSerializedOldValue() {
       return null;
     }
 
+    @Override
     public SerializedCacheValue getSerializedNewValue() {
       return null;
     }
@@ -272,6 +286,7 @@ public class ProxyJUnitTest {
       assertEquals(isReinitializing(), other.isReinitializing());
     }
 
+    @Override
     public boolean isReinitializing() {
       return false;
     }
@@ -337,81 +352,97 @@ public class ProxyJUnitTest {
 
   private void setCallbacks(AttributesFactory af) {
     CacheListener cl1 = new CacheListener() {
+      @Override
       public void afterUpdate(EntryEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterCreate(EntryEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterInvalidate(EntryEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterDestroy(EntryEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterRegionInvalidate(RegionEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterRegionDestroy(RegionEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterRegionClear(RegionEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterRegionCreate(RegionEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void afterRegionLive(RegionEvent e) {
         clLastEvent = e;
         clInvokeCount++;
       }
 
+      @Override
       public void close() {
         clClosed = true;
       }
     };
     CacheWriter cw = new CacheWriter() {
+      @Override
       public void beforeUpdate(EntryEvent e) throws CacheWriterException {
         cwLastEvent = e;
         cwInvokeCount++;
       }
 
+      @Override
       public void beforeCreate(EntryEvent e) throws CacheWriterException {
         cwLastEvent = e;
         cwInvokeCount++;
       }
 
+      @Override
       public void beforeDestroy(EntryEvent e) throws CacheWriterException {
         cwLastEvent = e;
         cwInvokeCount++;
       }
 
+      @Override
       public void beforeRegionDestroy(RegionEvent e) throws CacheWriterException {
         cwLastEvent = e;
         cwInvokeCount++;
       }
 
+      @Override
       public void beforeRegionClear(RegionEvent e) throws CacheWriterException {
         cwLastEvent = e;
         cwInvokeCount++;
       }
 
+      @Override
       public void close() {
         cwClosed = true;
       }
@@ -420,11 +451,13 @@ public class ProxyJUnitTest {
     af.setCacheWriter(cw);
     {
       TransactionListener tl = new TransactionListenerAdapter() {
+        @Override
         public void afterCommit(TransactionEvent e) {
           tlLastEvents = e.getEvents();
           tlInvokeCount++;
         }
 
+        @Override
         public void close() {
           tlClosed = true;
         };
@@ -455,7 +488,7 @@ public class ProxyJUnitTest {
     checkCL(expre);
 
     assertEquals("r", r.getName());
-    assertEquals("/r", r.getFullPath());
+    assertEquals(SEPARATOR + "r", r.getFullPath());
     assertEquals(null, r.getParentRegion());
     assertEquals(DataPolicy.EMPTY, r.getAttributes().getDataPolicy());
     r.getAttributesMutator();
@@ -589,7 +622,7 @@ public class ProxyJUnitTest {
       checkNoCW();
       checkCL(expre);
       assertEquals("sr", sr.getName());
-      assertEquals("/r/sr", sr.getFullPath());
+      assertEquals(SEPARATOR + "r" + SEPARATOR + "sr", sr.getFullPath());
       assertEquals(r, sr.getParentRegion());
       assertEquals(sr, r.getSubregion("sr"));
       assertEquals(Collections.singleton(sr), r.subregions(false));
@@ -610,13 +643,11 @@ public class ProxyJUnitTest {
     ExpectedEntryEvent expee = new ExpectedEntryEvent();
     expee.r = r;
     expee.key = "key";
-    int creates = getStats().getCreates();
-    // int puts = getStats().getPuts();
-    // int updates = getStats().getUpdates();
-    int destroys = getStats().getDestroys();
-    int invalidates = getStats().getInvalidates();
-    int gets = getStats().getGets();
-    int misses = getStats().getMisses();
+    long creates = getStats().getCreates();
+    long destroys = getStats().getDestroys();
+    long invalidates = getStats().getInvalidates();
+    long gets = getStats().getGets();
+    long misses = getStats().getMisses();
 
     r.put("key", "value", cbArg);
     expee.op = Operation.CREATE;
@@ -764,10 +795,12 @@ public class ProxyJUnitTest {
     // check to see if a local loader works
     {
       CacheLoader cl = new CacheLoader() {
+        @Override
         public Object load(LoaderHelper helper) throws CacheLoaderException {
           return "loadedValue";
         }
 
+        @Override
         public void close() {}
       };
       r.getAttributesMutator().setCacheLoader(cl);
@@ -802,13 +835,10 @@ public class ProxyJUnitTest {
     checkNoCW();
     checkCL(expre);
 
-    int creates = getStats().getCreates();
-    // int puts = getStats().getPuts();
-    // int updates = getStats().getUpdates();
-    int destroys = getStats().getDestroys();
-    // int invalidates = getStats().getInvalidates();
-    int gets = getStats().getGets();
-    int misses = getStats().getMisses();
+    long creates = getStats().getCreates();
+    long destroys = getStats().getDestroys();
+    long gets = getStats().getGets();
+    long misses = getStats().getMisses();
     ExpectedEntryEvent expee = new ExpectedEntryEvent();
     expee.r = r;
     expee.key = "key";
@@ -894,13 +924,9 @@ public class ProxyJUnitTest {
     checkNoTL();
     checkCL(expre);
 
-    int creates = getStats().getCreates();
-    // int puts = getStats().getPuts();
-    // int updates = getStats().getUpdates();
-    int destroys = getStats().getDestroys();
-    int invalidates = getStats().getInvalidates();
-    // int gets = getStats().getGets();
-    // int misses = getStats().getMisses();
+    long creates = getStats().getCreates();
+    long destroys = getStats().getDestroys();
+    long invalidates = getStats().getInvalidates();
     ExpectedEntryEvent expee = new ExpectedEntryEvent();
     expee.r = r;
     expee.key = "key";
@@ -1024,6 +1050,7 @@ public class ProxyJUnitTest {
     AttributesFactory af = new AttributesFactory();
     af.setEvictionAttributes(EvictionAttributes.createLRUEntryAttributes(1));
     CacheListener cl1 = new CacheListenerAdapter() {
+      @Override
       public void afterDestroy(EntryEvent e) {
         clInvokeCount++;
       }
@@ -1038,112 +1065,6 @@ public class ProxyJUnitTest {
         fail("expected IllegalStateException");
       } catch (IllegalStateException expected) {
       }
-    }
-  }
-
-  /**
-   * Make sure a proxy region expiration behaves as expected
-   */
-  @Test
-  public void testExpiration() throws Exception {
-    System.setProperty(LocalRegion.EXPIRY_MS_PROPERTY, "true");
-    try {
-      // now make sure they don't on proxy
-      {
-        AttributesFactory af = new AttributesFactory();
-        af.setStatisticsEnabled(true);
-        af.setEntryIdleTimeout(new ExpirationAttributes(1, ExpirationAction.LOCAL_INVALIDATE));
-        af.setEntryTimeToLive(new ExpirationAttributes(2, ExpirationAction.LOCAL_DESTROY));
-        af.setDataPolicy(DataPolicy.EMPTY);
-        try {
-          af.create();
-          fail("expected IllegalStateException");
-        } catch (IllegalStateException expected) {
-        }
-      }
-
-      // make sure regionIdleTimeout works on proxy
-      {
-        CacheListener cl1 = new CacheListenerAdapter() {
-          public void afterRegionDestroy(RegionEvent e) {
-            clInvokeCount++;
-          }
-
-          public void afterRegionInvalidate(RegionEvent e) {
-            clInvokeCount++;
-          }
-        };
-        AttributesFactory af = new AttributesFactory();
-        af.setStatisticsEnabled(true);
-        final int EXPIRE_MS = 500;
-        af.setRegionIdleTimeout(
-            new ExpirationAttributes(EXPIRE_MS, ExpirationAction.LOCAL_DESTROY));
-        af.addCacheListener(cl1);
-        af.setDataPolicy(DataPolicy.EMPTY);
-        clearCallbackState();
-        Region r = this.c.createRegion("rEMPTY", af.create());
-        assertTrue(clInvokeCount == 0);
-        r.put("key", "value");
-        long endTime = System.currentTimeMillis() + (EXPIRE_MS * 2);
-        do {
-          r.get("key");
-        } while (System.currentTimeMillis() < endTime);
-        assertEquals(0, this.clInvokeCount);
-        Thread.sleep(EXPIRE_MS * 2);
-        boolean done = false;
-        try {
-          for (StopWatch time = new StopWatch(true); !done
-              && time.elapsedTimeMillis() < 1000; done = (ProxyJUnitTest.this.clInvokeCount == 1)) {
-            Thread.sleep(200);
-          }
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-        assertTrue("waiting for invocation", done);
-      }
-
-      // make sure regionTimeToLive works on proxy
-      {
-        CacheListener cl1 = new CacheListenerAdapter() {
-          public void afterRegionDestroy(RegionEvent e) {
-            clInvokeCount++;
-          }
-
-          public void afterRegionInvalidate(RegionEvent e) {
-            clInvokeCount++;
-          }
-        };
-        AttributesFactory af = new AttributesFactory();
-        af.setStatisticsEnabled(true);
-        final int EXPIRE_MS = 500;
-        af.setRegionTimeToLive(new ExpirationAttributes(EXPIRE_MS, ExpirationAction.LOCAL_DESTROY));
-        af.addCacheListener(cl1);
-        af.setDataPolicy(DataPolicy.EMPTY);
-        clearCallbackState();
-        Region r = this.c.createRegion("rEMPTY", af.create());
-        assertTrue(clInvokeCount == 0);
-        r.put("key", "value");
-        long endTime = System.currentTimeMillis() + (EXPIRE_MS * 2);
-        do {
-          r.put("key", "value");
-        } while (System.currentTimeMillis() < endTime);
-        assertEquals(0, this.clInvokeCount);
-        Thread.sleep(EXPIRE_MS * 2);
-        boolean done = false;
-        try {
-          for (StopWatch time = new StopWatch(true); !done
-              && time.elapsedTimeMillis() < 1000; done = (ProxyJUnitTest.this.clInvokeCount == 1)) {
-            Thread.sleep(200);
-          }
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-        assertTrue("waiting for invocation", done);
-      }
-
-    } finally {
-      System.clearProperty(LocalRegion.EXPIRY_MS_PROPERTY);
-      assertEquals(null, System.getProperty(LocalRegion.EXPIRY_MS_PROPERTY));
     }
   }
 

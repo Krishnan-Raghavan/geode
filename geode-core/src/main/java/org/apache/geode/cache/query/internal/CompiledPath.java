@@ -53,6 +53,7 @@ public class CompiledPath extends AbstractCompiledValue {
     return Collections.singletonList(this._receiver);
   }
 
+  @Override
   public int getType() {
     return PATH;
   }
@@ -94,6 +95,7 @@ public class CompiledPath extends AbstractCompiledValue {
   }
 
 
+  @Override
   public Object evaluate(ExecutionContext context) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     CompiledValue rcvr = getReceiver();
@@ -159,8 +161,18 @@ public class CompiledPath extends AbstractCompiledValue {
     return _tailID;
   }
 
+  @Override
   public CompiledValue getReceiver() {
     return _receiver;
+  }
+
+  @Override
+  public boolean hasIdentifierAtLeafNode() {
+    if (this._receiver.getType() == Identifier) {
+      return true;
+    } else {
+      return this._receiver.hasIdentifierAtLeafNode();
+    }
   }
 
   @Override

@@ -28,19 +28,17 @@ import org.apache.geode.InternalGemFireError;
 import org.apache.geode.distributed.DistributedSystemDisconnectedException;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DirectReplyProcessor;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.BucketRegion.RawValue;
 import org.apache.geode.internal.cache.CachedDeserializableFactory;
@@ -57,11 +55,15 @@ import org.apache.geode.internal.cache.Token;
 import org.apache.geode.internal.cache.VersionTagHolder;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.OffHeapHelper;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.BlobHelper;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * This message is used as the request for a
@@ -108,7 +110,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
   }
 
   private static final boolean ORDER_PR_GETS =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "order-pr-gets");
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "order-pr-gets");
 
   @Override
   public int getProcessorType() {
@@ -125,7 +127,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
         // processed in the p2p msg reader.
         if (pr.getAttributes().getDataPolicy().withPersistence()
             || !pr.getAttributes().getEvictionAttributes().getAlgorithm().isNone()) {
-          return ClusterDistributionManager.PARTITIONED_REGION_EXECUTOR;
+          return OperationExecutors.PARTITIONED_REGION_EXECUTOR;
         }
       } catch (PRLocallyDestroyedException ignore) {
       } catch (RuntimeException ignore) {
@@ -137,13 +139,13 @@ public class GetMessage extends PartitionMessageWithDirectReply {
       }
     }
     if (forceUseOfPRExecutor) {
-      return ClusterDistributionManager.PARTITIONED_REGION_EXECUTOR;
+      return OperationExecutors.PARTITIONED_REGION_EXECUTOR;
     } else if (ORDER_PR_GETS) {
-      return ClusterDistributionManager.PARTITIONED_REGION_EXECUTOR;
+      return OperationExecutors.PARTITIONED_REGION_EXECUTOR;
     } else {
       // Make this executor serial so that it will be processed in the p2p msg reader
       // which gives it better performance.
-      return ClusterDistributionManager.SERIAL_EXECUTOR;
+      return OperationExecutors.SERIAL_EXECUTOR;
     }
   }
 
@@ -191,8 +193,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
         } catch (DistributedSystemDisconnectedException sde) {
           sendReply(getSender(), this.processorId, dm,
               new ReplyException(new ForceReattemptException(
-                  LocalizedStrings.GetMessage_OPERATION_GOT_INTERRUPTED_DUE_TO_SHUTDOWN_IN_PROGRESS_ON_REMOTE_VM
-                      .toLocalizedString(),
+                  "Operation got interrupted due to shutdown in progress on remote VM.",
                   sde)),
               r, startTime);
           return false;
@@ -215,7 +216,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
         return false;
       } else {
         throw new InternalGemFireError(
-            LocalizedStrings.GetMessage_GET_MESSAGE_SENT_TO_WRONG_MEMBER.toLocalizedString());
+            "Get message sent to wrong member");
       }
     } finally {
       OffHeapHelper.release(val);
@@ -231,13 +232,15 @@ public class GetMessage extends PartitionMessageWithDirectReply {
         .append("; context=").append(this.context);
   }
 
+  @Override
   public int getDSFID() {
     return PR_GET_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.key = DataSerializer.readObject(in);
     this.cbArg = DataSerializer.readObject(in);
     this.context = DataSerializer.readObject(in);
@@ -245,8 +248,9 @@ public class GetMessage extends PartitionMessageWithDirectReply {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.key, out);
     DataSerializer.writeObject(this.cbArg, out);
     DataSerializer.writeObject(this.context, out);
@@ -260,8 +264,9 @@ public class GetMessage extends PartitionMessageWithDirectReply {
   }
 
   @Override
-  protected void setBooleans(short s, DataInput in) throws ClassNotFoundException, IOException {
-    super.setBooleans(s, in);
+  protected void setBooleans(short s, DataInput in,
+      DeserializationContext context) throws ClassNotFoundException, IOException {
+    super.setBooleans(s, in, context);
   }
 
   public void setKey(Object key) {
@@ -289,7 +294,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
     Set failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new ForceReattemptException(
-          LocalizedStrings.GetMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
 
     return p;
@@ -425,8 +430,9 @@ public class GetMessage extends PartitionMessageWithDirectReply {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       final boolean hasVersionTag = (this.versionTag != null);
       byte flags = this.valueType;
       if (hasVersionTag) {
@@ -444,8 +450,9 @@ public class GetMessage extends PartitionMessageWithDirectReply {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       byte flags = in.readByte();
       final boolean hasVersionTag;
       if ((hasVersionTag = (flags & VALUE_HAS_VERSION_TAG) != 0)) {
@@ -454,7 +461,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
       this.valueType = flags;
       this.valueInBytes = DataSerializer.readByteArray(in);
       if (flags != VALUE_IS_BYTES) {
-        this.remoteVersion = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+        this.remoteVersion = StaticSerialization.getVersionForDataStreamOrNull(in);
       }
       if (hasVersionTag) {
         this.versionTag = (VersionTag) DataSerializer.readObject(in);
@@ -555,12 +562,11 @@ public class GetMessage extends PartitionMessageWithDirectReply {
         return null;
       } catch (IOException e) {
         throw new ForceReattemptException(
-            LocalizedStrings.GetMessage_UNABLE_TO_DESERIALIZE_VALUE_IOEXCEPTION.toLocalizedString(),
+            "Unable to deserialize value (IOException)",
             e);
       } catch (ClassNotFoundException e) {
         throw new ForceReattemptException(
-            LocalizedStrings.GetMessage_UNABLE_TO_DESERIALIZE_VALUE_CLASSNOTFOUNDEXCEPTION
-                .toLocalizedString(),
+            "Unable to deserialize value (ClassNotFoundException)",
             e);
       }
     }
@@ -591,7 +597,7 @@ public class GetMessage extends PartitionMessageWithDirectReply {
       }
       if (!this.returnValueReceived) {
         throw new ForceReattemptException(
-            LocalizedStrings.GetMessage_NO_RETURN_VALUE_RECEIVED.toLocalizedString());
+            "no return value received");
       }
       return getValue(preferCD);
     }

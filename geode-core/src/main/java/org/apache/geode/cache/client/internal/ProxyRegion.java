@@ -44,6 +44,7 @@ import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.TypeMismatchException;
 import org.apache.geode.cache.snapshot.RegionSnapshotService;
 import org.apache.geode.internal.cache.snapshot.RegionSnapshotServiceImpl;
+import org.apache.geode.internal.statistics.StatisticsClock;
 
 /**
  * A wrapper class over an actual Region instance. This is used when the multiuser-authentication
@@ -56,16 +57,20 @@ public class ProxyRegion implements Region {
 
   private final ProxyCache proxyCache;
   private final Region realRegion;
+  private final StatisticsClock statisticsClock;
 
-  public ProxyRegion(ProxyCache proxyCache, Region realRegion) {
+  public ProxyRegion(ProxyCache proxyCache, Region realRegion, StatisticsClock statisticsClock) {
     this.proxyCache = proxyCache;
     this.realRegion = realRegion;
+    this.statisticsClock = statisticsClock;
   }
 
+  @Override
   public void becomeLockGrantor() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void clear() {
     try {
       preOp();
@@ -75,6 +80,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void close() {
     try {
       preOp();
@@ -84,6 +90,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean containsKey(Object key) {
     try {
       preOp();
@@ -93,6 +100,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean containsKeyOnServer(Object key) {
     try {
       preOp();
@@ -122,6 +130,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean containsValue(Object value) {
     try {
       preOp();
@@ -131,6 +140,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean containsValueForKey(Object key) {
     try {
       preOp();
@@ -140,6 +150,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void create(Object key, Object value)
       throws TimeoutException, EntryExistsException, CacheWriterException {
     try {
@@ -150,6 +161,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void create(Object key, Object value, Object callbackArgument)
       throws TimeoutException, EntryExistsException, CacheWriterException {
     try {
@@ -160,11 +172,13 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Region createSubregion(String subregionName, RegionAttributes regionAttributes)
       throws RegionExistsException, TimeoutException {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Object destroy(Object key)
       throws TimeoutException, EntryNotFoundException, CacheWriterException {
     try {
@@ -175,6 +189,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Object destroy(Object key, Object callbackArgument)
       throws TimeoutException, EntryNotFoundException, CacheWriterException {
     try {
@@ -185,6 +200,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void destroyRegion() throws CacheWriterException, TimeoutException {
     try {
       preOp();
@@ -194,6 +210,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void destroyRegion(Object callbackArgument) throws CacheWriterException, TimeoutException {
     try {
       preOp();
@@ -203,6 +220,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Set entrySet(boolean recursive) {
     try {
       preOp();
@@ -212,6 +230,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Set entrySet() {
     try {
       preOp();
@@ -221,6 +240,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean existsValue(String queryPredicate) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     try {
@@ -231,10 +251,12 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void forceRolling() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Object get(Object key) throws CacheLoaderException, TimeoutException {
     try {
       preOp();
@@ -244,6 +266,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Object get(Object key, Object callbackArgument)
       throws TimeoutException, CacheLoaderException {
     try {
@@ -254,10 +277,12 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Map getAll(Collection keys) {
     return getAll(keys, null);
   }
 
+  @Override
   public Map getAll(Collection keys, Object callback) {
     try {
       preOp();
@@ -267,18 +292,22 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public RegionAttributes getAttributes() {
     return realRegion.getAttributes();
   }
 
+  @Override
   public AttributesMutator getAttributesMutator() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Cache getCache() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public RegionService getRegionService() {
     return this.proxyCache;
   }
@@ -287,10 +316,12 @@ public class ProxyRegion implements Region {
     return this.proxyCache;
   }
 
+  @Override
   public Lock getDistributedLock(Object key) throws IllegalStateException {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Entry getEntry(Object key) {
     try {
       preOp();
@@ -300,43 +331,53 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public String getFullPath() {
     return this.realRegion.getFullPath();
   }
 
+  @Override
   public List getInterestList() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public List getInterestListRegex() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public String getName() {
     return this.realRegion.getName();
   }
 
+  @Override
   public Region getParentRegion() {
     return this.realRegion.getParentRegion();
   }
 
+  @Override
   public Lock getRegionDistributedLock() throws IllegalStateException {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public CacheStatistics getStatistics() throws StatisticsDisabledException {
     return this.realRegion.getStatistics();
   }
 
+  @Override
   public Region getSubregion(String path) {
     Region region = this.realRegion.getSubregion(path);
-    return region != null ? new ProxyRegion(this.proxyCache, region) : null;
+    return region != null ? new ProxyRegion(this.proxyCache, region, statisticsClock) : null;
   }
 
+  @Override
   public Object getUserAttribute() {
     return this.realRegion.getUserAttribute();
   }
 
+  @Override
   public void invalidate(Object key) throws TimeoutException, EntryNotFoundException {
     try {
       preOp();
@@ -346,6 +387,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void invalidate(Object key, Object callbackArgument)
       throws TimeoutException, EntryNotFoundException {
     try {
@@ -356,6 +398,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void invalidateRegion() throws TimeoutException {
     try {
       preOp();
@@ -365,6 +408,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void invalidateRegion(Object callbackArgument) throws TimeoutException {
     try {
       preOp();
@@ -374,14 +418,17 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public boolean isDestroyed() {
     return this.realRegion.isDestroyed();
   }
 
+  @Override
   public boolean isEmpty() {
     return this.realRegion.isEmpty();
   }
 
+  @Override
   public Set keySetOnServer() {
     try {
       preOp();
@@ -391,6 +438,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Set keySet() {
     try {
       preOp();
@@ -400,56 +448,67 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void loadSnapshot(InputStream inputStream)
       throws IOException, ClassNotFoundException, CacheWriterException, TimeoutException {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void localClear() {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localDestroy(Object key) throws EntryNotFoundException {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localDestroy(Object key, Object callbackArgument) throws EntryNotFoundException {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localDestroyRegion() {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localDestroyRegion(Object callbackArgument) {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localInvalidate(Object key) throws EntryNotFoundException {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localInvalidate(Object key, Object callbackArgument) throws EntryNotFoundException {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localInvalidateRegion() {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public void localInvalidateRegion(Object callbackArgument) {
     throw new UnsupportedOperationException(
         "Local operations are not supported when multiuser-authentication is true.");
   }
 
+  @Override
   public Object put(Object key, Object value) throws TimeoutException, CacheWriterException {
     try {
       preOp();
@@ -459,6 +518,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Object put(Object key, Object value, Object callbackArgument)
       throws TimeoutException, CacheWriterException {
     try {
@@ -469,6 +529,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void putAll(Map map) {
     putAll(map, null);
   }
@@ -483,6 +544,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public SelectResults query(String queryPredicate) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     try {
@@ -493,56 +555,69 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void registerInterest(Object key) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterest(Object key, InterestResultPolicy policy) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterest(Object key, boolean isDurable) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterest(Object key, boolean isDurable, boolean receiveValues) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterest(Object key, InterestResultPolicy policy, boolean isDurable,
       boolean receiveValues) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterest(Object key, InterestResultPolicy policy, boolean isDurable) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex, InterestResultPolicy policy) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex, boolean isDurable) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex, boolean isDurable, boolean receiveValues) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex, InterestResultPolicy policy, boolean isDurable) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void registerInterestRegex(String regex, InterestResultPolicy policy, boolean isDurable,
       boolean receiveValues) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Object remove(Object key) {
     try {
       preOp();
@@ -552,10 +627,12 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void saveSnapshot(OutputStream outputStream) throws IOException {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Object selectValue(String queryPredicate) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     try {
@@ -566,10 +643,12 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void setUserAttribute(Object value) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public int size() {
     try {
       preOp();
@@ -579,18 +658,22 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public Set subregions(boolean recursive) {
     return this.realRegion.subregions(recursive);
   }
 
+  @Override
   public void unregisterInterest(Object key) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public void unregisterInterestRegex(String regex) {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public Collection values() {
     try {
       preOp();
@@ -600,6 +683,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public void writeToDisk() {
     throw new UnsupportedOperationException();
   }
@@ -625,6 +709,7 @@ public class ProxyRegion implements Region {
    *
    * @see java.util.concurrent.ConcurrentMap#putIfAbsent(java.lang.Object, java.lang.Object)
    */
+  @Override
   public Object putIfAbsent(Object key, Object value) {
     try {
       preOp();
@@ -639,6 +724,7 @@ public class ProxyRegion implements Region {
    *
    * @see java.util.concurrent.ConcurrentMap#remove(java.lang.Object, java.lang.Object)
    */
+  @Override
   public boolean remove(Object key, Object value) {
     try {
       preOp();
@@ -653,6 +739,7 @@ public class ProxyRegion implements Region {
    *
    * @see java.util.concurrent.ConcurrentMap#replace(java.lang.Object, java.lang.Object)
    */
+  @Override
   public Object replace(Object key, Object value) {
     try {
       preOp();
@@ -668,6 +755,7 @@ public class ProxyRegion implements Region {
    * @see java.util.concurrent.ConcurrentMap#replace(java.lang.Object, java.lang.Object,
    * java.lang.Object)
    */
+  @Override
   public boolean replace(Object key, Object oldValue, Object newValue) {
     try {
       preOp();
@@ -677,6 +765,7 @@ public class ProxyRegion implements Region {
     }
   }
 
+  @Override
   public RegionSnapshotService<?, ?> getSnapshotService() {
     return new RegionSnapshotServiceImpl(this);
   }

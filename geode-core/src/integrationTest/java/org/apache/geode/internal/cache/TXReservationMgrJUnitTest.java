@@ -67,12 +67,13 @@ public class TXReservationMgrJUnitTest {
     final String tName = Thread.currentThread().getName();
     for (int i = 0; i < KEY_COUNT; i++) {
       final Object key = new Long(i);
+      final Boolean isEvent = Boolean.TRUE;
       boolean done = false;
       do {
         try {
           IdentityArrayList l = new IdentityArrayList(1);
           TXRegionLockRequestImpl lr = new TXRegionLockRequestImpl(this.r.getCache(), this.r);
-          lr.addEntryKeys(Collections.singleton(key));
+          lr.addEntryKeys(Collections.singletonMap(key, isEvent));
           l.add(lr);
           mgr.makeReservation(l);
           String v = (String) this.r.get(key);
@@ -114,6 +115,7 @@ public class TXReservationMgrJUnitTest {
     Thread[] threads = new Thread[THREAD_COUNT];
     for (int i = 0; i < THREAD_COUNT; i++) {
       threads[i] = new Thread(new Runnable() {
+        @Override
         public void run() {
           doThreadBody(mgr);
         }

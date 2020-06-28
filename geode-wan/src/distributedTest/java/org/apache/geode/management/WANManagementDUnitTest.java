@@ -14,12 +14,11 @@
  */
 package org.apache.geode.management;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertNotNull;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -105,6 +104,61 @@ public class WANManagementDUnitTest extends ManagementTestBase {
 
     WANTestBase.checkSenderMBean(puneSender, getTestMethodName() + "_PR", false);
     WANTestBase.checkSenderMBean(managing, getTestMethodName() + "_PR", false);
+  }
+
+  @Category({WanTest.class})
+  @Test
+  public void testSenderMBean() throws Exception {
+
+    VM nyLocator = getManagedNodeList().get(0);
+    VM nyReceiver = getManagedNodeList().get(1);
+    VM puneSender = getManagedNodeList().get(2);
+    VM puneLocator = Host.getLocator();
+
+    int dsIdPort = puneLocator.invoke(() -> WANManagementDUnitTest.getLocatorPort());
+
+    Integer nyPort = nyLocator.invoke(() -> WANTestBase.createFirstRemoteLocator(12, dsIdPort));
+
+    puneSender.invoke(() -> WANTestBase.createCache(dsIdPort));
+
+    // keep a larger batch to minimize number of exception occurrences in the
+    // log
+    puneSender
+        .invoke(() -> WANTestBase.createSender("pn", 12, true, 100, 300, false, false, null, true));
+
+
+    puneSender.invoke(() -> WANTestBase.createPartitionedRegion(getTestMethodName() + "_PR", "pn",
+        1, 100, false));
+
+    nyReceiver.invoke(() -> WANTestBase.createCache(nyPort));
+    nyReceiver.invoke(() -> WANTestBase.createPartitionedRegion(getTestMethodName() + "_PR", null,
+        1, 100, false));
+
+    nyReceiver.invoke(() -> WANTestBase.createReceiver());
+
+    puneSender.invoke(() -> WANTestBase.startSender("pn"));
+
+    // make sure the sender is running before doing any puts
+    puneSender.invoke(() -> WANTestBase.waitForSenderRunningState("pn"));
+
+    WANTestBase.checkSenderMBean(puneSender, getTestMethodName() + "_PR", true);
+
+    WANTestBase.checkReceiverMBean(nyReceiver);
+
+    nyReceiver.invoke(() -> WANTestBase.stopReceivers());
+
+    WANTestBase.checkSenderMBean(puneSender, getTestMethodName() + "_PR", false);
+
+    int numEventPuts = 10;
+    puneSender.invoke(() -> WANTestBase.doPuts(getTestMethodName() + "_PR", numEventPuts));
+
+    puneSender.invoke(() -> WANTestBase.checkQueueSize("pn", 10));
+
+    nyReceiver.invoke(() -> WANTestBase.startReceivers());
+
+    WANTestBase.checkSenderMBean(puneSender, getTestMethodName() + "_PR", true);
+
+    puneSender.invoke(() -> WANTestBase.checkQueueSize("pn", 0));
   }
 
   @Category({WanTest.class})
@@ -248,10 +302,10 @@ public class WANManagementDUnitTest extends ManagementTestBase {
     String regionName = getTestMethodName() + "_PR";
     sender.invoke(() -> WANTestBase.createPartitionedRegion(regionName, "pn", 0, 13, false));
 
-    String regionPath = "/" + regionName;
+    String regionPath = SEPARATOR + regionName;
     managing.invoke(() -> {
       ManagementService service = WANTestBase.getManagementService();
-      Awaitility.await().atMost(5, TimeUnit.SECONDS)
+      await()
           .untilAsserted(() -> assertNotNull(service.getDistributedRegionMXBean(regionPath)));
 
       DistributedRegionMXBean bean = service.getDistributedRegionMXBean(regionPath);

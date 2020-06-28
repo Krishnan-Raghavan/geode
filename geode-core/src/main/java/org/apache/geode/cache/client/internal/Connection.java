@@ -20,6 +20,8 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 
+import org.apache.geode.InternalGemFireException;
+import org.apache.geode.cache.client.internal.pooling.ConnectionDestroyedException;
 import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.internal.cache.tier.sockets.ServerQueueStatus;
 
@@ -34,9 +36,15 @@ public interface Connection {
 
   Socket getSocket();
 
+  long getBirthDate();
+
+  void setBirthDate(long ts);
+
   ByteBuffer getCommBuffer() throws SocketException;
 
   ConnectionStats getStats();
+
+  boolean isActive();
 
   /**
    * Forcefully close the resources used by this connection. This should be called if the connection
@@ -82,4 +90,34 @@ public interface Connection {
   void setConnectionID(long id);
 
   long getConnectionID();
+
+  /**
+   * If this connection wraps another connection then
+   * return the wrapped connection.
+   * If this connection does not wrap then return this.
+   *
+   * @return the wrapped connection or this connection
+   * @throws ConnectionDestroyedException if the wrapped connection no longer exists
+   */
+  default Connection getWrappedConnection() {
+    return this;
+  }
+
+  /**
+   * Mark the connection as being actively used.
+   *
+   * @return true if connection activated, false if could not be activated because it is destroyed
+   * @throws InternalGemFireException when the connection is already active
+   */
+  default boolean activate() {
+    return true;
+  }
+
+  /**
+   * Mark the connection as one that is not being used.
+   *
+   * @param accessed true if the connection was used while active
+   * @throws InternalGemFireException when the connection is already passive
+   */
+  default void passivate(boolean accessed) {}
 }

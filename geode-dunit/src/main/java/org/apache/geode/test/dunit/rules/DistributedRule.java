@@ -19,17 +19,15 @@ import static org.apache.geode.test.dunit.DistributedTestUtils.unregisterInstant
 import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
 import static org.apache.geode.test.dunit.Invoke.invokeInLocator;
 import static org.apache.geode.test.dunit.VM.DEFAULT_VM_COUNT;
-import static org.apache.geode.test.dunit.VM.getVM;
-import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.Properties;
 
 import org.apache.geode.cache.query.QueryTestUtils;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
 import org.apache.geode.cache30.ClientServerTestCase;
 import org.apache.geode.cache30.RegionTestCase;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionMessageObserver;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.distributed.internal.tcpserver.TcpClient;
 import org.apache.geode.internal.admin.ClientStatsManager;
 import org.apache.geode.internal.cache.DiskStoreObserver;
 import org.apache.geode.internal.cache.InitialImageOperation;
@@ -43,8 +41,9 @@ import org.apache.geode.internal.net.SocketCreatorFactory;
 import org.apache.geode.management.internal.cli.LogWrapper;
 import org.apache.geode.pdx.internal.TypeRegistry;
 import org.apache.geode.test.dunit.IgnoredException;
-import org.apache.geode.test.dunit.standalone.DUnitLauncher;
+import org.apache.geode.test.dunit.internal.DUnitLauncher;
 import org.apache.geode.test.junit.rules.serializable.SerializableExternalResource;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * JUnit Rule that launches DistributedTest VMs and scans all log output for suspect strings without
@@ -117,8 +116,6 @@ import org.apache.geode.test.junit.rules.serializable.SerializableExternalResour
 @SuppressWarnings("unused")
 public class DistributedRule extends AbstractDistributedRule {
 
-  private final int vmCount;
-
   /**
    * Use {@code Builder} for more options in constructing {@code DistributedRule}.
    */
@@ -142,22 +139,17 @@ public class DistributedRule extends AbstractDistributedRule {
     this(new Builder().withVMCount(vmCount));
   }
 
-  DistributedRule(final Builder builder) {
+  private DistributedRule(final Builder builder) {
     super(builder.vmCount);
-    vmCount = builder.vmCount;
-  }
-
-  @Override
-  protected void before() {
-    DUnitLauncher.launchIfNeeded(vmCount);
-    for (int i = 0; i < vmCount; i++) {
-      assertThat(getVM(i)).isNotNull();
-    }
   }
 
   @Override
   protected void after() {
     TearDown.doTearDown();
+  }
+
+  public static Properties getDistributedSystemProperties() {
+    return DUnitLauncher.getDistributedSystemProperties();
   }
 
   /**
@@ -233,7 +225,6 @@ public class DistributedRule extends AbstractDistributedRule {
       // 2. Instead, please add to the after() of your test or your rule.
 
       disconnectFromDS();
-
       // keep alphabetized to detect duplicate lines
       CacheCreation.clearThreadLocals();
       CacheServerTestUtil.clearCacheReference();
@@ -251,10 +242,9 @@ public class DistributedRule extends AbstractDistributedRule {
       RegionTestCase.preSnapshotRegion = null;
       SocketCreator.resetHostNameCache();
       SocketCreator.resolve_dns = true;
-      TcpClient.clearStaticData();
 
       // clear system properties -- keep alphabetized
-      System.clearProperty(DistributionConfig.GEMFIRE_PREFIX + "log-level");
+      System.clearProperty(GeodeGlossary.GEMFIRE_PREFIX + "log-level");
       System.clearProperty("jgroups.resolve_dns");
       System.clearProperty(Message.MAX_MESSAGE_SIZE_PROPERTY);
 

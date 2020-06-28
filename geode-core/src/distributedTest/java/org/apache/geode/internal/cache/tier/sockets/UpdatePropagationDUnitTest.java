@@ -15,8 +15,10 @@
 package org.apache.geode.internal.cache.tier.sockets;
 
 import static junit.framework.TestCase.assertNotNull;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
@@ -25,9 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -48,7 +48,6 @@ import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache30.CacheSerializableRunnable;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.test.dunit.Host;
@@ -57,6 +56,7 @@ import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Start client 1 Start client 2 Start Server 1 Start Server 2 Register interest for client 1 on
@@ -126,12 +126,13 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
     // over to Server2.
     final CacheSerializableRunnable waitToDetectDeadServer =
         new CacheSerializableRunnable("Wait for server on port1 to be dead") {
+          @Override
           public void run2() throws CacheException {
             Region r = getCache().getRegion(REGION_NAME);
 
             String poolName = r.getAttributes().getPoolName();
             final PoolImpl pool = (PoolImpl) PoolManager.find(poolName);
-            Awaitility.await().atMost(60, TimeUnit.SECONDS)
+            await()
                 .until(() -> !hasEndPointWithPort(pool, PORT1));
           }
         };
@@ -144,11 +145,12 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
 
     final CacheSerializableRunnable waitToDetectLiveServer =
         new CacheSerializableRunnable("Wait for servers to be alive") {
+          @Override
           public void run2() throws CacheException {
             Region r = getCache().getRegion(REGION_NAME);
             String poolName = r.getAttributes().getPoolName();
             final PoolImpl pool = (PoolImpl) PoolManager.find(poolName);
-            Awaitility.await().atMost(60, TimeUnit.SECONDS)
+            await()
                 .until(() -> hasEndPointWithPort(pool, PORT1));
           }
         };
@@ -179,7 +181,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void acquireConnectionsAndPutonK1andK2(String host) {
-    Region r1 = getCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = getCache().getRegion(SEPARATOR + REGION_NAME);
     r1.put("key1", "server-value1");
     r1.put("key2", "server-value2");
   }
@@ -205,7 +207,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
    * Creates entries on the server
    */
   private void createEntriesK1andK2() {
-    Region r1 = getCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = getCache().getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     if (!r1.containsKey("key1")) {
       r1.put("key1", "key-1");
@@ -226,7 +228,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
   private void createClientCache(String host, Integer port1, Integer port2) throws Exception {
     ClientCache cache;
     try {
-      System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "PoolImpl.DISABLE_RANDOM", "true");
+      System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "PoolImpl.DISABLE_RANDOM", "true");
       int PORT1 = port1.intValue();
       int PORT2 = port2.intValue();
       Properties props = new Properties();
@@ -238,7 +240,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
           .setPoolReadTimeout(2000).setPoolPingInterval(300);
       cache = getClientCache(cf);
     } finally {
-      System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "PoolImpl.DISABLE_RANDOM", "false");
+      System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "PoolImpl.DISABLE_RANDOM", "false");
       CacheServerTestUtil.enableShufflingOfEndpoints();
     }
     cache.createClientRegionFactory(ClientRegionShortcut.CACHING_PROXY)
@@ -266,7 +268,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void registerKeysK1andK2() {
-    Region r = getCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = getCache().getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r);
     List list = new ArrayList();
     list.add("key1");
@@ -275,7 +277,7 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void verifySenderUpdateCount() {
-    Region r = getCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = getCache().getRegion(SEPARATOR + REGION_NAME);
     EventTrackingCacheListener listener =
         (EventTrackingCacheListener) r.getAttributes().getCacheListeners()[0];
 
@@ -289,8 +291,8 @@ public class UpdatePropagationDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void verifyUpdates() {
-    Awaitility.await().atMost(60, TimeUnit.SECONDS).untilAsserted(() -> {
-      Region r = getCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    await().untilAsserted(() -> {
+      Region r = getCache().getRegion(SEPARATOR + REGION_NAME);
       // verify updates
       if (r.getAttributes().getPartitionAttributes() == null) {
         assertEquals("server-value2", r.getEntry("key2").getValue());

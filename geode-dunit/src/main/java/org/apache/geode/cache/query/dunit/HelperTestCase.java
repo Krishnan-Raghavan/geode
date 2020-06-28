@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertFalse;
@@ -60,6 +61,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createPartitionRegion(VM vm, final String regionName,
       final Class valueConstraint) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         PartitionAttributesFactory paf = new PartitionAttributesFactory();
         RegionFactory factory = getCache().createRegionFactory(RegionShortcut.PARTITION)
@@ -76,6 +78,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createReplicatedRegion(VM vm, final String regionName,
       final Class valueConstraint) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         RegionFactory factory = getCache().createRegionFactory(RegionShortcut.REPLICATE);
         if (valueConstraint != null) {
@@ -90,6 +93,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createCachingProxyRegion(VM vm, final String regionName,
       final Class valueConstraint) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientRegionFactory factory = ((ClientCache) getCache())
             .createClientRegionFactory(ClientRegionShortcut.CACHING_PROXY);
@@ -105,6 +109,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createCQ(VM vm, final String cqName, final String query,
       final CqAttributes cqAttr) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws CqException, RegionNotFoundException, CqExistsException {
         CqAttributes attrs = cqAttr;
         if (attrs == null) {
@@ -118,8 +123,9 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   protected void registerInterest(VM vm, final String regionName) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws CqException, RegionNotFoundException, CqExistsException {
-        getCache().getRegion("/" + regionName).registerInterestRegex(".*");
+        getCache().getRegion(SEPARATOR + regionName).registerInterestRegex(".*");
         return true;
       }
     });
@@ -128,6 +134,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createIndex(VM vm, final String indexName, final String indexedExpression,
       final String regionPath) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws RegionNotFoundException, CqExistsException, IndexExistsException,
           IndexNameConflictException {
         getCache().getQueryService().createIndex(indexName, indexedExpression, regionPath);
@@ -138,9 +145,10 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   protected void printIndexMapping(VM vm, final String regionName, final String indexName) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws RegionNotFoundException, CqExistsException, IndexExistsException,
           IndexNameConflictException {
-        Region region = getCache().getRegion("/" + regionName);
+        Region region = getCache().getRegion(SEPARATOR + regionName);
         CompactRangeIndex index =
             (CompactRangeIndex) getCache().getQueryService().getIndex(region, indexName);
         System.out.println(index.dump());
@@ -151,9 +159,10 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   protected void put(VM vm, final String regionName, final Object key, final Object value) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws RegionNotFoundException, CqExistsException, IndexExistsException,
           IndexNameConflictException {
-        getCache().getRegion("/" + regionName).put(key, value);
+        getCache().getRegion(SEPARATOR + regionName).put(key, value);
         return true;
       }
     });
@@ -183,6 +192,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   protected AsyncInvocation executeCQ(VM vm, final String cqName) {
     return vm.invokeAsync(new SerializableCallable() {
+      @Override
       public Object call() throws CqException, RegionNotFoundException {
         getCache().getQueryService().getCq(cqName).executeWithInitialResults();
         return true;
@@ -192,6 +202,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   public void stopCacheServer(VM server) {
     server.invoke(new SerializableRunnable("Close CacheServer") {
+      @Override
       public void run() {
         CacheServer cs = getCache().getCacheServers().iterator().next();
         cs.stop();
@@ -212,6 +223,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void createCacheServer(VM server, final int port, final Properties properties)
       throws Exception {
     server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         getSystem(properties);
 
@@ -229,6 +241,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
 
   protected void startCacheServers(VM server) {
     server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Iterator<CacheServer> iterator = getCache().getCacheServers().iterator();
         while (iterator.hasNext()) {
@@ -242,6 +255,7 @@ public abstract class HelperTestCase extends JUnit4CacheTestCase {
   protected void startClient(VM client, final VM[] servers, final int[] ports,
       final int redundancyLevel, final Properties properties) {
     client.invoke(new CacheSerializableRunnable("Start client") {
+      @Override
       public void run2() throws CacheException {
         getSystem(properties);
 

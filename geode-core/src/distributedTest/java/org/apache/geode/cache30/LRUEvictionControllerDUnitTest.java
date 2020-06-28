@@ -45,12 +45,12 @@ import org.apache.geode.cache.Scope;
 import org.apache.geode.cache.SubscriptionAttributes;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.control.InternalResourceManager.ResourceType;
 import org.apache.geode.internal.cache.eviction.EvictionCounters;
 import org.apache.geode.internal.cache.eviction.HeapEvictor;
+import org.apache.geode.logging.internal.OSProcess;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
@@ -142,10 +142,12 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
     factory.setScope(Scope.LOCAL);
     factory.setEvictionAttributes(EvictionAttributes.createLRUEntryAttributes(threshold));
     factory.setCacheLoader(new CacheLoader() {
+      @Override
       public Object load(LoaderHelper helper) throws CacheLoaderException {
         return "LOADED VALUE";
       }
 
+      @Override
       public void close() {}
 
     });
@@ -196,10 +198,12 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
     factory.setEvictionAttributes(EvictionAttributes.createLRUEntryAttributes(threshold));
 
     factory.setCacheLoader(new CacheLoader() {
+      @Override
       public Object load(LoaderHelper helper) throws CacheLoaderException {
         return "LOADED VALUE";
       }
 
+      @Override
       public void close() {}
 
     });
@@ -265,6 +269,7 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
 
     final Throwable[] errors = new Throwable[1];
     region.getAttributesMutator().addCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterCreate(EntryEvent event) {
         try {
           LogWriterUtils.getLogWriter().info("AFTER CREATE");
@@ -327,6 +332,7 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
 
     CacheSerializableRunnable createRegion =
         new CacheSerializableRunnable("Create Replicate Region") {
+          @Override
           public void run2() throws CacheException {
             AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeapEnabled());
@@ -353,6 +359,7 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
 
     feeder.invoke(new CacheSerializableRunnable(
         "put " + numEntries + " entries and assert " + maxEntries + " max entries") {
+      @Override
       public void run2() throws CacheException {
         Cache c = getCache();
         CacheTransactionManager txm = c.getCacheTransactionManager();
@@ -403,6 +410,7 @@ public class LRUEvictionControllerDUnitTest extends JUnit4CacheTestCase {
     });
 
     repl.invoke(new CacheSerializableRunnable("Replicate asserts " + maxEntries + " max entries") {
+      @Override
       public void run2() throws CacheException {
         getCache();
         Region reg1 = getRootRegion().getSubregion(r1);

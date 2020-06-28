@@ -15,14 +15,14 @@
 
 package org.apache.geode.management.internal.cli.commands;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.internal.cache.functions.TestFunction.TEST_FUNCTION1;
 import static org.apache.geode.internal.cache.functions.TestFunction.TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION;
 import static org.apache.geode.internal.cache.functions.TestFunction.TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS;
 import static org.apache.geode.internal.cache.functions.TestFunction.TEST_FUNCTION_RETURN_ARGS;
-import static org.awaitility.Awaitility.await;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Strings;
 import org.junit.Before;
@@ -103,7 +103,7 @@ public class FunctionCommandsDUnitTestBase {
       ManagementService managementService = ManagementService.getManagementService(cache);
       DistributedSystemMXBean dsMXBean = managementService.getDistributedSystemMXBean();
 
-      await().atMost(120, TimeUnit.SECONDS).until(() -> dsMXBean.getMemberCount() == 3);
+      await().until(() -> dsMXBean.getMemberCount() == 3);
     });
   }
 
@@ -136,13 +136,17 @@ public class FunctionCommandsDUnitTestBase {
   @Test
   public void testExecuteFunctionOnRegion() throws Exception {
     gfsh.executeAndAssertThat(
-        "execute function --id=" + TEST_FUNCTION1 + " --region=/" + REGION_ONE).statusIsSuccess()
-        .tableHasColumnWithValuesContaining("Member", server1.getName(), server2.getName());
+        "execute function --id=" + TEST_FUNCTION1 + " --region=" + SEPARATOR + REGION_ONE)
+        .statusIsSuccess()
+        .hasTableSection()
+        .hasRowSize(1)
+        .hasAnyRow().contains("OK", "[false, false]");
   }
 
   @Test
   public void testExecuteFunctionOnUnknownRegion() throws Exception {
-    gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION1 + " --region=/UNKNOWN")
+    gfsh.executeAndAssertThat(
+        "execute function --id=" + TEST_FUNCTION1 + " --region=" + SEPARATOR + "UNKNOWN")
         .statusIsError().containsOutput("No members found");
   }
 
@@ -158,14 +162,19 @@ public class FunctionCommandsDUnitTestBase {
         "execute function --id=" + TEST_FUNCTION_RETURN_ARGS + " --region=" + REGION_ONE
             + " --arguments=arg1" + " --result-collector=" + ToUpperResultCollector.class.getName())
         .statusIsSuccess()
-        .tableHasColumnOnlyWithValues(RESULT_HEADER, "[ARG1, ARG1]", "[ARG1, ARG1]");
+        .hasTableSection()
+        .hasRowSize(1)
+        .hasAnyRow().contains("OK", "[ARG1, ARG1]");
   }
 
   @Test
   public void testExecuteFunctionOnMember() {
     gfsh.executeAndAssertThat(
         "execute function --id=" + TEST_FUNCTION1 + " --member=" + server1.getMember().getName())
-        .statusIsSuccess().tableHasColumnWithValuesContaining("Member", server1.getName());
+        .statusIsSuccess()
+        .hasTableSection()
+        .hasRowSize(1)
+        .hasAnyRow().contains("server-1", "OK", "[false]");
   }
 
   @Test
@@ -177,16 +186,20 @@ public class FunctionCommandsDUnitTestBase {
   @Test
   public void testExecuteFunctionOnAllMembers() {
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION1).statusIsSuccess()
-        .tableHasColumnWithValuesContaining("Member", server1.getName(), server2.getName())
-        .tableHasColumnWithExactValuesInAnyOrder(RESULT_HEADER, "[false]", "[false]");
+        .hasTableSection()
+        .hasRowSize(2)
+        .hasAnyRow().contains("server-1", "OK", "[false]")
+        .hasAnyRow().contains("server-2", "OK", "[false]");
   }
 
   @Test
   public void testExecuteFunctionOnMultipleMembers() {
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION1 + " --member="
         + Strings.join(server1.getName(), server2.getName()).with(",")).statusIsSuccess()
-        .tableHasColumnWithValuesContaining("Member", server1.getName(), server2.getName())
-        .tableHasColumnWithExactValuesInAnyOrder(RESULT_HEADER, "[false]", "[false]");
+        .hasTableSection()
+        .hasRowSize(2)
+        .hasAnyRow().contains("server-1", "OK", "[false]")
+        .hasAnyRow().contains("server-2", "OK", "[false]");
   }
 
   @Test
@@ -194,23 +207,30 @@ public class FunctionCommandsDUnitTestBase {
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION_RETURN_ARGS
         + " --arguments=arg1" + " --result-collector=" + ToUpperResultCollector.class.getName())
         .statusIsSuccess()
-        .tableHasColumnWithValuesContaining("Member", server1.getName(), server2.getName())
-        .tableHasColumnWithExactValuesInAnyOrder(RESULT_HEADER, "[ARG1]", "[ARG1]");
+        .hasTableSection()
+        .hasRowSize(2)
+        .hasAnyRow().contains("server-1", "OK", "[ARG1]")
+        .hasAnyRow().contains("server-2", "OK", "[ARG1]");
   }
 
   @Test
   public void testFunctionOnlyRegisteredOnOneMember() {
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS)
-        .tableHasColumnWithValuesContaining(RESULT_HEADER, "[false]",
-            "Function : executeFunctionOnOneMemberToReturnArgs is not registered on member.")
-        .statusIsError();
+        .statusIsError()
+        .hasTableSection()
+        .hasRowSize(2)
+        .hasAnyRow().contains("server-1", "OK", "[false]")
+        .hasAnyRow().contains("server-2", "ERROR",
+            "Function : executeFunctionOnOneMemberToReturnArgs is not registered on member.");
   }
 
   @Test
   public void testExecuteFunctionOnGroup() {
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION1 + " --groups=group-1")
-        .statusIsSuccess().tableHasColumnWithValuesContaining("Member", server1.getName())
-        .tableHasColumnWithExactValuesInAnyOrder(RESULT_HEADER, "[false]");
+        .statusIsSuccess()
+        .hasTableSection()
+        .hasRowSize(1)
+        .hasAnyRow().contains("server-1", "OK", "[false]");
   }
 
   @Test
@@ -220,14 +240,18 @@ public class FunctionCommandsDUnitTestBase {
         .statusIsSuccess();
 
     gfsh.executeAndAssertThat("list functions").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION_RETURN_ARGS,
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION_RETURN_ARGS,
             TEST_FUNCTION1, TEST_FUNCTION_RETURN_ARGS, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION,
             TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION, TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS);
     gfsh.executeAndAssertThat(
         "destroy function --id=" + TEST_FUNCTION1 + " --member=" + server2.getName())
         .statusIsSuccess();
     gfsh.executeAndAssertThat("list functions").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION_RETURN_ARGS,
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION_RETURN_ARGS,
             TEST_FUNCTION_RETURN_ARGS, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION,
             TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION, TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS);
   }
@@ -237,7 +261,9 @@ public class FunctionCommandsDUnitTestBase {
     gfsh.executeAndAssertThat("destroy function --id=" + TEST_FUNCTION1 + " --groups=group-1")
         .statusIsSuccess();
     gfsh.executeAndAssertThat("list functions").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION_RETURN_ARGS,
+        .hasTableSection()
+        .hasColumn("Function")
+        .contains(TEST_FUNCTION_RETURN_ARGS,
             TEST_FUNCTION1, TEST_FUNCTION_RETURN_ARGS, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION,
             TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION, TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS);
   }
@@ -245,29 +271,40 @@ public class FunctionCommandsDUnitTestBase {
   @Test
   public void testListFunctions() {
     gfsh.executeAndAssertThat("list functions").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION1, TEST_FUNCTION1,
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION1, TEST_FUNCTION1,
             TEST_FUNCTION_RETURN_ARGS, TEST_FUNCTION_RETURN_ARGS,
             TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION,
             TEST_FUNCTION_ON_ONE_MEMBER_RETURN_ARGS);
 
     gfsh.executeAndAssertThat("list functions --matches=Test.*").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION1, TEST_FUNCTION1,
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION1, TEST_FUNCTION1,
             TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION);
 
     gfsh.executeAndAssertThat("list functions --matches=Test.* --groups=group-1").statusIsSuccess()
-        .tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION1,
-            TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION);
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION1, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION);
 
     gfsh.executeAndAssertThat("list functions --matches=Test.* --members=" + server1.getName())
-        .statusIsSuccess().tableHasColumnWithExactValuesInAnyOrder("Function", TEST_FUNCTION1,
-            TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION);
+        .statusIsSuccess()
+        .hasTableSection()
+        .hasColumn("Function")
+        .containsExactlyInAnyOrder(TEST_FUNCTION1, TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION);
   }
 
   @Test
   public void testFunctionException() {
+    String errorMessage =
+        "Exception: org.apache.geode.internal.cache.execute.MyFunctionExecutionException: I have been thrown from TestFunction";
     gfsh.executeAndAssertThat("execute function --id=" + TEST_FUNCTION_ALWAYS_THROWS_EXCEPTION)
-        .tableHasColumnWithValuesContaining(RESULT_HEADER, "I have been thrown from TestFunction",
-            "I have been thrown from TestFunction")
-        .statusIsError();
+        .statusIsError()
+        .hasTableSection()
+        .hasRowSize(2)
+        .hasAnyRow().contains("server-1", "ERROR", errorMessage)
+        .hasAnyRow().contains("server-2", "ERROR", errorMessage);
   }
 }

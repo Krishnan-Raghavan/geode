@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil.getCache;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
@@ -30,11 +32,11 @@ import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.internal.cache.PoolFactoryImpl;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -140,7 +142,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void createEntries() {
     try {
-      Region r = CacheServerTestUtil.getCache().getRegion("/" + REGION_NAME);
+      Region r = CacheServerTestUtil.getCache().getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
 
       if (!r.containsKey("key-1")) {
@@ -159,7 +161,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void verifyEntries() {
     try {
-      Region r = CacheServerTestUtil.getCache().getRegion("/" + REGION_NAME);
+      Region r = CacheServerTestUtil.getCache().getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (r.getEntry("key-1") != null) {
         assertEquals(r.getEntry("key-1").getValue(), "key-1");
@@ -174,7 +176,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static Integer registerInterestList() {
     try {
-      Region r = CacheServerTestUtil.getCache().getRegion("/" + REGION_NAME);
+      Region r = CacheServerTestUtil.getCache().getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.registerInterest("key-1");
       r.registerInterest("key-2");
@@ -215,7 +217,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void _put(String v) {
     try {
-      Region r = CacheServerTestUtil.getCache().getRegion("/" + REGION_NAME);
+      Region r = CacheServerTestUtil.getCache().getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put("key-1", "vm2-key-1" + v);
       r.put("key-6", "vm2-key-6" + v);
@@ -245,7 +247,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
 
   public static void _validateEntries(final String v) {
     try {
-      final Region r = CacheServerTestUtil.getCache().getRegion("/" + REGION_NAME);
+      final Region r = getCache().getRegion(SEPARATOR + REGION_NAME);
       final String key1 = "key-1";
       assertNotNull(r);
       // Verify that 'key-1' was updated
@@ -253,6 +255,7 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
       WaitCriterion wc = new WaitCriterion() {
         String excuse;
 
+        @Override
         public boolean done() {
           Object val = r.get(key1);
           if (val == null) {
@@ -264,11 +267,12 @@ public class InterestListFailoverDUnitTest extends JUnit4DistributedTestCase {
           return true;
         }
 
+        @Override
         public String description() {
           return excuse;
         }
       };
-      Wait.waitForCriterion(wc, 40 * 1000, 1000, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
       // Verify that 'key-6' was not invalidated
       assertEquals("key-6", r.getEntry("key-6").getValue());

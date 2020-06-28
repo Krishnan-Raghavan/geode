@@ -12,7 +12,7 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-/**
+/*
  * Abstract Super class of the Group or Range Junction. The common functionality of Group or Range
  * Junction is present in this class.
  */
@@ -34,9 +34,8 @@ import org.apache.geode.cache.query.TypeMismatchException;
 import org.apache.geode.cache.query.internal.parse.OQLLexerTokenTypes;
 import org.apache.geode.cache.query.internal.types.StructTypeImpl;
 import org.apache.geode.cache.query.types.ObjectType;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 public abstract class AbstractGroupOrRangeJunction extends AbstractCompiledValue
     implements Filter, OQLLexerTokenTypes {
@@ -44,7 +43,7 @@ public abstract class AbstractGroupOrRangeJunction extends AbstractCompiledValue
   final CompiledValue[] _operands;
   private static final int INDEX_RESULT_THRESHOLD_DEFAULT = 100;
   public static final String INDX_THRESHOLD_PROP_STR =
-      DistributionConfig.GEMFIRE_PREFIX + "Query.INDEX_THRESHOLD_SIZE";
+      GeodeGlossary.GEMFIRE_PREFIX + "Query.INDEX_THRESHOLD_SIZE";
   private static final int indexThresholdSize =
       Integer.getInteger(INDX_THRESHOLD_PROP_STR, INDEX_RESULT_THRESHOLD_DEFAULT).intValue();
   private int _operator = 0;
@@ -106,11 +105,13 @@ public abstract class AbstractGroupOrRangeJunction extends AbstractCompiledValue
     }
   }
 
+  @Override
   public Object evaluate(ExecutionContext context) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     throw new AssertionError("Should not have come here");
   }
 
+  @Override
   public int getType() {
     return GROUPJUNCTION;
   }
@@ -364,8 +365,7 @@ public abstract class AbstractGroupOrRangeJunction extends AbstractCompiledValue
     // cannot be evaluated as a filter.
     if (intermediateResults == null)
       throw new RuntimeException(
-          LocalizedStrings.AbstractGroupOrRangeJunction_INTERMEDIATERESULTS_CAN_NOT_BE_NULL
-              .toLocalizedString());
+          "intermediateResults can not be null");
     if (intermediateResults.isEmpty()) // short circuit
       return intermediateResults;
     List currentIters = (this.completeExpansion) ? context.getCurrentIterators()
@@ -415,6 +415,7 @@ public abstract class AbstractGroupOrRangeJunction extends AbstractCompiledValue
   }
 
   /* Package methods */
+  @Override
   public int getOperator() {
     return _operator;
   }

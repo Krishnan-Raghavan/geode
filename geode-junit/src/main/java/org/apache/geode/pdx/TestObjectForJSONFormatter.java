@@ -14,6 +14,7 @@
  */
 package org.apache.geode.pdx;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
@@ -24,13 +25,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 enum Day {
   Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday
@@ -97,10 +99,10 @@ public class TestObjectForJSONFormatter implements PdxSerializable {
 
   public TestObjectForJSONFormatter() {}
 
-  public String addClassTypeToJson(String json) throws JSONException {
-    JSONObject jsonObj = new JSONObject(json);
-    jsonObj.put("@type", "org.apache.geode.pdx.TestObjectForJSONFormatter");
-    return jsonObj.toString();
+  public String addClassTypeToJson(String json) throws IOException {
+    ObjectNode node = (ObjectNode) new ObjectMapper().readTree(json);
+    node.put("@type", "org.apache.geode.pdx.TestObjectForJSONFormatter");
+    return node.toString();
   }
 
   public void defaultInitialization() {
@@ -989,6 +991,31 @@ public class TestObjectForJSONFormatter implements PdxSerializable {
       if (!m1.get(key).equals(m2.get(key)))
         return false;
     return true;
+  }
+
+  @Override
+  public int hashCode() {
+    int result = Objects.hash(p_bool, p_byte, p_short, p_int, p_long, p_float, p_double, w_bool,
+        w_byte, w_short, w_int, w_long, w_bigInt, w_float, w_bigDec, w_double, w_string, c_list,
+        c_set, c_queue, c_deque, m_empByCity, day);
+    result = 31 * result + Arrays.hashCode(p_boolArray);
+    result = 31 * result + Arrays.hashCode(p_byteArray);
+    result = 31 * result + Arrays.hashCode(p_shortArray);
+    result = 31 * result + Arrays.hashCode(p_intArray);
+    result = 31 * result + Arrays.hashCode(p_longArray);
+    result = 31 * result + Arrays.hashCode(p_floatArray);
+    result = 31 * result + Arrays.hashCode(p_doubleArray);
+    result = 31 * result + Arrays.hashCode(w_boolArray);
+    result = 31 * result + Arrays.hashCode(w_byteArray);
+    result = 31 * result + Arrays.hashCode(w_shortArray);
+    result = 31 * result + Arrays.hashCode(w_intArray);
+    result = 31 * result + Arrays.hashCode(w_longArray);
+    result = 31 * result + Arrays.hashCode(w_bigIntArray);
+    result = 31 * result + Arrays.hashCode(w_floatArray);
+    result = 31 * result + Arrays.hashCode(w_bigDecArray);
+    result = 31 * result + Arrays.hashCode(w_doubleArray);
+    result = 31 * result + Arrays.hashCode(w_strArray);
+    return result;
   }
 
   @Override

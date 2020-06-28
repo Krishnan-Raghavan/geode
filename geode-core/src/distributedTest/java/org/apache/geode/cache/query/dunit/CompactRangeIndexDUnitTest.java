@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -50,6 +51,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
   public final void postSetUp() throws Exception {
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -61,7 +63,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
     utils.createServer(vm0,
         DistributedTestUtils.getAllDistributedSystemProperties(new Properties()));
     utils.createReplicateRegion("exampleRegion", vm0);
-    utils.createIndex(vm0, "type", "\"type\"", "/exampleRegion");
+    utils.createIndex(vm0, "type", "\"type\"", SEPARATOR + "exampleRegion");
   }
 
   /*
@@ -73,12 +75,14 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
     utils.createPartitionRegion("examplePartitionedRegion", Portfolio.class, vm0);
 
     vm0.invoke(new CacheSerializableRunnable("Putting values") {
+      @Override
       public void run2() {
         putPortfolios("examplePartitionedRegion", 100);
       }
     });
     try {
-      utils.createIndex(vm0, "partitionedIndex", "\"albs\"", "/examplePartitionedRegion");
+      utils.createIndex(vm0, "partitionedIndex", "\"albs\"",
+          SEPARATOR + "examplePartitionedRegion");
     } catch (Exception e) {
       // expected
       assertTrue(e.getCause().toString().contains("albs"));
@@ -118,6 +122,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void doPut(final int entries) {
     vm0.invokeAsync(new CacheSerializableRunnable("Putting values") {
+      @Override
       public void run2() {
         putPortfolios("exampleRegion", entries);
       }
@@ -126,6 +131,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void doPutSync(final int entries) {
     vm0.invoke(new CacheSerializableRunnable("Putting values") {
+      @Override
       public void run2() {
         putPortfolios("exampleRegion", entries);
       }
@@ -134,6 +140,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void doUpdate(final int entries) {
     vm0.invokeAsync(new CacheSerializableRunnable("Updating values") {
+      @Override
       public void run2() {
         putOffsetPortfolios("exampleRegion", entries);
       }
@@ -143,6 +150,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
   public void doQuery() throws InterruptedException {
     final String[] qarr = {"1", "519", "181"};
     AsyncInvocation as0 = vm0.invokeAsync(new CacheSerializableRunnable("Executing query") {
+      @Override
       public void run2() throws CacheException {
         for (int i = 0; i < 50; i++) {
           try {
@@ -162,6 +170,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void doDestroy(final int entries) throws Exception {
     vm0.invokeAsync(new CacheSerializableRunnable("Destroying values") {
+      @Override
       public void run2() {
         try {
           Thread.sleep(500);
@@ -191,6 +200,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void setHook() {
     vm0.invoke(new CacheSerializableRunnable("Setting hook") {
+      @Override
       public void run2() {
         IndexManager.testHook = new CompactRangeIndexTestHook();
       }
@@ -199,6 +209,7 @@ public class CompactRangeIndexDUnitTest extends JUnit4DistributedTestCase {
 
   public void removeHook() {
     vm0.invoke(new CacheSerializableRunnable("Removing hook") {
+      @Override
       public void run2() {
         IndexManager.testHook = null;
       }

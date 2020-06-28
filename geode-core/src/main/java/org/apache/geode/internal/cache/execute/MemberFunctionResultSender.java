@@ -25,9 +25,8 @@ import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.MemberFunctionStreamingMessage;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.internal.cache.execute.metrics.FunctionStatsManager;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class MemberFunctionResultSender implements InternalResultSender {
 
@@ -78,11 +77,12 @@ public class MemberFunctionResultSender implements InternalResultSender {
     this.serverSender = sender;
   }
 
+  @Override
   public void lastResult(Object oneResult) {
     if (!this.function.hasResult()) {
       throw new IllegalStateException(
-          LocalizedStrings.ExecuteFunction_CANNOT_0_RESULTS_HASRESULT_FALSE
-              .toLocalizedString("send"));
+          String.format("Cannot %s result as the Function#hasResult() is false",
+              "send"));
     }
     if (this.serverSender != null) { // client-server
       if (this.localLastResultReceived) {
@@ -118,10 +118,12 @@ public class MemberFunctionResultSender implements InternalResultSender {
           // call a synchronized method as local node is also waiting to send lastResult
           lastResult(oneResult, rc, false, true, this.dm.getDistributionManagerId());
         }
-        FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReceived();
+        FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+            .incResultsReceived();
       }
     }
-    FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReturned();
+    FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+        .incResultsReturned();
   }
 
   private synchronized void lastResult(Object oneResult, ResultCollector collector,
@@ -176,16 +178,19 @@ public class MemberFunctionResultSender implements InternalResultSender {
       } else {
         reply.addResult(memberID, oneResult);
       }
-      FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReceived();
+      FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+          .incResultsReceived();
     }
-    FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReturned();
+    FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+        .incResultsReturned();
   }
 
+  @Override
   public void sendResult(Object oneResult) {
     if (!this.function.hasResult()) {
       throw new IllegalStateException(
-          LocalizedStrings.ExecuteFunction_CANNOT_0_RESULTS_HASRESULT_FALSE
-              .toLocalizedString("send"));
+          String.format("Cannot %s result as the Function#hasResult() is false",
+              "send"));
     }
     if (this.serverSender != null) { // Client-Server
       if (logger.isDebugEnabled()) {
@@ -206,39 +211,44 @@ public class MemberFunctionResultSender implements InternalResultSender {
         }
       } else {
         this.rc.addResult(this.dm.getDistributionManagerId(), oneResult);
-        FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReceived();
+        FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+            .incResultsReceived();
       }
       // incrementing result sent stats.
-      FunctionStats.getFunctionStats(function.getId(), this.dm.getSystem()).incResultsReturned();
+      FunctionStatsManager.getFunctionStats(function.getId(), this.dm.getSystem())
+          .incResultsReturned();
     }
   }
 
 
+  @Override
   public void sendException(Throwable exception) {
     InternalFunctionException iFunxtionException = new InternalFunctionException(exception);
     this.lastResult(iFunxtionException);
     this.localLastResultReceived = true;
   }
 
+  @Override
   public void setException(Throwable exception) {
     ((LocalResultCollector) this.rc).setException(exception);
     // this.lastResult(exception);
-    logger.info(
-        LocalizedMessage.create(
-            LocalizedStrings.MemberResultSender_UNEXPECTED_EXCEPTION_DURING_FUNCTION_EXECUTION_ON_LOCAL_NODE),
+    logger.info("Unexpected exception during function execution local member",
         exception);
     this.rc.endResults();
     this.localLastResultReceived = true;
   }
 
+  @Override
   public void enableOrderedResultStreming(boolean enable) {
     this.enableOrderedResultStreming = enable;
   }
 
+  @Override
   public boolean isLocallyExecuted() {
     return this.msg == null;
   }
 
+  @Override
   public boolean isLastResultReceived() {
     return this.localLastResultReceived;
   }

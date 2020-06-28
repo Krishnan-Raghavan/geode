@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.internal.AvailablePort.SOCKET;
@@ -25,7 +26,6 @@ import static org.apache.geode.test.dunit.Assert.fail;
 import static org.apache.geode.test.dunit.Host.getHost;
 import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.apache.geode.test.dunit.NetworkUtils.getServerHostName;
-import static org.apache.geode.test.dunit.Wait.waitForCriterion;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -67,6 +67,7 @@ import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
 import org.apache.geode.internal.cache.tier.sockets.HAEventWrapper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
@@ -219,7 +220,7 @@ public class HADispatcherDUnitTest extends JUnit4DistributedTestCase {
     vm.invoke(new CacheSerializableRunnable("putFromClient") {
       @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         region.put(key, value);
       }
@@ -231,7 +232,7 @@ public class HADispatcherDUnitTest extends JUnit4DistributedTestCase {
     vm.invoke(new CacheSerializableRunnable("checkFromClient") {
       @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         assertNotNull(region);
         cache.getLogger().fine("starting the wait");
         synchronized (dummyObj) {
@@ -280,7 +281,7 @@ public class HADispatcherDUnitTest extends JUnit4DistributedTestCase {
                   + proxy;
             }
           };
-          waitForCriterion(wc, 60 * 1000, 1000, true);
+          GeodeAwaitility.await().untilAsserted(wc);
 
           cache.getLogger().fine("processed a proxy");
         }
@@ -335,32 +336,36 @@ public class HADispatcherDUnitTest extends JUnit4DistributedTestCase {
     }
     RegionAttributes attrs = factory.create();
     cache.createRegion(REGION_NAME, attrs);
-    Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region region = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(region);
 
     {
       LocalRegion lr = (LocalRegion) region;
       final PoolImpl pool = (PoolImpl) (lr.getServerProxy().getPool());
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return pool.getPrimary() != null;
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      waitForCriterion(ev, 30 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
           return pool.getRedundants().size() >= 1;
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      waitForCriterion(ev, 30 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       assertNotNull(pool.getPrimary());
       assertTrue("backups=" + pool.getRedundants() + " expected=" + 1,
@@ -390,7 +395,7 @@ public class HADispatcherDUnitTest extends JUnit4DistributedTestCase {
     CqAttributes cqa = cqf.create();
 
     String cqName = "CQForHARegionQueueTest";
-    String queryStr = "Select * from " + Region.SEPARATOR + REGION_NAME;
+    String queryStr = "Select * from " + SEPARATOR + REGION_NAME;
 
     // Create CQ.
     CqQuery cq1 = cqService.newCq(cqName, queryStr, cqa);

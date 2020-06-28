@@ -14,9 +14,11 @@
  */
 package org.apache.geode.internal.jta;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -36,7 +38,6 @@ import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.Region;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * This test case is to test the following test scenarios: 1) Get Simple DS outside transaction,
@@ -87,7 +88,9 @@ public class DataSourceJTAJUnitTest {
     // call to init method
     try {
       Properties props = new Properties();
-      String path = TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml");
+      String path =
+          createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+              .getAbsolutePath();
       props.setProperty(CACHE_XML_FILE, path);
       ds = connect(props);
       tableName = CacheUtils.init(ds, "JTATest");
@@ -108,7 +111,7 @@ public class DataSourceJTAJUnitTest {
     // test task
     cache = CacheUtils.getCache();
     tblName = tableName;
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     tblIDFld = 1;
     tblNameFld = "test1";
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);
@@ -263,7 +266,9 @@ public class DataSourceJTAJUnitTest {
     // call to init method
     try {
       Properties props = new Properties();
-      String path = TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml");
+      String path =
+          createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+              .getAbsolutePath();
       props.setProperty(CACHE_XML_FILE, path);
       ds = connect(props);
       tableName = CacheUtils.init(ds, "JTATest");
@@ -284,7 +289,7 @@ public class DataSourceJTAJUnitTest {
     // test task
     cache = CacheUtils.getCache();
     tblName = tableName;
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     tblIDFld = 1;
     tblNameFld = "test2";
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);
@@ -551,7 +556,9 @@ public class DataSourceJTAJUnitTest {
     // call to init method
     try {
       Properties props = new Properties();
-      String path = TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml");
+      String path =
+          createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+              .getAbsolutePath();
       props.setProperty(CACHE_XML_FILE, path);
       ds = connect(props);
       tableName = CacheUtils.init(ds, "JTATest");
@@ -572,7 +579,7 @@ public class DataSourceJTAJUnitTest {
     // test task
     cache = CacheUtils.getCache();
     tblName = tableName;
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     tblIDFld = 1;
     tblNameFld = "test4";
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);
@@ -712,7 +719,9 @@ public class DataSourceJTAJUnitTest {
     // call to init method
     try {
       Properties props = new Properties();
-      String path = TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml");
+      String path =
+          createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+              .getAbsolutePath();
       props.setProperty(CACHE_XML_FILE, path);
       ds = connect(props);
       tableName = CacheUtils.init(ds, "JTATest");
@@ -733,7 +742,7 @@ public class DataSourceJTAJUnitTest {
     // test task
     cache = CacheUtils.getCache();
     tblName = tableName;
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     tblIDFld = 1;
     tblNameFld = "test5";
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);

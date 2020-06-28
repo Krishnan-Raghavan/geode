@@ -15,20 +15,50 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+apply from: "${rootDir}/${scriptDir}/warnings.gradle"
+
+
 dependencies {
-  compileOnly project(':geode-core')
-  compile project(':geode-protobuf-messages')
-  compile 'com.google.protobuf:protobuf-java:' + project.'protobuf-java.version'
+  compile(platform(project(':boms:geode-all-bom')))
+  implementation(project(':geode-logging'))
+  implementation(project(':geode-serialization'))
+  implementation(project(':geode-tcp-server'))
+  implementation(project(':geode-membership'))
+  compile(project(':geode-core'))
+  compile(project(':geode-protobuf-messages'))
+  testImplementation(project(':geode-core'))
+  testImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  testImplementation(project(':geode-protobuf:geode-protobuf-test'))
+  integrationTestImplementation(project(':geode-dunit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  integrationTestImplementation(project(':geode-protobuf:geode-protobuf-test'))
+  distributedTestImplementation(project(':geode-dunit')){
+    exclude module: 'geode-core'
+  }
+  distributedTestImplementation(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  distributedTestImplementation(project(':geode-protobuf:geode-protobuf-test'))
 
+  implementation('com.google.protobuf:protobuf-java')
+  implementation('org.apache.logging.log4j:log4j-api')
+  implementation('org.apache.shiro:shiro-core')
 
-  testCompile project(':geode-core')
-  testCompile project(':geode-junit')
-  testCompile project(":geode-protobuf:geode-protobuf-test")
+  integrationTestImplementation('com.github.stefanbirkner:system-rules') {
+    exclude module: 'junit-dep'
+  }
+  integrationTestImplementation('junit:junit')
+  integrationTestImplementation('org.awaitility:awaitility')
 
-
-  integrationTestCompile project(":geode-dunit")
-  integrationTestCompile project(":geode-protobuf:geode-protobuf-test")
-
-
-  distributedTestCompile project(":geode-protobuf:geode-protobuf-test")
+  distributedTestImplementation('junit:junit')
+  distributedTestImplementation('org.awaitility:awaitility')
 }

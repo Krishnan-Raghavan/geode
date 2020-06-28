@@ -32,6 +32,7 @@ public class RebalanceResultsImpl implements RebalanceResults, Serializable {
   private long totalPrimaryTransferTime;
   private int totalPrimaryTransfersCompleted;
   private long totalTime;
+  private int totalNumOfMembers;
 
   public void addDetails(PartitionRebalanceInfo details) {
     this.detailSet.add(details);
@@ -43,6 +44,8 @@ public class RebalanceResultsImpl implements RebalanceResults, Serializable {
     totalBucketTransfersCompleted += details.getBucketTransfersCompleted();
     totalPrimaryTransferTime += details.getPrimaryTransferTime();
     totalPrimaryTransfersCompleted += details.getPrimaryTransfersCompleted();
+    if (totalNumOfMembers == 0)
+      totalNumOfMembers += details.getNumberOfMembersExecutedOn();
     totalTime += details.getTime();
   }
 
@@ -56,47 +59,78 @@ public class RebalanceResultsImpl implements RebalanceResults, Serializable {
     totalBucketTransfersCompleted += details.totalBucketTransfersCompleted;
     totalPrimaryTransferTime += details.totalPrimaryTransferTime;
     totalPrimaryTransfersCompleted += details.totalPrimaryTransfersCompleted;
+    totalNumOfMembers += details.totalNumOfMembers;
     if (details.totalTime > totalTime)
       totalTime = details.totalTime;
   }
 
+  @Override
   public Set<PartitionRebalanceInfo> getPartitionRebalanceDetails() {
     return detailSet;
   }
 
+  @Override
   public long getTotalBucketCreateBytes() {
     return this.totalBucketCreateBytes;
   }
 
+  @Override
   public long getTotalBucketCreateTime() {
     return this.totalBucketCreateTime;
   }
 
+  @Override
   public int getTotalBucketCreatesCompleted() {
     return this.totalBucketCreatesCompleted;
   }
 
+  @Override
   public long getTotalBucketTransferBytes() {
     return this.totalBucketTransferBytes;
   }
 
+  @Override
   public long getTotalBucketTransferTime() {
     return this.totalBucketTransferTime;
   }
 
+  @Override
   public int getTotalBucketTransfersCompleted() {
     return this.totalBucketTransfersCompleted;
   }
 
+  @Override
   public long getTotalPrimaryTransferTime() {
     return this.totalPrimaryTransferTime;
   }
 
+  @Override
+  public int getTotalMembersExecutedOn() {
+    return this.totalNumOfMembers;
+  }
+
+  @Override
   public int getTotalPrimaryTransfersCompleted() {
     return this.totalPrimaryTransfersCompleted;
   }
 
+  @Override
   public long getTotalTime() {
     return this.totalTime;
+  }
+
+  @Override
+  public String toString() {
+    return "{totalBucketCreateBytes=" + totalBucketCreateBytes +
+        ", totalBucketCreateTimeInMilliseconds=" + totalBucketCreateTime +
+        ", totalBucketCreatesCompleted=" + totalBucketCreatesCompleted +
+        ", totalBucketTransferBytes=" + totalBucketTransferBytes +
+        ", totalBucketTransferTimeInMilliseconds=" + totalBucketTransferTime +
+        ", totalBucketTransfersCompleted=" + totalBucketTransfersCompleted +
+        ", totalPrimaryTransferTimeInMilliseconds=" + totalPrimaryTransferTime +
+        ", totalPrimaryTransfersCompleted=" + totalPrimaryTransfersCompleted +
+        ", totalTimeInMilliseconds=" + totalTime +
+        ", totalNumOfMembers=" + totalNumOfMembers +
+        "}";
   }
 }

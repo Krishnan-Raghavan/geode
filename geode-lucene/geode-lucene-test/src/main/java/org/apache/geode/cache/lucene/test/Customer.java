@@ -18,10 +18,10 @@ import java.io.Serializable;
 import java.util.Collection;
 
 public class Customer implements Serializable {
-  private String name;
-  private Collection<String> phoneNumbers;
-  private Collection<Person> contacts;
-  private Page[] myHomePages;
+  protected String name;
+  protected Collection<String> phoneNumbers;
+  protected Collection<Person> contacts;
+  protected Page[] myHomePages;
 
   public Customer(String name, Collection<String> phoneNumbers, Collection<Person> contacts,
       Page[] myHomePages) {
@@ -37,7 +37,8 @@ public class Customer implements Serializable {
 
   @Override
   public String toString() {
-    return "Customer[name=" + name + ",phoneNumbers=" + phoneNumbers + ",contacts=" + contacts
+    return this.getClass() + "[name=" + name + ",phoneNumbers=" + phoneNumbers + ",contacts="
+        + contacts
         + ",homepage=" + myHomePages + "]";
   }
 }

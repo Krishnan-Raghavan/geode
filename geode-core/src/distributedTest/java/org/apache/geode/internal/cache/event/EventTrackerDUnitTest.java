@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.event;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -22,9 +23,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.AttributesFactory;
@@ -38,7 +37,6 @@ import org.apache.geode.cache.Scope;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.cache30.ClientServerTestCase;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.cache.BucketRegion;
 import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
@@ -52,6 +50,7 @@ import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Tests <code>EventTracker</code> management.
@@ -124,6 +123,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Create Region in the server and verify tracker is created
     serverVM.invoke(new CacheSerializableRunnable("Create server") {
+      @Override
       public void run2() throws CacheException {
         // Create a distributed Region
         AttributesFactory factory = new AttributesFactory();
@@ -143,6 +143,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Verify tracker in server contains no entries
     serverVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         LocalRegion region = (LocalRegion) getRootRegion().getSubregion(regionName);
         Map eventState = region.getEventState();
@@ -154,6 +155,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
     final int port = serverVM.invoke(() -> EventTrackerDUnitTest.getCacheServerPort());
     final String hostName = NetworkUtils.getServerHostName(host);
     clientVM.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         getCache();
         AttributesFactory factory = new AttributesFactory();
@@ -166,6 +168,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Do puts in the client
     clientVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         for (int i = 0; i < 10; i++) {
@@ -176,6 +179,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Verify tracker in server contains an entry for client thread
     serverVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         LocalRegion region = (LocalRegion) getRootRegion().getSubregion(regionName);
         Map eventState = region.getEventState();
@@ -196,9 +200,10 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Create Region in the server and verify tracker is created
     serverVM.invoke(new CacheSerializableRunnable("Create server") {
+      @Override
       public void run2() throws CacheException {
         // Set the message tracking timeout
-        System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "messageTrackingTimeout",
+        System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "messageTrackingTimeout",
             MESSAGE_TRACKING_TIMEOUT);
 
         // Create a distributed Region
@@ -219,6 +224,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Verify tracker in server contains no entries
     serverVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         LocalRegion region = (LocalRegion) getRootRegion().getSubregion(regionName);
         Map eventState = region.getEventState();
@@ -230,6 +236,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
     final int port = serverVM.invoke(() -> EventTrackerDUnitTest.getCacheServerPort());
     final String hostName = NetworkUtils.getServerHostName(host);
     clientVM.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         getCache();
         AttributesFactory factory = new AttributesFactory();
@@ -242,6 +249,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Do puts in the client
     clientVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         for (int i = 0; i < 10; i++) {
@@ -252,6 +260,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     // Verify tracker in server
     serverVM.invoke(new CacheSerializableRunnable("Do puts") {
+      @Override
       public void run2() throws CacheException {
         // First verify it contains an entry
         LocalRegion region = (LocalRegion) getRootRegion().getSubregion(regionName);
@@ -281,6 +290,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable createRegion = new SerializableRunnable("createRegion") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         RegionFactory<Object, Object> rf =
@@ -310,6 +320,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
     final int port = vm0.invoke(() -> EventTrackerDUnitTest.getCacheServerPort());
     final String hostName = NetworkUtils.getServerHostName(host);
     vm2.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         getCache();
         AttributesFactory factory = new AttributesFactory();
@@ -340,6 +351,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
   private void doTwoPutAlls(VM vm, final String regionName) {
     SerializableRunnable createData = new SerializableRunnable("putAlls") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(regionName);
@@ -364,6 +376,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
   private SerializableRunnable checkReplicateEventTracker(VM vm, final int expectedEntryCount) {
     SerializableRunnable checkEventTracker = new SerializableRunnable("checkEventTracker") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         DistributedRegion region = (DistributedRegion) cache.getRegion("replicate");
@@ -378,6 +391,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
       final int expectedEntryCount) {
     SerializableRunnable checkEventTracker = new SerializableRunnable("checkEventTracker") {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         PartitionedRegion region = (PartitionedRegion) cache.getRegion("partitioned");
@@ -448,8 +462,7 @@ public class EventTrackerDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void waitEntryIsLocal(int i) {
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
-        .atMost(30, TimeUnit.SECONDS)
+    await()
         .until(() -> getCache().getRegion(getName()).getEntry(i) != null);
   }
 

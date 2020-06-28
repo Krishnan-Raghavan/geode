@@ -25,7 +25,8 @@ import org.apache.geode.admin.GemFireHealth;
 import org.apache.geode.distributed.internal.AdminMessageType;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.PooledDistributionMessage;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message that is sent to a particular agent who was registered a health listener on a GemFireVM.
@@ -56,6 +57,7 @@ public class HealthListenerMessage extends PooledDistributionMessage implements 
     }
   }
 
+  @Override
   public int getDSFID() {
     return HEALTH_LISTENER_MESSAGE;
   }
@@ -66,23 +68,25 @@ public class HealthListenerMessage extends PooledDistributionMessage implements 
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.listenerId);
     DataSerializer.writeObject(this.status, out);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.listenerId = in.readInt();
     this.status = (GemFireHealth.Health) DataSerializer.readObject(in);
   }
 
   @Override
   public String toString() {
-    return LocalizedStrings.HealthListenerMessage_THE_STATUS_OF_LISTENER_0_IS_1
-        .toLocalizedString(new Object[] {Integer.valueOf(this.listenerId), this.status});
+    return String.format("The status of listener %s is %s",
+        new Object[] {Integer.valueOf(this.listenerId), this.status});
   }
 
 }

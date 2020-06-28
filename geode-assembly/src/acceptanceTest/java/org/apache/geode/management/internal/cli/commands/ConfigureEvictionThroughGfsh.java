@@ -15,6 +15,7 @@
 
 package org.apache.geode.management.internal.cli.commands;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
@@ -38,7 +39,7 @@ public class ConfigureEvictionThroughGfsh {
   public void configureEvictionByEntryCount() throws Exception {
 
     GfshExecution execution = GfshScript
-        .of("start locator --name=locator", "start server --name=server",
+        .of("start locator --name=locator", "start server --name=server --server-port=0",
             "create region --name=region1 --eviction-action=local-destroy --eviction-entry-count=1000 --type=REPLICATE",
             "create region --name=region2 --eviction-action=overflow-to-disk --eviction-entry-count=1000 --type=REPLICATE",
             "create region --name=region3 --eviction-action=overflow-to-disk --eviction-entry-count=1000 --type=REPLICATE_PERSISTENT",
@@ -46,18 +47,23 @@ public class ConfigureEvictionThroughGfsh {
             "create region --name=region5 --eviction-action=overflow-to-disk --eviction-entry-count=1000 --type=LOCAL")
         .execute(gfsh);
 
-    assertThat(execution.getOutputText()).contains("Region \"/region1\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region2\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region3\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region4\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region5\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region1\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region2\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region3\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region4\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region5\" created on \"server\"");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]",
             "create region --name=region6 --eviction-action=local-destroy --eviction-entry-count=1000 --type=REPLICATE_PERSISTENT")
         .expectFailure().execute(gfsh);
     assertThat(execution.getOutputText()).contains(
-        "ERROR: An Eviction Controller with local destroy eviction action is incompatible with");
+        "An Eviction Controller with local destroy eviction action is incompatible with");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]", "describe region --name=region1").execute(gfsh);
@@ -94,25 +100,30 @@ public class ConfigureEvictionThroughGfsh {
   @Test
   public void configureEvictionByMaxMemory() throws Exception {
     GfshExecution execution = GfshScript
-        .of("start locator --name=locator", "start server --name=server",
+        .of("start locator --name=locator", "start server --name=server --server-port=0",
             "create region --name=region1 --eviction-action=local-destroy --eviction-max-memory=1000 --type=REPLICATE",
             "create region --name=region2 --eviction-action=overflow-to-disk --eviction-max-memory=1000 --type=REPLICATE",
             "create region --name=region3 --eviction-action=overflow-to-disk --eviction-max-memory=1000 --type=REPLICATE_PERSISTENT",
             "create region --name=region4 --eviction-action=local-destroy --eviction-max-memory=1000 --type=LOCAL",
             "create region --name=region5 --eviction-action=overflow-to-disk --eviction-max-memory=1000 --type=LOCAL")
         .execute(gfsh);
-    assertThat(execution.getOutputText()).contains("Region \"/region1\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region2\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region3\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region4\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region5\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region1\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region2\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region3\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region4\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region5\" created on \"server\"");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]",
             "create region --name=region6 --eviction-action=local-destroy --eviction-max-memory=1000 --type=REPLICATE_PERSISTENT")
         .expectFailure().execute(gfsh);
     assertThat(execution.getOutputText()).contains(
-        "ERROR: An Eviction Controller with local destroy eviction action is incompatible with");
+        "An Eviction Controller with local destroy eviction action is incompatible with");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]", "describe region --name=region1").execute(gfsh);
@@ -160,7 +171,8 @@ public class ConfigureEvictionThroughGfsh {
   @Test
   public void configureEvictionByObjectSizer() throws Exception {
     GfshExecution execution = GfshScript
-        .of("start locator --name=locator", "start server --name=server", "sleep --time=1",
+        .of("start locator --name=locator", "start server --name=server --server-port=0",
+            "sleep --time=1",
             "deploy --jar=" + createJar().getAbsolutePath(),
             "create region --name=region1 --eviction-action=local-destroy --eviction-max-memory=1000 --eviction-object-sizer=MySizer --type=REPLICATE",
             "create region --name=region2 --eviction-action=overflow-to-disk --eviction-max-memory=1000 --eviction-object-sizer=MySizer --type=REPLICATE",
@@ -169,18 +181,23 @@ public class ConfigureEvictionThroughGfsh {
             "create region --name=region5 --eviction-action=overflow-to-disk --eviction-max-memory=1000 --eviction-object-sizer=MySizer --type=LOCAL")
         .execute(gfsh);
 
-    assertThat(execution.getOutputText()).contains("Region \"/region1\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region2\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region3\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region4\" created on \"server\"");
-    assertThat(execution.getOutputText()).contains("Region \"/region5\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region1\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region2\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region3\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region4\" created on \"server\"");
+    assertThat(execution.getOutputText())
+        .contains("Region \"" + SEPARATOR + "region5\" created on \"server\"");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]",
             "create region --name=region6 --eviction-action=local-destroy --eviction-max-memory=1000 --eviction-object-sizer=MySizer --type=REPLICATE_PERSISTENT")
         .expectFailure().execute(gfsh);
     assertThat(execution.getOutputText()).contains(
-        "ERROR: An Eviction Controller with local destroy eviction action is incompatible with");
+        "An Eviction Controller with local destroy eviction action is incompatible with");
 
     execution = GfshScript
         .of("connect --locator=localhost[10334]", "describe region --name=region1").execute(gfsh);

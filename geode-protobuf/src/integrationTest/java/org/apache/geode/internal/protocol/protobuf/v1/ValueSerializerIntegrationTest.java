@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.protocol.protobuf.v1;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -22,9 +23,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -52,7 +51,7 @@ public class ValueSerializerIntegrationTest {
 
   @Rule
   public RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
-  private Region region;
+  private Region<String, Object> region;
 
   @Before
   public void setUp() throws Exception {
@@ -68,7 +67,7 @@ public class ValueSerializerIntegrationTest {
     cacheServer.setPort(cacheServerPort);
     cacheServer.start();
 
-    RegionFactory<Object, Object> regionFactory = cache.createRegionFactory();
+    RegionFactory<String, Object> regionFactory = cache.createRegionFactory();
     regionFactory.setDataPolicy(DataPolicy.PARTITION);
     region = regionFactory.create(TEST_REGION);
 
@@ -77,7 +76,7 @@ public class ValueSerializerIntegrationTest {
 
     socket = new Socket("localhost", cacheServerPort);
 
-    Awaitility.await().atMost(5, TimeUnit.SECONDS).until(socket::isConnected);
+    await().until(socket::isConnected);
 
     MessageUtil.performAndVerifyHandshake(socket);
 
@@ -149,7 +148,7 @@ public class ValueSerializerIntegrationTest {
 
   @Test
   public void serializerWithoutPrimitiveSupportIsNotInvokedForPrimitives()
-      throws IOException, ClassNotFoundException {
+      throws IOException {
     sendHandshake(new TestValueSerializer().getID());
     region.put("key", "value");
 
@@ -186,6 +185,7 @@ public class ValueSerializerIntegrationTest {
 
     public String field;
 
+    @SuppressWarnings("unused")
     public DataSerializableObject() {
 
     }
@@ -201,7 +201,7 @@ public class ValueSerializerIntegrationTest {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in) throws IOException {
       field = in.readUTF();
     }
 

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.test.dunit.internal;
 
+import java.rmi.AlreadyBoundException;
 import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
@@ -22,8 +23,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import org.apache.geode.test.dunit.standalone.DUnitLauncher;
 
 
 public class InternalBlackboardImpl extends UnicastRemoteObject implements InternalBlackboard {
@@ -48,6 +47,8 @@ public class InternalBlackboardImpl extends UnicastRemoteObject implements Inter
     if (blackboard == null) {
       try {
         initialize();
+      } catch (AlreadyBoundException abx) {
+        // ignored
       } catch (Exception e) {
         throw new RuntimeException("failed to initialize blackboard", e);
       }

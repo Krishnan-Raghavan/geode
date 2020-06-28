@@ -17,48 +17,55 @@ package org.apache.geode.connectors.jdbc.internal;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import org.apache.geode.connectors.jdbc.internal.configuration.ConnectorService;
+import java.util.List;
+
+import org.apache.geode.cache.Cache;
+import org.apache.geode.connectors.jdbc.internal.configuration.FieldMapping;
+import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.extension.ExtensionPoint;
 
 /**
- * Generates fake JdbcConnectorService with Connections and RegionMappings for tests.
+ * Generates fake JdbcConnectorService for tests.
  */
 public class TestConfigService {
   private static final String REGION_TABLE_NAME = "employees";
   private static final String REGION_NAME = "employees";
   private static final String CONNECTION_CONFIG_NAME = "testConnectionConfig";
 
-  public static JdbcConnectorServiceImpl getTestConfigService(String connectionUrl)
-      throws ConnectionConfigExistsException, RegionMappingExistsException {
-    return getTestConfigService(createMockCache(), null, false, connectionUrl);
+  public static JdbcConnectorServiceImpl getTestConfigService(String ids,
+      List<FieldMapping> fieldMappings)
+      throws RegionMappingExistsException {
+    return getTestConfigService(createMockCache(), null, ids, null, null, fieldMappings);
   }
 
   public static JdbcConnectorServiceImpl getTestConfigService(InternalCache cache,
-      String pdxClassName, boolean primaryKeyInValue, String connectionUrl)
-      throws ConnectionConfigExistsException, RegionMappingExistsException {
+      String pdxClassName, String ids, String catalog, String schema,
+      List<FieldMapping> fieldMappings)
+      throws RegionMappingExistsException {
 
     JdbcConnectorServiceImpl service = new JdbcConnectorServiceImpl();
     service.init(cache);
-    service.createConnectionConfig(createConnectionConfig(connectionUrl));
-    service.createRegionMapping(createRegionMapping(pdxClassName, primaryKeyInValue));
+    service.createRegionMapping(
+        createRegionMapping(pdxClassName, ids, catalog, schema, fieldMappings));
     return service;
   }
 
   private static InternalCache createMockCache() {
     InternalCache cache = mock(InternalCache.class);
-    when(cache.getExtensionPoint()).thenReturn(mock(ExtensionPoint.class));
+    @SuppressWarnings("unchecked")
+    final ExtensionPoint<Cache> mockExtensionPoint = mock(ExtensionPoint.class);
+    when(cache.getExtensionPoint()).thenReturn(mockExtensionPoint);
     return cache;
   }
 
-  private static ConnectorService.RegionMapping createRegionMapping(String pdxClassName,
-      boolean primaryKeyInValue) {
-    return new ConnectorService.RegionMapping(REGION_NAME, pdxClassName, REGION_TABLE_NAME,
-        CONNECTION_CONFIG_NAME, primaryKeyInValue);
-  }
-
-  private static ConnectorService.Connection createConnectionConfig(String connectionUrl) {
-    return new ConnectorService.Connection(CONNECTION_CONFIG_NAME, connectionUrl, null, null,
-        (String[]) null);
+  private static RegionMapping createRegionMapping(String pdxClassName, String ids, String catalog,
+      String schema, List<FieldMapping> fieldMappings) {
+    RegionMapping result = new RegionMapping(REGION_NAME, pdxClassName, REGION_TABLE_NAME,
+        CONNECTION_CONFIG_NAME, ids, catalog, schema);
+    for (FieldMapping fieldMapping : fieldMappings) {
+      result.addFieldMapping(fieldMapping);
+    }
+    return result;
   }
 }

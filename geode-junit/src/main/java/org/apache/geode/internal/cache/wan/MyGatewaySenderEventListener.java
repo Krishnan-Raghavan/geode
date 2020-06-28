@@ -18,6 +18,7 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.geode.cache.asyncqueue.AsyncEvent;
 import org.apache.geode.cache.asyncqueue.AsyncEventListener;
@@ -36,6 +37,7 @@ public class MyGatewaySenderEventListener implements AsyncEventListener, Seriali
   /**
    * Processes events by recording their latencies.
    */
+  @Override
   public boolean processEvents(List<AsyncEvent> events) {
     synchronized (eventsMap) {
       for (AsyncEvent event : events) {
@@ -45,6 +47,7 @@ public class MyGatewaySenderEventListener implements AsyncEventListener, Seriali
     return true;
   }
 
+  @Override
   public void close() {}
 
   public Map getEventsMap() {
@@ -65,6 +68,12 @@ public class MyGatewaySenderEventListener implements AsyncEventListener, Seriali
     MyGatewaySenderEventListener listener = (MyGatewaySenderEventListener) obj;
     return this.id.equals(listener.id);
   }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(id);
+  }
+
 
   @Override
   public String toString() {

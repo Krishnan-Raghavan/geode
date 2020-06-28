@@ -14,8 +14,10 @@
  */
 package org.apache.geode.internal.jta.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
 import static org.apache.geode.test.dunit.Assert.fail;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -42,9 +44,9 @@ import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.Region;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.jta.CacheUtils;
 import org.apache.geode.internal.jta.JTAUtils;
+import org.apache.geode.logging.internal.OSProcess;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -52,7 +54,6 @@ import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * This test case is to test the following test scenarios: 1) Behaviour of Transaction Manager in
@@ -168,7 +169,9 @@ public class TxnManagerMultiThreadDUnitTest extends JUnit4DistributedTestCase {
     String path = File.createTempFile("dunit-cachejta_", ".xml").getAbsolutePath();
     LogWriterUtils.getLogWriter().fine("PATH " + path);
     /** * Return file as string and then modify the string accordingly ** */
-    String file_as_str = readFile(TestUtil.getResourcePath(CacheUtils.class, "cachejta.xml"));
+    String file_as_str = readFile(
+        createTempFileFromResource(CacheUtils.class, "cachejta.xml")
+            .getAbsolutePath());
     file_as_str = file_as_str.replaceAll("newDB", "newDB_" + pid);
     String modified_file_str = modifyFile(file_as_str);
     String modified_file_str1 = modifyFile1(modified_file_str);
@@ -303,7 +306,7 @@ public class TxnManagerMultiThreadDUnitTest extends JUnit4DistributedTestCase {
     // this is used to get the context for passing to the constructor of
     // JTAUtils
     cache = TxnManagerMultiThreadDUnitTest.getCache();
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);
     // to delete all rows inserted in creatTable () of this class
     // deleteRows method of JTAUtils class is used.
@@ -361,7 +364,7 @@ public class TxnManagerMultiThreadDUnitTest extends JUnit4DistributedTestCase {
     cache = TxnManagerMultiThreadDUnitTest.getCache();
     // get the table name from CacheUtils
     String tblName = CacheUtils.getTableName();
-    currRegion = cache.getRegion("/root");
+    currRegion = cache.getRegion(SEPARATOR + "root");
     JTAUtils jtaObj = new JTAUtils(cache, currRegion);
     // get how many rows actually got committed
     try {

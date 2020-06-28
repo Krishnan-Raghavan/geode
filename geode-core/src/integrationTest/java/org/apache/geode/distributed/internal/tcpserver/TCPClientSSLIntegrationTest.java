@@ -15,12 +15,18 @@
 package org.apache.geode.distributed.internal.tcpserver;
 
 import static org.apache.geode.security.SecurableCommunicationChannels.LOCATOR;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.when;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.security.GeneralSecurityException;
 import java.util.Properties;
+import java.util.concurrent.Executors;
 
 import javax.net.ssl.SSLHandshakeException;
 
@@ -33,12 +39,12 @@ import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
 
 import org.apache.geode.cache.ssl.CertStores;
-import org.apache.geode.cache.ssl.TestSSLUtils.CertificateBuilder;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.cache.ssl.CertificateBuilder;
+import org.apache.geode.cache.ssl.CertificateMaterial;
 import org.apache.geode.distributed.internal.DistributionConfigImpl;
-import org.apache.geode.distributed.internal.PoolStatHelper;
+import org.apache.geode.distributed.internal.DistributionStats;
 import org.apache.geode.internal.AvailablePort;
-import org.apache.geode.internal.admin.SSLConfig;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.net.SSLConfigurationFactory;
 import org.apache.geode.internal.net.SocketCreator;
 import org.apache.geode.internal.net.SocketCreatorFactory;
@@ -50,126 +56,213 @@ public class TCPClientSSLIntegrationTest {
 
   private InetAddress localhost;
   private int port;
-  private FakeTcpServer server;
+  private TcpServer server;
   private TcpClient client;
+  private CertificateMaterial ca;
 
   @Rule
   public RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
 
   @Before
   public void setup() {
+    SocketCreatorFactory.close(); // de-initialize fully
     SocketCreatorFactory.setDistributionConfig(new DistributionConfigImpl(new Properties()));
-  }
 
-  private void startServerAndClient(CertificateBuilder serverCertificate,
-      CertificateBuilder clientCertificate)
-      throws GeneralSecurityException, IOException {
-
-    CertStores serverStore = CertStores.locatorStore();
-    serverStore.withCertificate(serverCertificate);
-
-    CertStores clientStore = CertStores.clientStore();
-    clientStore.withCertificate(clientCertificate);
-
-    Properties serverProperties = serverStore
-        .trustSelf()
-        .trust(clientStore.alias(), clientStore.certificate())
-        .propertiesWith(LOCATOR, true, true);
-
-    Properties clientProperties = clientStore
-        .trust(serverStore.alias(), serverStore.certificate())
-        .propertiesWith(LOCATOR, true, true);
-
-    startTcpServer(serverProperties);
-
-    client = new TcpClient(clientProperties);
+    ca = new CertificateBuilder()
+        .commonName("Test CA")
+        .isCA()
+        .generate();
   }
 
   @After
-  public void teardown() {
+  public void after() {
     SocketCreatorFactory.close();
+  }
+
+  private void startServerWithCertificate()
+      throws GeneralSecurityException, IOException {
+
+    CertificateMaterial serverCertificate = new CertificateBuilder()
+        .commonName("tcp-server")
+        .issuedBy(ca)
+        .sanDnsName(InetAddress.getLocalHost().getHostName())
+        .generate();
+
+    CertStores serverStore = CertStores.locatorStore();
+    serverStore.withCertificate("server", serverCertificate);
+    serverStore.trust("ca", ca);
+
+    Properties serverProperties = serverStore
+        .propertiesWith(LOCATOR, true, true);
+
+    startTcpServer(serverProperties);
+  }
+
+  private void startServerAndClient(CertificateMaterial serverCertificate,
+      CertificateMaterial clientCertificate, boolean enableHostNameValidation)
+      throws GeneralSecurityException, IOException {
+
+    CertStores serverStore = CertStores.locatorStore();
+    serverStore.withCertificate("server", serverCertificate);
+    serverStore.trust("ca", ca);
+
+    CertStores clientStore = CertStores.clientStore();
+    clientStore.withCertificate("client", clientCertificate);
+    clientStore.trust("ca", ca);
+
+    Properties serverProperties = serverStore
+        .propertiesWith(LOCATOR, true, enableHostNameValidation);
+
+    Properties clientProperties = clientStore
+        .propertiesWith(LOCATOR, true, enableHostNameValidation);
+
+    startTcpServer(serverProperties);
+
+    client = new TcpClient(new SocketCreator(
+        SSLConfigurationFactory.getSSLConfigForComponent(clientProperties,
+            SecurableCommunicationChannel.LOCATOR)),
+        InternalDataSerializer.getDSFIDSerializer().getObjectSerializer(),
+        InternalDataSerializer.getDSFIDSerializer().getObjectDeserializer(),
+        TcpSocketFactory.DEFAULT);
   }
 
   private void startTcpServer(Properties sslProperties) throws IOException {
     localhost = InetAddress.getLocalHost();
     port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
 
-    server = new FakeTcpServer(port, localhost, sslProperties, null,
-        Mockito.mock(TcpHandler.class), Mockito.mock(PoolStatHelper.class),
-        Thread.currentThread().getThreadGroup(), "server thread");
+    TcpHandler tcpHandler = Mockito.mock(TcpHandler.class);
+    when(tcpHandler.processRequest(any())).thenReturn("Running!");
+
+    server = new TcpServer(
+        port,
+        localhost,
+        tcpHandler,
+        "server thread",
+        (socket, input, firstByte) -> false,
+        DistributionStats::getStatTime,
+        Executors::newCachedThreadPool,
+        new SocketCreator(
+            SSLConfigurationFactory.getSSLConfigForComponent(
+                new DistributionConfigImpl(sslProperties),
+                SecurableCommunicationChannel.LOCATOR)),
+        InternalDataSerializer.getDSFIDSerializer().getObjectSerializer(),
+        InternalDataSerializer.getDSFIDSerializer().getObjectDeserializer(),
+        "not-a-system-property",
+        "not-a-system-property");
+
     server.start();
   }
 
   @Test
   public void clientConnectsIfServerCertificateHasHostname() throws Exception {
-    CertificateBuilder serverCertificate = new CertificateBuilder()
+    CertificateMaterial serverCertificate = new CertificateBuilder()
         .commonName("tcp-server")
-        .sanDnsName(InetAddress.getLocalHost().getHostName());
+        .issuedBy(ca)
+        .sanDnsName(InetAddress.getLocalHost().getHostName())
+        .generate();
 
-    CertificateBuilder clientCertificate = new CertificateBuilder()
-        .commonName("tcp-client");
+    CertificateMaterial clientCertificate = new CertificateBuilder()
+        .commonName("tcp-client")
+        .issuedBy(ca)
+        .generate();
 
-    startServerAndClient(serverCertificate, clientCertificate);
+    startServerAndClient(serverCertificate, clientCertificate, true);
+    String response =
+        (String) client.requestToServer(new HostAndPort(localhost.getHostName(), port),
+            Boolean.valueOf(false), 5 * 1000);
+    assertThat(response).isEqualTo("Running!");
+  }
+
+  @Test
+  public void clientChooseToDisableHasHostnameValidation() throws Exception {
+    // no host name in server cert
+    CertificateMaterial serverCertificate = new CertificateBuilder()
+        .commonName("tcp-server")
+        .issuedBy(ca)
+        .generate();
+
+    CertificateMaterial clientCertificate = new CertificateBuilder()
+        .commonName("tcp-client")
+        .issuedBy(ca)
+        .generate();
+
+    startServerAndClient(serverCertificate, clientCertificate, false);
+    String response =
+        (String) client.requestToServer(new HostAndPort(localhost.getHostName(), port),
+            Boolean.valueOf(false), 5 * 1000);
+    assertThat(response).isEqualTo("Running!");
   }
 
   @Test
   public void clientFailsToConnectIfServerCertificateNoHostname() throws Exception {
-    CertificateBuilder serverCertificate = new CertificateBuilder()
-        .commonName("tcp-server");
+    CertificateMaterial serverCertificate = new CertificateBuilder()
+        .commonName("tcp-server")
+        .issuedBy(ca)
+        .generate();
 
-    CertificateBuilder clientCertificate = new CertificateBuilder()
-        .commonName("tcp-client");
+    CertificateMaterial clientCertificate = new CertificateBuilder()
+        .commonName("tcp-client")
+        .issuedBy(ca)
+        .generate();
 
-    startServerAndClient(serverCertificate, clientCertificate);
+    startServerAndClient(serverCertificate, clientCertificate, true);
 
-    assertThatExceptionOfType(LocatorCancelException.class)
-        .isThrownBy(() -> client.requestToServer(localhost, port, Boolean.valueOf(false), 5 * 1000))
-        .withCause(
-            new SSLHandshakeException("java.security.cert.CertificateException: No name matching "
-                + localhost.getHostName() + " found"));
+    assertThatExceptionOfType(IllegalStateException.class)
+        .isThrownBy(() -> client.requestToServer(new HostAndPort(localhost.getHostName(), port),
+            Boolean.valueOf(false), 5 * 1000))
+        .withCauseInstanceOf(SSLHandshakeException.class)
+        .withStackTraceContaining("No name matching " + localhost.getHostName() + " found");
   }
 
   @Test
   public void clientFailsToConnectIfServerCertificateWrongHostname() throws Exception {
-    CertificateBuilder serverCertificate = new CertificateBuilder()
+    CertificateMaterial serverCertificate = new CertificateBuilder()
         .commonName("tcp-server")
-        .sanDnsName("example.com");
+        .issuedBy(ca)
+        .sanDnsName("example.com")
+        .generate();
 
-    CertificateBuilder clientCertificate = new CertificateBuilder()
-        .commonName("tcp-client");
+    CertificateMaterial clientCertificate = new CertificateBuilder()
+        .commonName("tcp-client")
+        .issuedBy(ca)
+        .generate();
 
-    startServerAndClient(serverCertificate, clientCertificate);
+    startServerAndClient(serverCertificate, clientCertificate, true);
 
-    assertThatExceptionOfType(LocatorCancelException.class)
-        .isThrownBy(() -> client.requestToServer(localhost, port, Boolean.valueOf(false), 5 * 1000))
-        .withCause(new SSLHandshakeException(
-            "java.security.cert.CertificateException: No subject alternative DNS name matching "
-                + localhost.getHostName() + " found."));
+    assertThatExceptionOfType(IllegalStateException.class)
+        .isThrownBy(() -> client.requestToServer(new HostAndPort(localhost.getHostName(), port),
+            Boolean.valueOf(false), 5 * 1000))
+        .withCauseInstanceOf(SSLHandshakeException.class)
+        .withStackTraceContaining("No subject alternative DNS name matching "
+            + localhost.getHostName() + " found.");
   }
 
-  private class FakeTcpServer extends TcpServer {
-    private DistributionConfig distributionConfig;
+  @Test
+  public void clientFailsToConnectIfRemotePeerShutdowns() throws Exception, SSLHandshakeException {
 
-    public FakeTcpServer(int port, InetAddress bind_address, Properties sslConfig,
-        DistributionConfigImpl cfg, TcpHandler handler, PoolStatHelper poolHelper,
-        ThreadGroup threadGroup, String threadName) {
-      super(port, bind_address, sslConfig, cfg, handler, poolHelper, threadGroup, threadName, null,
-          null);
-      if (cfg == null) {
-        cfg = new DistributionConfigImpl(sslConfig);
-      }
-      this.distributionConfig = cfg;
-    }
+    startServerWithCertificate();
 
-    @Override
-    protected SocketCreator getSocketCreator() {
-      if (this.socketCreator == null) {
-        SSLConfigurationFactory.setDistributionConfig(distributionConfig);
-        SSLConfig sslConfig =
-            SSLConfigurationFactory.getSSLConfigForComponent(SecurableCommunicationChannel.LOCATOR);
-        this.socketCreator = new SocketCreator(sslConfig);
-      }
-      return socketCreator;
-    }
+    SocketCreator socketCreator = Mockito.mock(SocketCreator.class);
+    ClusterSocketCreator ssc = Mockito.mock(ClusterSocketCreator.class);
+
+    Exception eofexc = new EOFException("SSL peer shut down incorrectly");
+    Exception sslexc = new SSLHandshakeException("Remote host terminated the handshake");
+    sslexc.initCause(eofexc);
+
+    when(socketCreator.forCluster())
+        .thenReturn(ssc);
+    when(ssc.connect(any(), anyInt(), any(), any()))
+        .thenThrow(sslexc);
+
+    client = new TcpClient(socketCreator,
+        InternalDataSerializer.getDSFIDSerializer().getObjectSerializer(),
+        InternalDataSerializer.getDSFIDSerializer().getObjectDeserializer(),
+        TcpSocketFactory.DEFAULT);
+
+    assertThatExceptionOfType(IOException.class)
+        .isThrownBy(() -> client.requestToServer(new HostAndPort(localhost.getHostName(), port),
+            Boolean.valueOf(false), 5 * 1000))
+        .withCauseInstanceOf(SSLHandshakeException.class)
+        .withStackTraceContaining("Remote host terminated the handshake");
   }
 }

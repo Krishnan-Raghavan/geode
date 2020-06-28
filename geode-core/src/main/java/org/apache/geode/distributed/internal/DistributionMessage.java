@@ -17,8 +17,10 @@ package org.apache.geode.distributed.internal;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -27,20 +29,20 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.CancelException;
 import org.apache.geode.InternalGemFireException;
 import org.apache.geode.SystemFailure;
-import org.apache.geode.distributed.DistributedMember;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.deadlock.MessageDependencyMonitor;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
+import org.apache.geode.distributed.internal.membership.api.Message;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.EventID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.sequencelog.MessageLogger;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.tcp.Connection;
 import org.apache.geode.internal.util.Breadcrumbs;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * <P>
@@ -56,7 +58,8 @@ import org.apache.geode.internal.util.Breadcrumbs;
  * getExecutor().
  * </P>
  */
-public abstract class DistributionMessage implements DataSerializableFixedID, Cloneable {
+public abstract class DistributionMessage
+    implements Message<InternalDistributedMember>, Cloneable {
 
   /**
    * WARNING: setting this to true may break dunit tests.
@@ -68,10 +71,12 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
 
   private static final Logger logger = LogService.getLogger();
 
-  /**
-   * Indicates that a distribution message should be sent to all other distribution managers.
-   */
-  public static final InternalDistributedMember ALL_RECIPIENTS = null;
+  @Immutable
+  protected static final InternalDistributedMember ALL_RECIPIENTS = null;
+
+  @Immutable
+  private static final List<InternalDistributedMember> ALL_RECIPIENTS_LIST =
+      Collections.singletonList(null);
 
   // common flags used by operation messages
   /** Keep this compatible with the other GFE layer PROCESSOR_ID flags. */
@@ -96,7 +101,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
   protected transient InternalDistributedMember sender;
 
   /** A set of recipients for this message, not serialized */
-  private transient InternalDistributedMember[] recipients = null;
+  private transient List<InternalDistributedMember> recipients = null;
 
   /** A timestamp, in nanos, associated with this message. Not serialized. */
   private transient long timeStamp;
@@ -188,12 +193,12 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
   public boolean orderedDelivery() {
     final int processorType = getProcessorType();
     switch (processorType) {
-      case ClusterDistributionManager.SERIAL_EXECUTOR:
+      case OperationExecutors.SERIAL_EXECUTOR:
         // no need to use orderedDelivery for PR ops particularly when thread
         // does not own resources
         // case DistributionManager.PARTITIONED_REGION_EXECUTOR:
         return true;
-      case ClusterDistributionManager.REGION_FUNCTION_EXECUTION_EXECUTOR:
+      case OperationExecutors.REGION_FUNCTION_EXECUTION_EXECUTOR:
         // allow nested distributed functions to be executed from within the
         // execution of a function
         return false;
@@ -204,15 +209,17 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
   }
 
   /**
-   * Sets the intended recipient of the message. If recipient is {@link #ALL_RECIPIENTS} then the
+   * Sets the intended recipient of the message. If recipient is Message.ALL_RECIPIENTS
+   * then the
    * message will be sent to all distribution managers.
    */
   public void setRecipient(InternalDistributedMember recipient) {
     if (this.recipients != null) {
       throw new IllegalStateException(
-          LocalizedStrings.DistributionMessage_RECIPIENTS_CAN_ONLY_BE_SET_ONCE.toLocalizedString());
+          "Recipients can only be set once");
     }
-    this.recipients = new InternalDistributedMember[] {recipient};
+
+    this.recipients = Collections.singletonList(recipient);
   }
 
   /**
@@ -242,16 +249,33 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
   }
 
   /**
-   * Sets the intended recipient of the message. If recipient set contains {@link #ALL_RECIPIENTS}
+   * Sets the intended recipient of the message. If recipient set contains
+   * Message.ALL_RECIPIENTS
    * then the message will be sent to all distribution managers.
    */
-  public void setRecipients(Collection<? extends DistributedMember> recipients) {
-    if (this.recipients != null) {
-      throw new IllegalStateException(
-          LocalizedStrings.DistributionMessage_RECIPIENTS_CAN_ONLY_BE_SET_ONCE.toLocalizedString());
+  @Override
+  public void setRecipients(Collection recipients) {
+    this.recipients = new ArrayList<>(recipients);
+  }
+
+  @Override
+  public void registerProcessor() {
+    // override if direct-ack is supported
+  }
+
+  @Override
+  public boolean isHighPriority() {
+    return false;
+  }
+
+  @Override
+  public List<InternalDistributedMember> getRecipients() {
+    if (recipients == null
+        || recipients.size() == 1 && recipients.get(0) == ALL_RECIPIENTS) {
+      return ALL_RECIPIENTS_LIST;
     }
-    this.recipients = recipients
-        .toArray(new InternalDistributedMember[recipients.size()]);
+
+    return recipients;
   }
 
   public void resetRecipients() {
@@ -260,45 +284,27 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
   }
 
   /**
-   * Returns the intended recipient(s) of this message. If the message is intended to delivered to
-   * all distribution managers, then the array will contain ALL_RECIPIENTS. If the recipients have
-   * not been set null is returned.
-   */
-  public InternalDistributedMember[] getRecipients() {
-    if (this.multicast) {
-      return new InternalDistributedMember[] {ALL_RECIPIENTS};
-    } else if (this.recipients != null) {
-      return this.recipients;
-    } else {
-      return new InternalDistributedMember[] {ALL_RECIPIENTS};
-    }
-  }
-
-  /**
    * Returns true if message will be sent to everyone.
    */
   public boolean forAll() {
     return (this.recipients == null) || (this.multicast)
-        || ((this.recipients.length > 0) && (this.recipients[0] == ALL_RECIPIENTS));
+        || ((!this.recipients.isEmpty()) && (this.recipients.get(0) == ALL_RECIPIENTS));
   }
 
   public String getRecipientsDescription() {
-    if (this.recipients == null) {
-      return "recipients: ALL";
-    } else if (this.multicast) {
-      return "recipients: multicast";
-    } else if (this.recipients.length > 0 && this.recipients[0] == ALL_RECIPIENTS) {
+    if (forAll()) {
       return "recipients: ALL";
     } else {
       StringBuffer sb = new StringBuffer(100);
       sb.append("recipients: <");
-      for (int i = 0; i < this.recipients.length; i++) {
+      for (int i = 0; i < this.recipients.size(); i++) {
         if (i != 0) {
           sb.append(", ");
         }
-        sb.append(this.recipients[i]);
+        sb.append(this.recipients.get(i));
       }
       sb.append(">");
+
       return sb.toString();
     }
   }
@@ -315,6 +321,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
    * Sets the sender of this message. This method is only invoked when the message is
    * <B>received</B> by a <code>DistributionManager</code>.
    */
+  @Override
   public void setSender(InternalDistributedMember _sender) {
     this.sender = _sender;
   }
@@ -323,7 +330,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
    * Return the Executor in which to process this message.
    */
   protected Executor getExecutor(ClusterDistributionManager dm) {
-    return dm.getExecutor(getProcessorType(), sender);
+    return dm.getExecutors().getExecutor(getProcessorType(), sender);
   }
 
   public abstract int getProcessorType();
@@ -386,8 +393,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
       // error condition, so you also need to check to see if the JVM
       // is still usable:
       SystemFailure.checkFailure();
-      logger.fatal(LocalizedMessage
-          .create(LocalizedStrings.DistributionMessage_UNCAUGHT_EXCEPTION_PROCESSING__0, this), t);
+      logger.fatal(String.format("Uncaught exception processing %s", this), t);
     } finally {
       if (doDecMessagesBeingReceived) {
         dm.getStats().decMessagesBeingReceived(this.bytesRead);
@@ -406,15 +412,14 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
    */
   protected void schedule(final ClusterDistributionManager dm) {
     boolean inlineProcess = INLINE_PROCESS
-        && getProcessorType() == ClusterDistributionManager.SERIAL_EXECUTOR && !isPreciousThread();
+        && getProcessorType() == OperationExecutors.SERIAL_EXECUTOR
+        && !isMembershipMessengerThread();
 
     boolean forceInline = this.acker != null || getInlineProcess() || Connection.isDominoThread();
 
     if (inlineProcess && !forceInline && isSharedReceiver()) {
-      // If processing this message may need to add
-      // to more than one serial gateway then don't
-      // do it inline.
-      if (mayAddToMultipleSerialGateways(dm)) {
+      // If processing this message notify a serial gateway sender then don't do it inline.
+      if (mayNotifySerialGatewaySender(dm)) {
         inlineProcess = false;
       }
     }
@@ -431,6 +436,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
     } else { // not inline
       try {
         getExecutor(dm).execute(new SizeableRunnable(this.getBytesRead()) {
+          @Override
           public void run() {
             scheduleAction(dm);
           }
@@ -442,8 +448,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
         });
       } catch (RejectedExecutionException ex) {
         if (!dm.shutdownInProgress()) { // fix for bug 32395
-          logger.warn(LocalizedMessage.create(
-              LocalizedStrings.DistributionMessage_0__SCHEDULE_REJECTED, this.toString()), ex);
+          logger.warn(String.format("%s schedule() rejected", this.toString()), ex);
         }
       } catch (VirtualMachineError err) {
         SystemFailure.initiateFailure(err);
@@ -457,31 +462,34 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
         // error condition, so you also need to check to see if the JVM
         // is still usable:
         SystemFailure.checkFailure();
-        logger.fatal(LocalizedMessage.create(
-            LocalizedStrings.DistributionMessage_UNCAUGHT_EXCEPTION_PROCESSING__0, this), t);
+        logger.fatal(String.format("Uncaught exception processing %s", this), t);
         // I don't believe this ever happens (DJP May 2007)
         throw new InternalGemFireException(
-            LocalizedStrings.DistributionMessage_UNEXPECTED_ERROR_SCHEDULING_MESSAGE
-                .toLocalizedString(),
+            "Unexpected error scheduling message",
             t);
       }
     } // not inline
   }
 
-  protected boolean mayAddToMultipleSerialGateways(ClusterDistributionManager dm) {
-    // subclasses should override this method if processing
-    // them may add to multiple serial gateways.
+  protected boolean mayNotifySerialGatewaySender(ClusterDistributionManager dm) {
+    // subclasses should override this method if processing them may notify a serial gateway sender.
     return false;
   }
 
   /**
-   * returns true if the current thread should not be used for inline processing. i.e., it is a
-   * "precious" resource
+   * returns true if the current thread should not be used for inline processing because it
+   * is responsible for reading geode-membership messages. Blocking such a thread can cause
+   * a server to be kicked out
    */
-  public static boolean isPreciousThread() {
+  public static boolean isMembershipMessengerThread() {
     String thrname = Thread.currentThread().getName();
-    // return thrname.startsWith("Geode UDP");
-    return thrname.startsWith("unicast receiver") || thrname.startsWith("multicast receiver");
+
+    return isMembershipMessengerThreadName(thrname);
+  }
+
+  public static boolean isMembershipMessengerThreadName(String thrname) {
+    return thrname.startsWith("unicast receiver") || thrname.startsWith("multicast receiver")
+        || thrname.startsWith("Geode UDP");
   }
 
 
@@ -501,7 +509,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
       if (pid != 0) {
         procId = " processorId=" + pid;
       }
-      if (Thread.currentThread().getName().startsWith("P2P Message Reader")) {
+      if (Thread.currentThread().getName().startsWith(Connection.THREAD_KIND_IDENTIFIER)) {
         sender = procId;
       } else {
         sender = "sender=" + getSender() + procId;
@@ -526,8 +534,9 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
       if (pid != 0) {
         procId = "processorId=" + pid;
       }
-      if (this.recipients != null && this.recipients.length <= 10) { // set a limit on recipients
-        Breadcrumbs.setSendSide(procId + " recipients=" + Arrays.toString(this.recipients));
+
+      if (this.recipients != null && this.recipients.size() <= 10) { // set a limit on recipients
+        Breadcrumbs.setSendSide(procId + " recipients=" + getRecipients());
       } else {
         if (procId.length() > 0) {
           Breadcrumbs.setSendSide(procId);
@@ -559,8 +568,11 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
    * classes that override this method should always invoke the inherited method
    * (<code>super.toData()</code>).
    */
-  public void toData(DataOutput out) throws IOException {
-    // DataSerializer.writeObject(this.recipients, out); // no need to serialize; filled in later
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    // context.getSerializer().writeObject(this.recipients, out); // no need to serialize; filled in
+    // later
     // ((IpAddress)this.sender).toData(out); // no need to serialize; filled in later
     // out.writeLong(this.timeStamp);
   }
@@ -570,9 +582,12 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
    * classes that override this method should always invoke the inherited method
    * (<code>super.fromData()</code>).
    */
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
 
-    // this.recipients = (Set)DataSerializer.readObject(in); // no to deserialize; filled in later
+    // this.recipients = (Set)context.getDeserializer().readObject(in); // no to deserialize; filled
+    // in later
     // this.sender = DataSerializer.readIpAddress(in); // no to deserialize; filled in later
     // this.timeStamp = (long)in.readLong();
   }
@@ -655,6 +670,11 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
     return false;
   }
 
+  @Override
+  public boolean dropMessageWhenMembershipIsPlayingDead() {
+    return containsRegionContentChange();
+  }
+
   /**
    * does this message carry state that will alter the content of one or more cache regions? This is
    * used to track the flight of content changes through communication channels
@@ -679,6 +699,7 @@ public abstract class DistributionMessage implements DataSerializableFixedID, Cl
     return sb.toString();
   }
 
+  @Override
   public Version[] getSerializationVersions() {
     return null;
   }

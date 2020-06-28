@@ -14,6 +14,9 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.cache.LocalRegion.InitializationLevel.ANY_INIT;
+import static org.apache.geode.internal.cache.LocalRegion.InitializationLevel.BEFORE_INITIAL_IMAGE;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -34,6 +37,7 @@ import org.apache.geode.DataSerializer;
 import org.apache.geode.InvalidDeltaException;
 import org.apache.geode.InvalidVersionException;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.CacheEvent;
 import org.apache.geode.cache.DiskAccessException;
 import org.apache.geode.cache.EntryNotFoundException;
@@ -54,12 +58,14 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.SerialDistributionMessage;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
+import org.apache.geode.distributed.internal.membership.api.CacheOperationMessageMarker;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.CopyOnWriteHashSet;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.CacheDistributionAdvisor.CacheProfile;
 import org.apache.geode.internal.cache.EntryEventImpl.OldValueImporter;
 import org.apache.geode.internal.cache.FilterRoutingInfo.FilterInfo;
+import org.apache.geode.internal.cache.LocalRegion.InitializationLevel;
 import org.apache.geode.internal.cache.UpdateOperation.UpdateMessage;
 import org.apache.geode.internal.cache.partitioned.Bucket;
 import org.apache.geode.internal.cache.partitioned.PartitionMessage;
@@ -70,25 +76,28 @@ import org.apache.geode.internal.cache.versions.DiskVersionTag;
 import org.apache.geode.internal.cache.versions.RegionVersionVector;
 import org.apache.geode.internal.cache.versions.VersionSource;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.Releasable;
 import org.apache.geode.internal.offheap.StoredObject;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Unretained;
 import org.apache.geode.internal.sequencelog.EntryLogger;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 import org.apache.geode.internal.util.DelayedAction;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public abstract class DistributedCacheOperation {
 
   private static final Logger logger = LogService.getLogger();
 
+  @MutableForTesting
   public static double LOSS_SIMULATION_RATIO = 0; // test hook
 
+  @MutableForTesting
   public static Random LOSS_SIMULATION_GENERATOR;
 
+  @MutableForTesting
   public static long SLOW_DISTRIBUTION_MS = 0; // test hook
 
   // constants used in subclasses and distribution messages
@@ -152,6 +161,7 @@ public abstract class DistributedCacheOperation {
 
   public static final short DESERIALIZATION_POLICY_MASK = (short) (DESERIALIZATION_POLICY_END - 1);
 
+  @MutableForTesting
   public static boolean testSendingOldValues;
 
   protected InternalCacheEvent event;
@@ -162,6 +172,7 @@ public abstract class DistributedCacheOperation {
 
   protected Set originalRecipients;
 
+  @MutableForTesting
   static Runnable internalBeforePutOutgoing;
 
   public static String deserializationPolicyToString(byte policy) {
@@ -242,6 +253,7 @@ public abstract class DistributedCacheOperation {
     return true;
   }
 
+  @MutableForTesting
   public static volatile DelayedAction test_InvalidVersionAction;
 
   /**
@@ -334,7 +346,7 @@ public abstract class DistributedCacheOperation {
 
     try {
       // Recipients with CacheOp
-      Set<InternalDistributedMember> recipients = getRecipients();
+      Set<InternalDistributedMember> recipients = new HashSet<>(getRecipients());
       Map<InternalDistributedMember, PersistentMemberID> persistentIds = null;
       if (region.getDataPolicy().withPersistence()) {
         persistentIds = region.getDistributionAdvisor().adviseInitializedPersistentMembers();
@@ -385,7 +397,7 @@ public abstract class DistributedCacheOperation {
 
       Set cachelessNodes = Collections.emptySet();
       Set adviseCacheServers;
-      Set<InternalDistributedMember> cachelessNodesWithNoCacheServer = new HashSet<>();
+      Set<InternalDistributedMember> cachelessNodesWithNoCacheServer = Collections.emptySet();
       if (region.getDistributionConfig().getDeltaPropagation() && this.supportsDeltaPropagation()) {
         cachelessNodes = region.getCacheDistributionAdvisor().adviseEmptys();
         if (!cachelessNodes.isEmpty()) {
@@ -400,24 +412,27 @@ public abstract class DistributedCacheOperation {
           recipients.removeAll(list);
           cachelessNodes.addAll(list);
         }
-
-        cachelessNodesWithNoCacheServer.addAll(cachelessNodes);
-        adviseCacheServers = region.getCacheDistributionAdvisor().adviseCacheServers();
-        cachelessNodesWithNoCacheServer.removeAll(adviseCacheServers);
+        if (!cachelessNodes.isEmpty()) {
+          cachelessNodesWithNoCacheServer = new HashSet<>(cachelessNodes);
+          adviseCacheServers = region.getCacheDistributionAdvisor().adviseCacheServers();
+          cachelessNodesWithNoCacheServer.removeAll(adviseCacheServers);
+        }
       }
 
       if (recipients.isEmpty() && adjunctRecipients.isEmpty() && needsOldValueInCacheOp.isEmpty()
           && cachelessNodes.isEmpty()) {
         if (region.isInternalRegion()) {
-          if (mgr.getNormalDistributionManagerIds().size() > 1) {
-            // suppress this msg if we are the only member.
-            if (logger.isTraceEnabled()) {
-              logger.trace("<No Recipients> {}", this);
-            }
-          } else {
-            // suppress this msg if we are the only member.
-            if (logger.isDebugEnabled()) {
-              logger.debug("<No Recipients> {}", this);
+          if (logger.isDebugEnabled() || logger.isTraceEnabled()) {
+            if (mgr.getNormalDistributionManagerIds().size() > 1) {
+              // suppress this msg if we are the only member.
+              if (logger.isTraceEnabled()) {
+                logger.trace("<No Recipients> {}", this);
+              }
+            } else {
+              // suppress this msg if we are the only member.
+              if (logger.isDebugEnabled()) {
+                logger.debug("<No Recipients> {}", this);
+              }
             }
           }
         }
@@ -549,8 +564,7 @@ public abstract class DistributedCacheOperation {
 
         if (region.cache.isClosed() && !canBeSentDuringShutdown()) {
           throw region.cache.getCacheClosedException(
-              LocalizedStrings.DistributedCacheOperation_THE_CACHE_HAS_BEEN_CLOSED
-                  .toLocalizedString(),
+              "The cache has been closed",
               null);
         }
 
@@ -591,7 +605,7 @@ public abstract class DistributedCacheOperation {
             }
           }
 
-          if (cachelessNodesWithNoCacheServer.size() > 0) {
+          if (!cachelessNodesWithNoCacheServer.isEmpty()) {
             msg.resetRecipients();
             msg.setRecipients(cachelessNodesWithNoCacheServer);
             msg.setSendDelta(false);
@@ -604,17 +618,16 @@ public abstract class DistributedCacheOperation {
                 failures = newFailures;
               }
             }
+            // Add it back for size calculation ahead
+            cachelessNodes.addAll(cachelessNodesWithNoCacheServer);
           }
-          // Add it back for size calculation ahead
-          cachelessNodes.addAll(cachelessNodesWithNoCacheServer);
         }
 
         if (failures != null && !failures.isEmpty() && logger.isDebugEnabled()) {
           logger.debug("Failed sending ({}) to {} while processing event:{}", msg, failures, event);
         }
 
-        Set<InternalDistributedMember> adjunctRecipientsWithNoCacheServer =
-            new HashSet<InternalDistributedMember>();
+        Set<InternalDistributedMember> adjunctRecipientsWithNoCacheServer = Collections.emptySet();
         // send partitioned region listener notification messages now
         if (!adjunctRecipients.isEmpty()) {
           if (cachelessNodes.size() > 0) {
@@ -626,8 +639,7 @@ public abstract class DistributedCacheOperation {
               recipients.addAll(cachelessNodes);
             }
           }
-
-          adjunctRecipientsWithNoCacheServer.addAll(adjunctRecipients);
+          adjunctRecipientsWithNoCacheServer = new HashSet<>(adjunctRecipients);
           adviseCacheServers = ((Bucket) region).getPartitionedRegion()
               .getCacheDistributionAdvisor().adviseCacheServers();
           adjunctRecipientsWithNoCacheServer.removeAll(adviseCacheServers);
@@ -687,8 +699,7 @@ public abstract class DistributedCacheOperation {
       }
       throw e;
     } catch (RuntimeException e) {
-      logger.info(LocalizedMessage.create(
-          LocalizedStrings.DistributedCacheOperation_EXCEPTION_OCCURRED_WHILE_PROCESSING__0, this),
+      logger.info(String.format("Exception occurred while processing %s", this),
           e);
       throw e;
     } finally {
@@ -727,7 +738,8 @@ public abstract class DistributedCacheOperation {
           Long cqID = e.getKey();
           // For the CQs satisfying the event with destroy CQEvent, remove
           // the entry form CQ cache.
-          if (cq.getFilterID() == cqID && (e.getValue().equals(MessageType.LOCAL_DESTROY))) {
+          if (cq != null && cq.getFilterID() != null && cq.getFilterID().equals(cqID)
+              && (e.getValue().equals(MessageType.LOCAL_DESTROY))) {
             cq.removeFromCqResultKeys(((EntryOperation) event).getKey(), true);
           }
         }
@@ -769,8 +781,7 @@ public abstract class DistributedCacheOperation {
         handleClosedMembers(closedMembers, persistentIds);
       } catch (ReplyException e) {
         if (this instanceof DestroyRegionOperation) {
-          logger.fatal(LocalizedMessage
-              .create(LocalizedStrings.DistributedCacheOperation_WAITFORACKIFNEEDED_EXCEPTION), e);
+          logger.fatal("waitForAckIfNeeded: exception", e);
         }
         e.handleCause();
       }
@@ -891,7 +902,8 @@ public abstract class DistributedCacheOperation {
   }
 
   public abstract static class CacheOperationMessage extends SerialDistributionMessage
-      implements MessageWithReply, DirectReplyMessage, OldValueImporter {
+      implements MessageWithReply, DirectReplyMessage, OldValueImporter,
+      CacheOperationMessageMarker {
 
     protected static final short POSSIBLE_DUPLICATE_MASK = POS_DUP;
     protected static final short OLD_VALUE_MASK = DistributionMessage.UNRESERVED_FLAGS_START;
@@ -962,10 +974,12 @@ public abstract class DistributedCacheOperation {
       return true;
     }
 
+    @Override
     public DirectReplyProcessor getDirectReplyProcessor() {
       return processor;
     }
 
+    @Override
     public void registerProcessor() {
       if (processor != null) {
         this.processorId = this.processor.register();
@@ -1083,8 +1097,8 @@ public abstract class DistributedCacheOperation {
       }
 
       EntryLogger.setSource(this.getSender(), "p2p");
-      boolean resetOldLevel = true;
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+      final InitializationLevel oldLevel =
+          LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
       try {
         if (dm.getDMType() == ClusterDistributionManager.ADMIN_ONLY_DM_TYPE) {
           // this was probably a multicast message
@@ -1113,9 +1127,7 @@ public abstract class DistributedCacheOperation {
         SystemFailure.checkFailure();
         thr = t;
       } finally {
-        if (resetOldLevel) {
-          LocalRegion.setThreadInitLevelRequirement(oldLevel);
-        }
+        LocalRegion.setThreadInitLevelRequirement(oldLevel);
         if (sendReply) {
           ReplyException rex = null;
           if (thr != null) {
@@ -1246,9 +1258,9 @@ public abstract class DistributedCacheOperation {
           }
           sendReply(getSender(), processorId, rex, getReplySender(dm));
         } else if (thr != null) {
-          logger.error(LocalizedMessage.create(
-              LocalizedStrings.DistributedCacheOperation_EXCEPTION_OCCURRED_WHILE_PROCESSING__0,
-              this), thr);
+          logger.error(String.format("Exception occurred while processing %s",
+              this),
+              thr);
         }
       } // finally
     }
@@ -1353,7 +1365,8 @@ public abstract class DistributedCacheOperation {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       short bits = in.readShort();
       short extBits = in.readShort();
       this.flags = bits;
@@ -1396,7 +1409,8 @@ public abstract class DistributedCacheOperation {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       short bits = 0;
       short extendedBits = 0;
       bits = computeCompressedShort(bits);
@@ -1487,6 +1501,7 @@ public abstract class DistributedCacheOperation {
       }
     }
 
+    @Override
     public boolean supportsDirectAck() {
       return this.directAck;
     }
@@ -1524,14 +1539,14 @@ public abstract class DistributedCacheOperation {
       this.hasOldValue = true;
     }
 
-    protected boolean _mayAddToMultipleSerialGateways(ClusterDistributionManager dm) {
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.ANY_INIT);
+    protected boolean notifiesSerialGatewaySender(ClusterDistributionManager dm) {
+      final InitializationLevel oldLevel = LocalRegion.setThreadInitLevelRequirement(ANY_INIT);
       try {
         LocalRegion lr = getLocalRegionForProcessing(dm);
         if (lr == null) {
           return false;
         }
-        return lr.notifiesMultipleSerialGateways();
+        return lr.notifiesSerialGatewaySender();
       } catch (RuntimeException ignore) {
         return false;
       } finally {

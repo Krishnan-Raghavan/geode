@@ -14,14 +14,15 @@
  */
 package org.apache.geode.management.internal.cli.commands;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 import com.google.common.io.Files;
 import org.apache.commons.io.FileUtils;
@@ -36,10 +37,9 @@ import org.junit.rules.TemporaryFolder;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
-import org.apache.geode.management.cli.Result;
 import org.apache.geode.management.internal.cli.domain.DataCommandResult;
-import org.apache.geode.management.internal.cli.result.CommandResult;
 import org.apache.geode.management.internal.cli.shell.Gfsh;
+import org.apache.geode.test.junit.assertions.CommandResultAssert;
 import org.apache.geode.test.junit.categories.GfshTest;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
 import org.apache.geode.test.junit.rules.Server;
@@ -55,7 +55,8 @@ public class QueryCommandIntegrationTestBase {
       new ServerStarterRule().withJMXManager()
           .withHttpService()
           .withRegion(RegionShortcut.REPLICATE, "simpleRegion")
-          .withRegion(RegionShortcut.REPLICATE, "complexRegion");
+          .withRegion(RegionShortcut.REPLICATE, "complexRegion")
+          .withRegion(RegionShortcut.REPLICATE, "intRegion");
 
   @Rule
   public GfshCommandRule gfsh = new GfshCommandRule();
@@ -68,12 +69,14 @@ public class QueryCommandIntegrationTestBase {
     Cache cache = server.getCache();
     Region<String, String> simpleRegion = cache.getRegion("simpleRegion");
     Region<String, Customer> complexRegion = cache.getRegion("complexRegion");
+    Region<Integer, Integer> intRegion = cache.getRegion("intRegion");
 
     for (int i = 0; i < Gfsh.DEFAULT_APP_FETCH_SIZE + 1; i++) {
       String key = "key" + i;
 
       simpleRegion.put(key, "value" + i);
       complexRegion.put(key, new Customer("name" + i, "Main Street " + i, "Hometown"));
+      intRegion.put(new Integer(i), new Integer(i));
     }
   }
 
@@ -88,14 +91,24 @@ public class QueryCommandIntegrationTestBase {
 
   @Test
   public void doesShowLimitIfLimitNotInQuery() throws Exception {
-    gfsh.executeAndAssertThat("query --query='select * from /simpleRegion'")
+    gfsh.executeAndAssertThat("query --query='select * from " + SEPARATOR + "simpleRegion'")
         .containsKeyValuePair("Rows", DEFAULT_FETCH_SIZE)
         .containsKeyValuePair("Limit", DEFAULT_FETCH_SIZE).hasResult();
   }
 
   @Test
+  public void queryWithAndWithoutEqualsReturnSameResult() throws Exception {
+    String resultWithEquals =
+        gfsh.execute("query --query='select * from " + SEPARATOR + "intRegion i where i <= 3'");
+    String resultWithoutEquals =
+        gfsh.execute("query --query 'select * from " + SEPARATOR + "intRegion i where i <= 3'");
+    assertEquals(resultWithEquals, resultWithoutEquals);
+  }
+
+  @Test
   public void doesNotShowLimitIfLimitInQuery() throws Exception {
-    gfsh.executeAndAssertThat("query --query='select * from /simpleRegion limit 50'")
+    gfsh.executeAndAssertThat(
+        "query --query='select * from " + SEPARATOR + "simpleRegion limit 50'")
         .containsKeyValuePair("Rows", "50").doesNotContainOutput("Limit").hasResult();
   }
 
@@ -117,7 +130,8 @@ public class QueryCommandIntegrationTestBase {
     FileUtils.deleteQuietly(outputFile);
 
     gfsh.executeAndAssertThat(
-        "query --query='select * from /nonExistentRegion' --file=" + outputFile.getAbsolutePath())
+        "query --query='select * from " + SEPARATOR + "nonExistentRegion' --file="
+            + outputFile.getAbsolutePath())
         .hasNoResult().doesNotContainOutput("Query results output to");
 
     assertThat(outputFile).doesNotExist();
@@ -129,7 +143,8 @@ public class QueryCommandIntegrationTestBase {
     FileUtils.deleteQuietly(outputFile);
 
     gfsh.executeAndAssertThat(
-        "query --query='select * from /simpleRegion' --file=" + outputFile.getAbsolutePath())
+        "query --query='select * from " + SEPARATOR + "simpleRegion' --file="
+            + outputFile.getAbsolutePath())
         .hasResult().containsOutput("Rows").containsOutput("Limit")
         .containsOutput("Query results output to");
   }
@@ -140,7 +155,8 @@ public class QueryCommandIntegrationTestBase {
     assertThat(outputFile).exists();
 
     gfsh.executeAndAssertThat(
-        "query --query='select * from /simpleRegion' --file=" + outputFile.getAbsolutePath())
+        "query --query='select * from " + SEPARATOR + "simpleRegion' --file="
+            + outputFile.getAbsolutePath())
         .statusIsError().containsOutput("The specified output file already exists.");
   }
 
@@ -149,18 +165,18 @@ public class QueryCommandIntegrationTestBase {
     File outputFile = temporaryFolder.newFile("queryOutput.txt");
     FileUtils.deleteQuietly(outputFile);
 
-    CommandResult result = gfsh.executeCommand(
-        "query --query='select * from /simpleRegion' --file=" + outputFile.getAbsolutePath());
-    assertThat(result.getStatus()).isEqualTo(Result.Status.OK);
-    // .statusIsSuccess().containsOutput(outputFile.getAbsolutePath());
+    gfsh.executeAndAssertThat(
+        "query --query='select * from " + SEPARATOR + "simpleRegion' --file="
+            + outputFile.getAbsolutePath())
+        .statusIsSuccess();
 
     assertThat(outputFile).exists();
 
     List<String> lines = Files.readLines(outputFile, StandardCharsets.UTF_8);
 
-    assertThat(lines.get(7)).isEqualTo("Result");
-    assertThat(lines.get(8)).isEqualTo("--------");
-    lines.subList(9, lines.size()).forEach(line -> assertThat(line).matches("value\\d+"));
+    assertThat(lines.get(3)).isEqualTo("Result");
+    assertThat(lines.get(4)).isEqualTo("--------");
+    lines.subList(6, lines.size()).forEach(line -> assertThat(line).matches("value\\d+"));
   }
 
   @Test
@@ -169,21 +185,22 @@ public class QueryCommandIntegrationTestBase {
     FileUtils.deleteQuietly(outputFile);
 
     gfsh.executeAndAssertThat(
-        "query --query='select c.name, c.address from /complexRegion c' --file="
+        "query --query='select c.name, c.address from " + SEPARATOR + "complexRegion c' --file="
             + outputFile.getAbsolutePath())
         .statusIsSuccess().containsOutput(outputFile.getAbsolutePath());
 
     assertThat(outputFile).exists();
     List<String> lines = Files.readLines(outputFile, StandardCharsets.UTF_8);
 
-    assertThat(lines.get(7)).containsPattern("name\\s+\\|\\s+address");
-    lines.subList(9, lines.size())
+    assertThat(lines.get(3)).containsPattern("name\\s+\\|\\s+address");
+    lines.subList(5, lines.size())
         .forEach(line -> assertThat(line).matches("name\\d+.*\"city\":\"Hometown\".*"));
   }
 
   @Test
   public void outputDisplaysResultsFromComplexRegion() throws Exception {
-    String result = gfsh.execute("query --query='select c.name, c.address from /complexRegion c'");
+    String result = gfsh
+        .execute("query --query='select c.name, c.address from " + SEPARATOR + "complexRegion c'");
 
     String[] resultLines = splitOnLineBreaks(result);
 
@@ -197,61 +214,58 @@ public class QueryCommandIntegrationTestBase {
 
   @Test
   public void queryWithGfshEnvVariables() {
-    gfsh.executeAndAssertThat("set variable --name=DATA_REGION --value=/complexRegion")
+    gfsh.executeAndAssertThat(
+        "set variable --name=DATA_REGION --value=" + SEPARATOR + "complexRegion")
         .statusIsSuccess();
     gfsh.executeAndAssertThat("set variable --name=QUERY_LIMIT --value=10").statusIsSuccess();
-    CommandResult result = gfsh.executeCommand(
-        "query --query='select c.name, c.address from ${DATA_REGION} c limit ${QUERY_LIMIT}'");
-    Map<String, String> data = result.getMapFromSection(DataCommandResult.DATA_INFO_SECTION);
-
-    assertThat(data.get("Rows")).isEqualTo("10");
+    gfsh.executeAndAssertThat(
+        "query --query='select c.name, c.address from ${DATA_REGION} c limit ${QUERY_LIMIT}'")
+        .hasDataSection(DataCommandResult.DATA_INFO_SECTION).hasContent()
+        .containsEntry("Rows", "10");
   }
 
   @Test
   public void queryWithInvalidRegionNameGivesDescriptiveErrorMessage() throws Exception {
-    gfsh.executeAndAssertThat("query --query='select * from /nonExistentRegion'")
+    gfsh.executeAndAssertThat("query --query='select * from " + SEPARATOR + "nonExistentRegion'")
         .containsKeyValuePair("Result", "false")
-        .containsOutput("Cannot find regions <[/nonExistentRegion]> in any of the members");
+        .containsOutput(
+            "Cannot find regions <[" + SEPARATOR + "nonExistentRegion]> in any of the members");
   }
 
   @Test
   public void invalidQueryGivesDescriptiveErrorMessage() {
-    CommandResult result = gfsh.executeCommand("query --query='this is not a valid query'");
-
-    Map<String, String> data = result.getMapFromSection(DataCommandResult.DATA_INFO_SECTION);
-    assertThat(data.get("Result")).isEqualTo("false");
-    assertThat(data.get("Message"))
-        .startsWith("Query is invalid due to error : <Syntax error in query:");
+    gfsh.executeAndAssertThat("query --query='this is not a valid query'")
+        .hasDataSection(DataCommandResult.DATA_INFO_SECTION)
+        .hasContent()
+        .containsEntry("Result", "false")
+        .containsEntry("Message",
+            "Query is invalid due to error : <Syntax error in query: unexpected token: is>");
   }
 
   @Test
   public void queryGivesDescriptiveErrorMessageIfNoQueryIsSpecified() {
     gfsh.executeAndAssertThat("query").containsOutput(
-        "You should specify option (--query, --file, --interactive) for this command");
+        "You should specify option (--query, --file, --interactive, --member) for this command");
   }
 
   @Test
   public void queryReturnsUndefinedQueryResult() {
-    CommandResult result =
-        gfsh.executeCommand("query --query='select c.unknown from /complexRegion c limit 10'");
-
-    Map<String, List<String>> table =
-        result.getMapFromTableContent(DataCommandResult.QUERY_SECTION);
-    assertThat(table.get("Value").size()).isEqualTo(10);
-    assertThat(table.get("Value").get(0)).isEqualTo("UNDEFINED");
+    gfsh.executeAndAssertThat(
+        "query --query='select c.unknown from " + SEPARATOR + "complexRegion c limit 10'")
+        .hasTableSection(DataCommandResult.QUERY_SECTION)
+        .hasRowSize(10)
+        .hasRow(0).containsExactly("UNDEFINED");
   }
 
   @Test
   public void queryReturnsNonSelectResult() {
-    CommandResult result = gfsh.executeCommand(
-        "query --query=\"(select c.address from /complexRegion c where c.name = 'name1' limit 1).size\"");
-
-    Map<String, String> data = result.getMapFromSection(DataCommandResult.DATA_INFO_SECTION);
-    assertThat(data.get("Rows")).isEqualTo("1");
-
-    Map<String, List<String>> table =
-        result.getMapFromTableContent(DataCommandResult.QUERY_SECTION);
-    assertThat(table.get("Result")).contains("1");
+    CommandResultAssert commandResultAssert = gfsh.executeAndAssertThat(
+        "query --query=\"(select c.address from " + SEPARATOR
+            + "complexRegion c where c.name = 'name1' limit 1).size\"");
+    commandResultAssert.hasDataSection(DataCommandResult.DATA_INFO_SECTION).hasContent()
+        .containsEntry("Rows", "1");
+    commandResultAssert.hasTableSection(DataCommandResult.QUERY_SECTION).hasRowSize(1)
+        .hasRow(0).contains("1");
   }
 
   private String[] splitOnLineBreaks(String multilineString) {

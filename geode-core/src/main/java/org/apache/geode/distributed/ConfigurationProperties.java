@@ -15,7 +15,7 @@
 
 package org.apache.geode.distributed;
 
-import org.apache.geode.redis.GeodeRedisServer;
+import org.apache.geode.distributed.internal.membership.api.MembershipConfig;
 
 /**
  * This interface defines all the configuration properties that can be used. <U>Since</U>: Geode 1.0
@@ -392,6 +392,18 @@ public interface ConfigurationProperties {
    */
   String DISABLE_TCP = "disable-tcp";
   /**
+   * The static String definition of the <i>"disable-jmx"</i> property <a name="disable-tcp"/a>
+   * <p>
+   * <U>Description</U>: Turns off use of JMX, preventing the process from creating Geode MBeans.
+   * <p>
+   * <U>Default</U>: "false"
+   * <p>
+   * <U>Allowed values</U>: true or false
+   * <p>
+   * <U>Since</U>: Geode 1.9
+   */
+  String DISABLE_JMX = "disable-jmx";
+  /**
    * The static String definition of the <i>"distributed-system-id"</i> property
    * <p>
    * <a name="distributed-system-id"/a> <U>Decription:</U>A number that uniquely identifies this
@@ -446,6 +458,26 @@ public interface ConfigurationProperties {
    * <U>Since</U>: GemFire 8.0
    */
   String ENABLE_CLUSTER_CONFIGURATION = "enable-cluster-configuration";
+
+  /**
+   * The static String definition of the <i>"enable-management-rest-service"</i> property <a
+   * name="enable-management-rest-service"/a>
+   * </p>
+   * <U>Description</U>: "true" causes the cluster management rest service to be enabled. This
+   * service
+   * requires the cluster configuration service to be enabled. If "enable-cluster-configuration" is
+   * false and this is true, the management rest service would do nothing but report an error if you
+   * try to use it. Also even if this property is set to "true", The management rest service will
+   * only be started if "http-service-port" is not "0".
+   * </p>
+   * <U>Default</U>: "true"
+   * </p>
+   * <U>Allowed values</U>: true or false
+   * </p>
+   * <U>Since</U>: Geode 1.10
+   */
+  String ENABLE_MANAGEMENT_REST_SERVICE = "enable-management-rest-service";
+
   /**
    * The static String definition of the <i>"enable-network-partition-detection"</i> property <a
    * name="enable-network-partition-detection"/a>
@@ -1143,10 +1175,15 @@ public interface ConfigurationProperties {
    * The static String definition of the <i>"locators"</i> property <a name="locators"/a>
    * <p>
    * <U>Description</U>: A list of locators (host and port) that are used to find other member of
-   * the distributed system. This attribute's value is a possibly empty comma separated list. Each
-   * element must be of the form "hostName[portNum]" and may be of the form "host:bindAddress[port]"
-   * if a specific bind address is to be used on the locator machine. The square brackets around the
-   * portNum are literal character and must be specified.
+   * the distributed system. This attribute's value may be empty or contain one or more comma
+   * separated elements. Each element must be of the form "hostname[portNumber]" or
+   * "hostname:bindAddress[portNumber]" if a specific bind address is to be used on the locator
+   * machine. The square brackets around the portNumber are literal characters and must be
+   * specified. The hostname may be a name from DNS or the local hosts file or a literal IP address.
+   * <p>
+   * For example, "locator1[10334]" specifies a locator running on "locator1" on port 10334, while
+   * "locator1[10334],locator2:204.44.44.1[11336]" specifies two locators; one running on "locator1"
+   * on port 10334, and another running on "locator2" and bound to 204.44.44.1 on port 11336.
    * <p>
    * Since IPv6 bind addresses may contain colons, you may use an at symbol instead of a colon to
    * separate the host name and bind address. For example, "server1@fdf0:76cf:a0ed:9449::5[12233]"
@@ -1155,10 +1192,9 @@ public interface ConfigurationProperties {
    * If "locators" is empty then this distributed system will be isolated from all other GemFire
    * processes.
    * <p>
-   * <p>
    * <U>Default</U>: ""
    */
-  String LOCATORS = "locators";
+  String LOCATORS = MembershipConfig.LOCATORS;
   /**
    * The static String definition of the <i>"log-disk-space-limit"</i> property <a
    * name="log-disk-space-limit"/a>
@@ -1333,7 +1369,7 @@ public interface ConfigurationProperties {
    * (TCP). This range is given as two numbers separated by a minus sign. Minimum 3 values in range
    * are required to successfully startup.
    * <p>
-   * <U>Default</U>: 1024-65535
+   * <U>Default</U>: 41000-61000
    */
   String MEMBERSHIP_PORT_RANGE = "membership-port-range";
   /**
@@ -1341,7 +1377,7 @@ public interface ConfigurationProperties {
    * name="memcached-bind-address"/a>
    * </p>
    * <U>Description</U>: Specifies the bind address used by
-   * {@link org.apache.geode.memcached.GemFireMemcachedServer}
+   * {@code org.apache.geode.memcached.GemFireMemcachedServer}
    * </p>
    * <U>Default</U>: ""
    */
@@ -1351,9 +1387,9 @@ public interface ConfigurationProperties {
    * name="memcached-port"/a>
    * </p>
    * <U>Description</U>: Specifies the port used by
-   * {@link org.apache.geode.memcached.GemFireMemcachedServer} which enables memcached clients to
+   * {@code org.apache.geode.memcached.GemFireMemcachedServer} which enables memcached clients to
    * connect and store data in GemFire distributed system. see
-   * {@link org.apache.geode.memcached.GemFireMemcachedServer} for other configuration options.
+   * {@code org.apache.geode.memcached.GemFireMemcachedServer} for other configuration options.
    * </p>
    * <U>Default</U>: "0" disables GemFireMemcachedServer
    * </p>
@@ -1365,7 +1401,7 @@ public interface ConfigurationProperties {
    * name="memcached-protocol"/a>
    * </p>
    * <U>Description</U>: Specifies the protocol used by
-   * {@link org.apache.geode.memcached.GemFireMemcachedServer}
+   * {@code org.apache.geode.memcached.GemFireMemcachedServer}
    * </p>
    * <U>Default</U>: "ASCII"
    * </p>
@@ -1737,7 +1773,7 @@ public interface ConfigurationProperties {
    * <p>
    * <U>Default</U>: "" (doesn't start a locator)
    */
-  String START_LOCATOR = "start-locator";
+  String START_LOCATOR = MembershipConfig.START_LOCATOR;
   /**
    * The static String definition of the <i>"statistic-archive-file"</i> property <a
    * name="statistic-archive-file"/a>
@@ -1878,35 +1914,55 @@ public interface ConfigurationProperties {
    */
   String OFF_HEAP_MEMORY_SIZE = "off-heap-memory-size";
   /**
-   * The static String definition of the <i>"redis-port"</i> property <a name="redis-port"/a>
-   * </p>
-   * <U>Description</U>: Specifies the port used by {@link GeodeRedisServer} which enables redis
-   * clients to connect and store data in GemFire distributed system. see {@link GeodeRedisServer}
-   * for other configuration options.
-   * </p>
-   * <U>Default</U>: "0" disables GemFireMemcachedServer
-   * </p>
-   * <U>Allowed values</U>: 0..65535
-   */
-  String REDIS_PORT = "redis-port";
-  /**
    * The static String definition of the <i>"redis-bind-address"</i> property <a
    * name="redis-bind-address"/a>
    * </p>
-   * <U>Description</U>: Specifies the bind address used by {@link GeodeRedisServer}
+   * <U>Description</U>: Specifies the address on which the Redis API for Geode is listening. If set
+   * to the empty string or this property is not specified, the server listens on all local
+   * addresses.
    * </p>
    * <U>Default</U>: ""
    */
   String REDIS_BIND_ADDRESS = "redis-bind-address";
   /**
+   * The static String definition of the <i>"redis-enabled"</i> property <a
+   * name="redis-enabled"/a>
+   * </p>
+   * <U>Description</U>: When the default value of false, the Redis API for Geode is not available.
+   * Set to true to enable the Redis API for Geode.</td>
+   * </p>
+   * <U>Default</U>: false
+   * <td>redis-enabled</td>
+   * <td>When the default value of false, the Redis API for <%=vars.product_name%> is not available.
+   * Set
+   * to true to enable the Redis API for <%=vars.product_name%>.</td>
+   * <td>S</td>
+   * <td>false</td>
+   * </tr>
+   * </p>
+   */
+  String REDIS_ENABLED = "redis-enabled";
+  /**
    * The static String definition of the <i>"redis-password"</i> property <a
    * name="redis-password"/a>
    * </p>
-   * <U>Description</U>: Specifies the password to authenticate a client of {@link GeodeRedisServer}
+   * <U>Description</U>: Specifies the password that the server uses when a client attempts to
+   * authenticate.
    * </p>
-   * <U>Default</U>: ""
+   * <U>Default</U>: no password set
    */
   String REDIS_PASSWORD = "redis-password";
+  /**
+   * The static String definition of the <i>"redis-port"</i> property <a name="redis-port"/a>
+   * </p>
+   * <U>Description</U>: Specifies the port on which the server listens for Redis API for Geode
+   * connections. A value of 0 selects a random port.</td>
+   * </p>
+   * <U>Default</U>: 6379
+   * </p>
+   * <U>Allowed values</U>: 0..65535
+   */
+  String REDIS_PORT = "redis-port";
   /**
    * The static String definition of the <i>"lock-memory"</i> property <a name="lock-memory"/a>
    * </p>
@@ -1929,15 +1985,36 @@ public interface ConfigurationProperties {
    * Geode 1.0
    */
   String DISTRIBUTED_TRANSACTIONS = "distributed-transactions";
+
+  /**
+   * The static String definition of the <i>"ssl-use-default-context"</i> property
+   * </p>
+   *
+   * <U>Description</U> When true, either uses the default context as returned by
+   * SSLContext.getInstance('Default') or uses the context as set by using
+   * SSLContext.setDefault(). If false, then specify the keystore and the truststore by setting
+   * ssl-keystore-* and ssl-truststore-* properties. If true, then
+   * ssl-endpoint-identification-enabled
+   * is set to true. This property does not enable SSL.
+   * </p>
+   *
+   * <U>Default</U>: "false"
+   * </p>
+   *
+   * <U>Since</U>: Geode 1.7
+   * </p>
+   */
+  String SSL_USE_DEFAULT_CONTEXT = "ssl-use-default-context";
   /**
    * The static String definition of the <i>"ssl-endpoint-identification-enabled"</i> property <a
    * name="ssl-endpoint-identification-enabled"/a>
    * </p>
    * <U>Description</U>: If true, clients validate server hostname using server certificate during
-   * SSL handshake.
+   * SSL handshake. It defaults to true when ssl-use-default-context is true or else false.
    * </p>
    * <U>Default</U>: code>"false"</code>
-   * <U>Since</U>: Geode 1.8
+   * </p>
+   * <U>Since</U>: Geode 1.7
    */
   String SSL_ENDPOINT_IDENTIFICATION_ENABLED = "ssl-endpoint-identification-enabled";
   /**
@@ -1948,10 +2025,33 @@ public interface ConfigurationProperties {
    * the {@link #CLUSTER_SSL_PREFIX} properties. This property will determine which components will
    * use SSL for their communications.
    * </p>
-   * <U>Options</U>: "all","server","cluster","gateway","web","jmx","none" -- As described
+   * <U>Options</U>: "all","server","cluster","gateway","web","jmx","" -- As described
    * {@link org.apache.geode.security.SecurableCommunicationChannels} <U>Since</U>: Geode 1.0
    */
   String SSL_ENABLED_COMPONENTS = "ssl-enabled-components";
+
+  /**
+   * The static String definition of the <i>"security-auth-token-enabled-components"</i> property <a
+   * name="security-auth-token-enabled-components"/a>
+   * </p>
+   * <U>Description</U>: This setting is a comma delimited list of component names which works in
+   * conjunction with
+   * the {@link #SECURITY_MANAGER} properties. if security manager is enabled, this property will
+   * determine what rest end point will use token based authentication instead of basic
+   * (username/password)
+   * authentication.
+   * </p>
+   * <U>Componant names</U>: "all","management" <U>Since</U>: Geode 1.11
+   * "pulse" <U>Since</U>: Geode 1.13
+   * "all": shorthand for all the security components that support token authentication.
+   * "management": the {@link #ENABLE_MANAGEMENT_REST_SERVICE Management REST Service}
+   * "pulse": the Pulse web app
+   *
+   * Note: listing components that are not enabled does nothing.
+   *
+   * Default: empty. All security components use basic (username/password) authentication
+   */
+  String SECURITY_AUTH_TOKEN_ENABLED_COMPONENTS = SECURITY_PREFIX + "auth-token-enabled-components";
   /**
    * The static String definition of the <i>"ssl-ciphers"</i> property <a name="ssl-ciphers"/a>
    * </p>
@@ -2081,6 +2181,22 @@ public interface ConfigurationProperties {
    * <U>Since</U>: Geode 1.0
    */
   String SSL_WEB_SERVICE_REQUIRE_AUTHENTICATION = "ssl-web-require-authentication";
+
+  /**
+   * The static String definition of the <i>"ssl-parameter-extension"</i> property
+   *
+   * <U>Description</U>SSLParameterExtension module name for Clients that want to use SSL Parameter
+   * extensions.
+   * Module must implement SSLParameterExtension interface.
+   * </p>
+   * <U>Default</U>: ""
+   * </p>
+   * <U>Since</U>: Geode 1.12
+   * </p>
+   * <U>Allowed values</U>: class name
+   */
+  String SSL_PARAMETER_EXTENSION = "ssl-parameter-extension";
+
   /**
    * The static String definition of the <i>"validate-serializable-objects"</i> property
    *

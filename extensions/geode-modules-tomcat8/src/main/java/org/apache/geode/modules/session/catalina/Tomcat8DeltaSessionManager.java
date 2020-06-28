@@ -12,6 +12,7 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
+
 package org.apache.geode.modules.session.catalina;
 
 import java.io.IOException;
@@ -22,7 +23,7 @@ import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Pipeline;
 import org.apache.catalina.session.StandardSession;
 
-public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
+public class Tomcat8DeltaSessionManager extends DeltaSessionManager<Tomcat8CommitSessionValve> {
 
   /**
    * Prepare for the beginning of active use of the public methods of this component. This method
@@ -34,7 +35,7 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
    */
   @Override
   public void startInternal() throws LifecycleException {
-    super.startInternal();
+    startInternalBase();
     if (getLogger().isDebugEnabled()) {
       getLogger().debug(this + ": Starting");
     }
@@ -56,9 +57,7 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
 
     try {
       load();
-    } catch (ClassNotFoundException e) {
-      throw new LifecycleException("Exception starting manager", e);
-    } catch (IOException e) {
+    } catch (ClassNotFoundException | IOException e) {
       throw new LifecycleException("Exception starting manager", e);
     }
 
@@ -66,7 +65,15 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
     scheduleTimerTasks();
 
     this.started.set(true);
-    this.setState(LifecycleState.STARTING);
+    setLifecycleState(LifecycleState.STARTING);
+  }
+
+  void setLifecycleState(LifecycleState newState) throws LifecycleException {
+    this.setState(newState);
+  }
+
+  void startInternalBase() throws LifecycleException {
+    super.startInternal();
   }
 
   /**
@@ -77,7 +84,7 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
    */
   @Override
   public void stopInternal() throws LifecycleException {
-    super.stopInternal();
+    stopInternalBase();
     if (getLogger().isDebugEnabled()) {
       getLogger().debug(this + ": Stopping");
     }
@@ -94,7 +101,7 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
     // StandardManager expires all Sessions here.
     // All Sessions are not known by this Manager.
 
-    super.destroyInternal();
+    destroyInternalBase();
 
     // Clear any sessions to be touched
     getSessionsToTouch().clear();
@@ -109,8 +116,16 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
       unregisterCommitSessionValve();
     }
 
-    this.setState(LifecycleState.STOPPING);
+    setLifecycleState(LifecycleState.STOPPING);
 
+  }
+
+  void stopInternalBase() throws LifecycleException {
+    super.stopInternal();
+  }
+
+  void destroyInternalBase() throws LifecycleException {
+    super.destroyInternal();
   }
 
   @Override
@@ -121,6 +136,11 @@ public class Tomcat8DeltaSessionManager extends DeltaSessionManager {
   @Override
   protected Pipeline getPipeline() {
     return getTheContext().getPipeline();
+  }
+
+  @Override
+  protected Tomcat8CommitSessionValve createCommitSessionValve() {
+    return new Tomcat8CommitSessionValve();
   }
 
   @Override

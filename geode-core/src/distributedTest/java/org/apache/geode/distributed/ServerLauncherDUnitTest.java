@@ -15,22 +15,21 @@
 
 package org.apache.geode.distributed;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import org.apache.geode.cache.Cache;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.management.ManagementService;
 import org.apache.geode.management.membership.MembershipEvent;
 import org.apache.geode.management.membership.MembershipListener;
@@ -89,7 +88,7 @@ public class ServerLauncherDUnitTest {
 
     launchServer(locator.getPort());
 
-    Awaitility.waitAtMost(10, TimeUnit.SECONDS).until(
+    await().until(
         () -> locator.invoke(() -> TestManagementListener.joined && TestManagementListener.left));
 
     assertThat(locator.invoke(() -> TestManagementListener.crashed)).isFalse();

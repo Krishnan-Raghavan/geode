@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
@@ -125,6 +127,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
     vm3.invoke(() -> HAGIIBugDUnitTest.closeCache());
     cache = null;
     Invoke.invokeInEveryVM(new SerializableRunnable() {
+      @Override
       public void run() {
         cache = null;
       }
@@ -147,6 +150,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
     vm0.invoke(putFromVmBeforeGII("vm0_1"));
     populateKeySet("vm0_1");
     Thread t1 = new Thread() {
+      @Override
       public void run() {
         try {
 
@@ -165,7 +169,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
           hattr.setExpiryTime(12000000);
           RegionQueue regionqueue = null;
           regionqueue = HARegionQueue.getHARegionQueueInstance(regionQueueName, cache, hattr,
-              HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+              HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
           isHARegionQueueUp = true;
           vm0.invoke(setStopFlag());
           assertNotNull(regionqueue);
@@ -232,7 +236,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
 
   private void validateResults(boolean isSecond) {
     HARegion regionForQueue = (HARegion) cache.getRegion(
-        Region.SEPARATOR + HARegionQueue.createRegionName(HAExpiryDUnitTest.regionQueueName));
+        SEPARATOR + HARegionQueue.createRegionName(HAExpiryDUnitTest.regionQueueName));
     LogWriterUtils.getLogWriter().info("Region Queue size : " + regionForQueue.keys().size());
     Iterator itr = regionForQueue.entrySet(false).iterator();
     while (itr.hasNext()) {
@@ -269,9 +273,10 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
   private CacheSerializableRunnable putFromVmBeforeGII(final String whichVm) {
 
     CacheSerializableRunnable putBeforeGII = new CacheSerializableRunnable("putBeforeGII") {
+      @Override
       public void run2() throws CacheException {
 
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         for (int i = 0; i < NO_OF_PUTS_BEFORE_GII; i++) {
           region.put(whichVm + i, whichVm + i);
         }
@@ -285,8 +290,9 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
   private CacheSerializableRunnable putFrmVm(final String whichVm) {
 
     CacheSerializableRunnable putFromVM = new CacheSerializableRunnable("putFromVM") {
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         int j = 0;
         while (true) {
           if (isStop)
@@ -306,6 +312,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
 
   protected CacheSerializableRunnable setStopFlag() {
     CacheSerializableRunnable setFlag = new CacheSerializableRunnable("setFlag") {
+      @Override
       public void run2() throws CacheException {
         isStop = true;
       }
@@ -320,7 +327,7 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
     // setting expiry time for the regionqueue.
     hattr.setExpiryTime(12000000);
     RegionQueue regionqueue = HARegionQueue.getHARegionQueueInstance(regionQueueName, cache, hattr,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
     assertNotNull(regionqueue);
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
@@ -339,43 +346,41 @@ public class HAGIIBugDUnitTest extends JUnit4DistributedTestCase {
     }
   }
 
-}
+  /**
+   * This listener performs the put of Conflatable object in the regionqueue.
+   */
+  private static class vmListenerToPutInHARegionQueue extends CacheListenerAdapter {
+    @Override
+    public void afterCreate(EntryEvent event) {
 
-
-/**
- * This listener performs the put of Conflatable object in the regionqueue.
- */
-
-class vmListenerToPutInHARegionQueue extends CacheListenerAdapter {
-  public void afterCreate(EntryEvent event) {
-
-    Cache cache = event.getRegion().getCache();
-    HARegion regionForQueue = (HARegion) cache.getRegion(
-        Region.SEPARATOR + HARegionQueue.createRegionName(HAGIIBugDUnitTest.regionQueueName));
-    HARegionQueue regionqueue = regionForQueue.getOwner();
-
-    try {
-      regionqueue.put(new ConflatableObject(event.getKey(), event.getNewValue(),
-          ((EntryEventImpl) event).getEventId(), false, "region1"));
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
-  }
-}
-
-
-class vmListenerToCheckHARegionQueue extends CacheListenerAdapter {
-  public void afterCreate(EntryEvent event) {
-    if (HAGIIBugDUnitTest.isHARegionQueueUp) {
       Cache cache = event.getRegion().getCache();
       HARegion regionForQueue = (HARegion) cache.getRegion(
-          Region.SEPARATOR + HARegionQueue.createRegionName(HAGIIBugDUnitTest.regionQueueName));
+          SEPARATOR + HARegionQueue.createRegionName(regionQueueName));
       HARegionQueue regionqueue = regionForQueue.getOwner();
+
       try {
         regionqueue.put(new ConflatableObject(event.getKey(), event.getNewValue(),
             ((EntryEventImpl) event).getEventId(), false, "region1"));
       } catch (Exception e) {
         e.printStackTrace();
+      }
+    }
+  }
+
+  private static class vmListenerToCheckHARegionQueue extends CacheListenerAdapter {
+    @Override
+    public void afterCreate(EntryEvent event) {
+      if (isHARegionQueueUp) {
+        Cache cache = event.getRegion().getCache();
+        HARegion regionForQueue = (HARegion) cache.getRegion(
+            SEPARATOR + HARegionQueue.createRegionName(regionQueueName));
+        HARegionQueue regionqueue = regionForQueue.getOwner();
+        try {
+          regionqueue.put(new ConflatableObject(event.getKey(), event.getNewValue(),
+              ((EntryEventImpl) event).getEventId(), false, "region1"));
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
       }
     }
   }

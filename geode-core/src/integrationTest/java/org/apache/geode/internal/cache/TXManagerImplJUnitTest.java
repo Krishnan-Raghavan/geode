@@ -44,7 +44,7 @@ import org.apache.geode.cache.ExpirationAttributes;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.TransactionId;
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * junit test for suspend and resume methods
@@ -95,6 +95,7 @@ public class TXManagerImplJUnitTest {
     final CountDownLatch latch = new CountDownLatch(1);
     final CountDownLatch latch2 = new CountDownLatch(1);
     Thread t = new Thread(new Runnable() {
+      @Override
       public void run() {
         try {
           mgr.resume(txId);
@@ -131,6 +132,7 @@ public class TXManagerImplJUnitTest {
     mgr.resume(txId);
     final CountDownLatch latch = new CountDownLatch(1);
     Thread t = new Thread(new Runnable() {
+      @Override
       public void run() {
         assertFalse(mgr.tryResume(txId, 1, TimeUnit.SECONDS));
         latch.countDown();
@@ -157,6 +159,7 @@ public class TXManagerImplJUnitTest {
     final CountDownLatch latch2 = new CountDownLatch(1);
     final CountDownLatch latch3 = new CountDownLatch(1);
     Thread t1 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch2.countDown();
         assertTrue(mgr.tryResume(txId, 1, TimeUnit.SECONDS));
@@ -166,6 +169,7 @@ public class TXManagerImplJUnitTest {
       }
     });
     Thread t2 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch3.countDown();
         assertTrue(mgr.tryResume(txId, 1, TimeUnit.SECONDS));
@@ -200,6 +204,7 @@ public class TXManagerImplJUnitTest {
     final CountDownLatch latch = new CountDownLatch(2);
     final CountDownLatch latch2 = new CountDownLatch(2);
     Thread t1 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch.countDown();
         assertFalse(mgr.tryResume(txId, 10, TimeUnit.SECONDS));
@@ -207,6 +212,7 @@ public class TXManagerImplJUnitTest {
       }
     });
     Thread t2 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch.countDown();
         assertFalse(mgr.tryResume(txId, 10, TimeUnit.SECONDS));
@@ -271,6 +277,7 @@ public class TXManagerImplJUnitTest {
     mgr.resume(txId);
     final CountDownLatch latch = new CountDownLatch(1);
     Thread t = new Thread(new Runnable() {
+      @Override
       public void run() {
         long start = System.currentTimeMillis();
         assertTrue(mgr.tryResume(txId, Long.MAX_VALUE, TimeUnit.MILLISECONDS));
@@ -315,7 +322,7 @@ public class TXManagerImplJUnitTest {
   @Test
   public void testSuspendTimeout() throws Exception {
     cache.close();
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "suspendedTxTimeout", "1");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "suspendedTxTimeout", "1");
     createCache();
     TXManagerImpl mgr = (TXManagerImpl) cache.getCacheTransactionManager();
     assertEquals(1, mgr.getSuspendedTransactionTimeout());
@@ -329,7 +336,7 @@ public class TXManagerImplJUnitTest {
     } catch (IllegalStateException expected) {
     }
     assertNull(region.get("key"));
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "suspendedTxTimeout", "");
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + "suspendedTxTimeout", "");
   }
 
   @Test
@@ -363,6 +370,7 @@ public class TXManagerImplJUnitTest {
     final CountDownLatch latch1 = new CountDownLatch(2);
     final CountDownLatch latch2 = new CountDownLatch(2);
     Thread t1 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch1.countDown();
         assertTrue(spyMgr.tryResume(txId, time, TimeUnit.SECONDS));
@@ -372,6 +380,7 @@ public class TXManagerImplJUnitTest {
       }
     });
     Thread t2 = new Thread(new Runnable() {
+      @Override
       public void run() {
         latch1.countDown();
         assertTrue(spyMgr.tryResume(txId, time, TimeUnit.SECONDS));

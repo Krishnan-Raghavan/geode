@@ -12,10 +12,13 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
+
 package org.apache.geode.cache.client;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.InterestResultPolicy;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.client.proxy.ProxySocketFactories;
 import org.apache.geode.cache.query.CqAttributes;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.server.CacheServer;
@@ -71,6 +74,14 @@ public interface PoolFactory {
    * Current value: <code>10000</code>.
    */
   int DEFAULT_FREE_CONNECTION_TIMEOUT = 10000;
+
+  /**
+   * The default amount of time, in milliseconds, which we will wait for a server connection if max
+   * connections is set and there is no free connections towards designated server.
+   * <p>
+   * Current value: <code>0</code>.
+   */
+  int DEFAULT_SERVER_CONNECTION_TIMEOUT = 0;
 
   /**
    * The default interval in which the pool will check to see if a connection to a given server
@@ -141,7 +152,11 @@ public interface PoolFactory {
    * them.
    * <p>
    * Current value: <code>false</code>.
+   *
+   * @deprecated Since Geode 1.10.0. Thread local connections are ignored. Will be removed in future
+   *             major release.
    */
+  @Deprecated
   boolean DEFAULT_THREAD_LOCAL_CONNECTIONS = false;
 
   /**
@@ -180,7 +195,7 @@ public interface PoolFactory {
    * <p>
    * Current value: 0
    */
-  public static final int DEFAULT_SUBSCRIPTION_TIMEOUT_MULTIPLIER = 0;
+  int DEFAULT_SUBSCRIPTION_TIMEOUT_MULTIPLIER = 0;
 
   /**
    * The default server group.
@@ -205,6 +220,14 @@ public interface PoolFactory {
    * @since GemFire 6.5
    */
   boolean DEFAULT_MULTIUSER_AUTHENTICATION = false;
+
+  /**
+   * The default value for the socket factory
+   *
+   * Current value {@link SocketFactory#DEFAULT}
+   */
+  @Immutable
+  SocketFactory DEFAULT_SOCKET_FACTORY = SocketFactory.DEFAULT;
 
   /**
    * Sets the socket connect timeout for this pool. The number of milli seconds specified as socket
@@ -232,6 +255,25 @@ public interface PoolFactory {
    *         <code>0</code>.
    */
   PoolFactory setFreeConnectionTimeout(int connectionTimeout);
+
+
+  /**
+   * Sets the server connection timeout for this pool. If the pool has a max connections setting,
+   * operations will block if there is no free connection towards specific server. The server
+   * connection timeout specifies how long those operations will block waiting for a free connection
+   * towards specific server before receiving an {@link AllConnectionsInUseException}.
+   * If max connections is not set this setting has no effect.
+   * It differs from "setFreeConnectionTimeout" which sets wait time for any server connection in
+   * the pool,
+   * where this sets wait time for a free connection to a specific server.
+   *
+   * @see #setMaxConnections(int)
+   * @param serverConnectionTimeout the connection timeout in milliseconds
+   * @return a reference to <code>this</code>
+   * @throws IllegalArgumentException if <code>serverConnectionTimeout</code> is less than
+   *         <code>0</code>.
+   */
+  PoolFactory setServerConnectionTimeout(int serverConnectionTimeout);
 
   /**
    * Sets the load conditioning interval for this pool. This interval controls how frequently the
@@ -273,7 +315,10 @@ public interface PoolFactory {
    *
    * @param threadLocalConnections if <code>true</code> then enable thread local connections.
    * @return a reference to <code>this</code>
+   * @deprecated Since Geode 1.10.0. Thread local connections are ignored. Will be removed in future
+   *             major release.
    */
+  @Deprecated
   PoolFactory setThreadLocalConnections(boolean threadLocalConnections);
 
   /**
@@ -451,7 +496,7 @@ public interface PoolFactory {
    * The resulting timeout will be multiplied by 1.25 in order to avoid race conditions with the
    * server sending its "ping" message.
    */
-  public PoolFactory setSubscriptionTimeoutMultiplier(int multiplier);
+  PoolFactory setSubscriptionTimeoutMultiplier(int multiplier);
 
   /**
    * Sets the interval in milliseconds to wait before sending acknowledgements to the cache server
@@ -520,5 +565,18 @@ public interface PoolFactory {
    * @since GemFire 6.5
    */
   PoolFactory setMultiuserAuthentication(boolean enabled);
+
+  /**
+   * Set the socket factory used by this pool to create connections to both locators (if
+   * configured using {@link #addLocator(String, int)}) and servers.
+   *
+   * see {@link SocketFactory}
+   * See {@link ProxySocketFactories}
+   *
+   * @param socketFactory The {@link SocketFactory} to use
+   * @return a reference to <code> this </code>
+   * @since Geode 1.13
+   */
+  PoolFactory setSocketFactory(SocketFactory socketFactory);
 
 }

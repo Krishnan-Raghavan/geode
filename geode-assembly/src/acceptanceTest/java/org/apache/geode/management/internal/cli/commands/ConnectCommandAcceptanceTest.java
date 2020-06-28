@@ -14,16 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.geode.management.internal.cli.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assume.assumeFalse;
 
+import org.apache.commons.lang3.JavaVersion;
+import org.apache.commons.lang3.SystemUtils;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.GfshTest;
 import org.apache.geode.test.junit.rules.gfsh.GfshExecution;
 import org.apache.geode.test.junit.rules.gfsh.GfshRule;
@@ -31,18 +32,43 @@ import org.apache.geode.test.junit.rules.gfsh.GfshScript;
 
 @Category(GfshTest.class)
 public class ConnectCommandAcceptanceTest {
+
   @Rule
-  public GfshRule gfsh130 = new GfshRule(VersionManager.GEODE_130);
+  public GfshRule gfsh130 = new GfshRule("1.3.0");
 
   @Rule
   public GfshRule gfshDefault = new GfshRule();
 
   @Test
-  public void useCurrentGfshToConnectToOlderLocator() throws Exception {
-    GfshScript.of("start locator").execute(gfsh130);
-    GfshExecution connect = GfshScript.of("connect").expectFailure().execute(gfshDefault);
+  public void useCurrentGfshToConnectToOlderLocator() {
+    assumeFalse(
+        "this test can only be run with pre-9 jdk since it needs to run older version of gfsh",
+        SystemUtils.isJavaVersionAtLeast(JavaVersion.JAVA_9));
 
-    assertThat(connect.getOutputText()).contains("Cannot use a")
+    GfshScript
+        .of("start locator")
+        .execute(gfsh130);
+
+    GfshExecution connect = GfshScript
+        .of("connect")
+        .expectFailure()
+        .execute(gfshDefault);
+
+    assertThat(connect.getOutputText())
+        .contains("Cannot use a")
         .contains("gfsh client to connect to this cluster.");
+  }
+
+  @Test
+  public void invalidHostname() {
+    GfshExecution connect = GfshScript
+        .of("connect --locator=\"invalid host name[52326]\"")
+        .expectFailure()
+        .execute(gfshDefault);
+
+    assertThat(connect.getOutputText())
+        .doesNotContain("UnknownHostException")
+        .doesNotContain("nodename nor servname")
+        .contains("can't be reached. Hostname or IP address could not be found.");
   }
 }

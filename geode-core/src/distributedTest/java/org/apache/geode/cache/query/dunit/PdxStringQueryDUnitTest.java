@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
@@ -78,7 +79,7 @@ import org.apache.geode.test.junit.categories.OQLQueryTest;
 public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
   final String rootRegionName = "root";
   final String regionName = "PdxTest";
-  final String regName = "/" + rootRegionName + "/" + regionName;
+  final String regName = SEPARATOR + rootRegionName + SEPARATOR + regionName;
   private static int bridgeServerPort;
 
   private static final int orderByQueryIndex = 11;
@@ -157,6 +158,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         // create a local query service
@@ -182,6 +184,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -190,6 +193,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -209,6 +213,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -223,6 +228,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -328,7 +334,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(executeQueries);
 
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -367,7 +374,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -393,6 +401,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -434,6 +443,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         // create a local query service
@@ -458,6 +468,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -466,6 +477,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -485,6 +497,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -499,6 +512,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Verify if all the index keys are PdxStrings
     server0.invoke(new CacheSerializableRunnable("Create Server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         QueryService localQueryService = getCache().getQueryService();
@@ -518,6 +532,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -570,7 +585,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(executeQueries);
 
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -599,7 +615,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -624,6 +641,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -664,6 +682,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 10;
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         // create a local query service
@@ -689,6 +708,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -697,6 +717,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(false, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -715,6 +736,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -729,6 +751,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Verify if all the index keys are PdxStrings
     server0.invoke(new CacheSerializableRunnable("Create Server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         QueryService localQueryService = getCache().getQueryService();
@@ -743,6 +766,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -794,7 +818,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(executeQueries);
 
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -822,7 +847,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
       }
     });
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -846,6 +872,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -886,6 +913,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final boolean isPr = true;
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         // create a local query service
@@ -919,6 +947,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -927,6 +956,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -946,6 +976,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -960,6 +991,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -1068,7 +1100,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(executeQueries);
 
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -1107,7 +1140,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1133,6 +1167,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1173,6 +1208,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final boolean isPr = true;
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         // create a local query service
@@ -1204,6 +1240,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1212,6 +1249,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1231,6 +1269,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -1245,6 +1284,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Verify if all the index keys are PdxStrings
     server0.invoke(new CacheSerializableRunnable("Create Server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         QueryService localQueryService = getCache().getQueryService();
@@ -1270,6 +1310,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -1321,7 +1362,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     client.invoke(executeQueries);
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -1350,7 +1392,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1377,6 +1420,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1418,6 +1462,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final boolean isPr = true;
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         // create a local query service
@@ -1449,6 +1494,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1457,6 +1503,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1476,6 +1523,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -1490,6 +1538,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Verify if all the index keys are PdxStrings
     server0.invoke(new CacheSerializableRunnable("Create Server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         QueryService localQueryService = getCache().getQueryService();
@@ -1513,6 +1562,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -1566,7 +1616,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     client.invoke(executeQueries);
 
     // Put Non Pdx objects on server execute queries locally
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
 
@@ -1595,7 +1646,8 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     });
 
     // test for readSerialized flag
-    server0.invoke(new CacheSerializableRunnable("Create Bridge Server") {
+    server0.invoke(new CacheSerializableRunnable("Create cache server") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1622,6 +1674,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // test for readSerialized flag on client
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
         cache.setReadSerializedForTest(true);
@@ -1663,6 +1716,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final boolean isPr = true;
     // Start server1 and create index
     server0.invoke(new CacheSerializableRunnable("Create Server1") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         // create a local query service
@@ -1694,6 +1748,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server2
     server1.invoke(new CacheSerializableRunnable("Create Server2") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1702,6 +1757,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Start server3
     server2.invoke(new CacheSerializableRunnable("Create Server3") {
+      @Override
       public void run2() throws CacheException {
         configAndStartBridgeServer(isPr, false, false);
         Region region = getRootRegion().getSubregion(regionName);
@@ -1721,6 +1777,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Create client region and put PortfolioPdx objects (PdxInstances)
     client.invoke(new CacheSerializableRunnable("Create client") {
+      @Override
       public void run2() throws CacheException {
         AttributesFactory factory = new AttributesFactory();
         factory.setScope(Scope.LOCAL);
@@ -1746,6 +1803,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Verify if all the index keys are PdxStrings
     server0.invoke(new CacheSerializableRunnable("Create Server") {
+      @Override
       public void run2() throws CacheException {
         Region region = getRootRegion().getSubregion(regionName);
         QueryService localQueryService = getCache().getQueryService();
@@ -1771,6 +1829,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute queries from client to server and locally on client
     client.invoke(new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService remoteQueryService = null;
         QueryService localQueryService = null;
@@ -1942,7 +2001,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
     final VM vm0 = host.getVM(0);
     final VM vm1 = host.getVM(1);
     final VM vm2 = host.getVM(2);
-    final String name = "/" + regionName;
+    final String name = SEPARATOR + regionName;
     final String[] qs =
         {"select distinct pkid from " + name, "select distinct pkid, status from " + name};
 
@@ -2044,7 +2103,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    */
   protected void startBridgeServer(int port, boolean notifyBySubscription) throws IOException {
@@ -2057,7 +2116,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    */
   protected void stopBridgeServer(Cache cache) {
     CacheServer server = (CacheServer) cache.getCacheServers().iterator().next();
@@ -2068,6 +2127,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
   /* Close Client */
   public void closeClient(VM client) {
     SerializableRunnable closeCache = new CacheSerializableRunnable("Close Client") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Close Client. ###");
         try {
@@ -2099,6 +2159,7 @@ public class PdxStringQueryDUnitTest extends JUnit4CacheTestCase {
   public void createPool(VM vm, final String poolName, final String[] servers, final int[] ports,
       final boolean subscriptionEnabled, final int redundancy) {
     vm.invoke(new CacheSerializableRunnable("createPool :" + poolName) {
+      @Override
       public void run2() throws CacheException {
         // Create Cache.
         getLonerSystem();

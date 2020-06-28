@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertNotNull;
@@ -40,10 +41,10 @@ import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -129,7 +130,6 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
 
   /**
    * In this test do a create & then update on same key , the client should receive 2 calabcks.
-   *
    */
 
   @Test
@@ -145,7 +145,6 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
   /**
    * In this test do create , then update & update. The client should receive 2 callbacks , one for
    * create & one for the last update.
-   *
    */
   @Test
   public void testConflationUpdate() throws Exception {
@@ -168,7 +167,6 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
   /**
    * In this test do create , then update, update, invalidate. The client should receive 3
    * callbacks, one for create one for the last update and one for the invalidate.
-   *
    */
   @Test
   public void testConflationCreateUpdateInvalidate() throws Exception {
@@ -186,7 +184,6 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
   /**
    * In this test do a create , update , update & destroy. The client should receive 3 callbacks (
    * craete , conflated update & destroy).
-   *
    */
   @Test
   public void testConflationCreateUpdateDestroy() throws Exception {
@@ -203,8 +200,9 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
 
   private CacheSerializableRunnable putFromServer(final String key, final String value) {
     CacheSerializableRunnable performPut = new CacheSerializableRunnable("putFromServer") {
+      @Override
       public void run2() throws CacheException {
-        Region region = basicGetCache().getRegion(Region.SEPARATOR + regionName);
+        Region region = basicGetCache().getRegion(SEPARATOR + regionName);
         assertNotNull(region);
         basicGetCache().getLogger().info("starting put()");
         region.put(key, value);
@@ -218,8 +216,9 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
   private CacheSerializableRunnable invalidateFromServer(final String key) {
     CacheSerializableRunnable performInvalidate =
         new CacheSerializableRunnable("invalidateFromServer") {
+          @Override
           public void run2() throws CacheException {
-            Region region = basicGetCache().getRegion(Region.SEPARATOR + regionName);
+            Region region = basicGetCache().getRegion(SEPARATOR + regionName);
             assertNotNull(region);
             region.invalidate(key);
             basicGetCache().getLogger().info("done invalidate() successfully");
@@ -232,8 +231,9 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
 
   private CacheSerializableRunnable destroyFromServer(final String key) {
     CacheSerializableRunnable performDestroy = new CacheSerializableRunnable("performDestroy") {
+      @Override
       public void run2() throws CacheException {
-        Region region = basicGetCache().getRegion(Region.SEPARATOR + regionName);
+        Region region = basicGetCache().getRegion(SEPARATOR + regionName);
         assertNotNull(region);
         region.destroy(key);
         basicGetCache().getLogger().info("done destroy successfully");
@@ -248,10 +248,12 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
     CacheSerializableRunnable checkEvents = new CacheSerializableRunnable("checkEvents") {
       final int interval = 200; // millis
 
+      @Override
       public void run2() throws CacheException {
         WaitCriterion w = new WaitCriterion() {
+          @Override
           public boolean done() {
-            synchronized (HAConflationDUnitTest.LOCK) {
+            synchronized (LOCK) {
 
               if (!lastKeyArrived) {
                 try {
@@ -264,12 +266,13 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
             return lastKeyArrived;
           }
 
+          @Override
           public String description() {
             return "expected " + expectedEvents + " events but received " + actualNoEvents;
           }
         };
 
-        Wait.waitForCriterion(w, 3 * 60 * 1000, interval, true);
+        GeodeAwaitility.await().untilAsserted(w);
       }
     };
     return checkEvents;
@@ -308,7 +311,7 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
     }
     RegionAttributes attrs = factory.create();
     basicGetCache().createRegion(regionName, attrs);
-    Region region = basicGetCache().getRegion(Region.SEPARATOR + regionName);
+    Region region = basicGetCache().getRegion(SEPARATOR + regionName);
     assertNotNull(region);
 
     region.registerInterest(KEY1);
@@ -341,75 +344,83 @@ public class HAConflationDUnitTest extends JUnit4CacheTestCase {
     return new Integer(server.getPort());
   }
 
-}
+  private static class HAClientCountEventListener implements CacheListener, Declarable {
 
-
-class HAClientCountEventListener implements CacheListener, Declarable {
-
-  public void afterCreate(EntryEvent event) {
-    String key = (String) event.getKey();
-    if (key.equals(HAConflationDUnitTest.LAST_KEY)) {
-      synchronized (HAConflationDUnitTest.LOCK) {
-        HAConflationDUnitTest.lastKeyArrived = true;
-        HAConflationDUnitTest.LOCK.notifyAll();
+    @Override
+    public void afterCreate(EntryEvent event) {
+      String key = (String) event.getKey();
+      if (key.equals(LAST_KEY)) {
+        synchronized (LOCK) {
+          lastKeyArrived = true;
+          LOCK.notifyAll();
+        }
+      } else {
+        actualNoEvents++;
       }
-    } else {
-      HAConflationDUnitTest.actualNoEvents++;
+
     }
 
-  }
+    @Override
+    public void afterUpdate(EntryEvent event) {
 
-  public void afterUpdate(EntryEvent event) {
+      actualNoEvents++;
 
-    HAConflationDUnitTest.actualNoEvents++;
+    }
 
-  }
+    @Override
+    public void afterInvalidate(EntryEvent event) {
 
-  public void afterInvalidate(EntryEvent event) {
+      actualNoEvents++;
 
-    HAConflationDUnitTest.actualNoEvents++;
+    }
 
-  }
+    @Override
+    public void afterDestroy(EntryEvent event) {
+      actualNoEvents++;
 
-  public void afterDestroy(EntryEvent event) {
-    HAConflationDUnitTest.actualNoEvents++;
+    }
 
-  }
+    @Override
+    public void afterRegionInvalidate(RegionEvent event) {
+      // TODO Auto-generated method stub
 
-  public void afterRegionInvalidate(RegionEvent event) {
-    // TODO Auto-generated method stub
+    }
 
-  }
+    @Override
+    public void afterRegionDestroy(RegionEvent event) {
+      // TODO Auto-generated method stub
 
-  public void afterRegionDestroy(RegionEvent event) {
-    // TODO Auto-generated method stub
+    }
 
-  }
+    @Override
+    public void afterRegionClear(RegionEvent event) {
+      // TODO Auto-generated method stub
 
-  public void afterRegionClear(RegionEvent event) {
-    // TODO Auto-generated method stub
+    }
 
-  }
+    @Override
+    public void afterRegionCreate(RegionEvent event) {
+      // TODO Auto-generated method stub
 
-  public void afterRegionCreate(RegionEvent event) {
-    // TODO Auto-generated method stub
+    }
 
-  }
+    @Override
+    public void afterRegionLive(RegionEvent event) {
+      // TODO NOT Auto-generated method stub, added by vrao
 
-  public void afterRegionLive(RegionEvent event) {
-    // TODO NOT Auto-generated method stub, added by vrao
-
-  }
-
+    }
 
 
-  public void close() {
-    // TODO Auto-generated method stub
+    @Override
+    public void close() {
+      // TODO Auto-generated method stub
 
-  }
+    }
 
-  public void init(Properties props) {
-    // TODO Auto-generated method stub
+    @Override
+    public void init(Properties props) {
+      // TODO Auto-generated method stub
 
+    }
   }
 }

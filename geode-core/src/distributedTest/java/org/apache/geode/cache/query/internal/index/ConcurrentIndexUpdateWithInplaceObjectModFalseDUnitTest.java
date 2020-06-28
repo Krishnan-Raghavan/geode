@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -37,7 +38,6 @@ import org.apache.geode.cache.query.internal.index.MemoryIndexStore.MemoryIndexS
 import org.apache.geode.cache.query.partitioned.PRQueryDUnitHelper;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.cache30.CacheTestCase;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.LocalRegion;
@@ -55,6 +55,7 @@ import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * This test is similar to {@link ConcurrentIndexUpdateWithoutWLDUnitTest} except that it sets
@@ -75,12 +76,12 @@ public class ConcurrentIndexUpdateWithInplaceObjectModFalseDUnitTest
   // CompactRangeIndex
   private String indexName = "idIndex";
   private String indexedExpression = "ID";
-  private String fromClause = "/" + regionName;
+  private String fromClause = SEPARATOR + regionName;
   private String alias = "p";
 
   private String rindexName = "secidIndex";
   private String rindexedExpression = "pos.secId";
-  private String rfromClause = "/" + regionName + " p, p.positions.values pos";
+  private String rfromClause = SEPARATOR + regionName + " p, p.positions.values pos";
   private String ralias = "pos";
 
   int stepSize = 10;
@@ -98,7 +99,7 @@ public class ConcurrentIndexUpdateWithInplaceObjectModFalseDUnitTest
         Cache newCache = GemFireCacheImpl.getInstance();
         if (null == newCache) {
           System.setProperty(
-              DistributionConfig.GEMFIRE_PREFIX + "DISABLE_DISCONNECT_DS_ON_CACHE_CLOSE", "true");
+              GeodeGlossary.GEMFIRE_PREFIX + "DISABLE_DISCONNECT_DS_ON_CACHE_CLOSE", "true");
           newCache = CacheFactory.create(getSystem());
         }
         PRQueryDUnitHelper.setCache(newCache);
@@ -110,7 +111,7 @@ public class ConcurrentIndexUpdateWithInplaceObjectModFalseDUnitTest
         Assert.fail("Checked exception while initializing cache??", ex);
       } finally {
         System.clearProperty(
-            DistributionConfig.GEMFIRE_PREFIX + "DISABLE_DISCONNECT_DS_ON_CACHE_CLOSE");
+            GeodeGlossary.GEMFIRE_PREFIX + "DISABLE_DISCONNECT_DS_ON_CACHE_CLOSE");
       }
     }
   }

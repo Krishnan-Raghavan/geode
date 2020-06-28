@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
@@ -73,6 +74,7 @@ import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
@@ -95,7 +97,7 @@ import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 @Category({ClientSubscriptionTest.class})
 public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
-  /** The port on which the bridge server was started in this VM */
+  /** The port on which the cache server was started in this VM */
   private static int bridgeServerPort;
 
   protected static int port = 0;
@@ -123,39 +125,46 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   public final String[] cqs = new String[] {
       // 0 - Test for ">"
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " p where p.ID > 0",
 
       // 1 - Test for "=" and "and".
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID = 2 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.ID = 2 and p.status='active'",
 
       // 2 - Test for "<" and "and".
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active'",
 
       // FOLLOWING CQS ARE NOT TESTED WITH VALUES; THEY ARE USED TO TEST PARSING LOGIC WITHIN CQ.
       // 3
-      "SELECT * FROM /root/" + regions[0] + " ;",
+      "SELECT * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " ;",
       // 4
-      "SELECT ALL * FROM /root/" + regions[0],
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0],
       // 5
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " TYPE Portfolio",
       // 6
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " p TYPE Portfolio",
       // 7
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active';",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active';",
       // 8
-      "SELECT ALL * FROM /root/" + regions[0] + "  ;",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + "  ;",
       // 9
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.description = NULL",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.description = NULL",
       // 10
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.ID > 0 and p.status='active'",
       // 11 - Test for "No Alias"
-      "SELECT ALL * FROM /root/" + regions[0] + " where ID > 0",};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " where ID > 0",};
 
   private String[] invalidCQs = new String[] {
       // Test for ">"
-      "SELECT ALL * FROM /root/invalidRegion p where p.ID > 0"};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + "invalidRegion p where p.ID > 0"};
 
   @Override
   public final void postSetUp() throws Exception {
@@ -234,10 +243,10 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Create a bridge server with partitioned region.
+   * Create a cache server with partitioned region.
    *
-   * @param server VM where to create the bridge server.
-   * @param port bridge server port.
+   * @param server VM where to create the cache server.
+   * @param port cache server port.
    * @param isAccessor if true the under lying partitioned region will not host data on this vm.
    * @param redundantCopies number of redundant copies for the primary bucket.
    */
@@ -848,7 +857,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         try {
           region = getRootRegion().getSubregion(regionName);
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         } catch (Exception cqe) {
           fail("Failed to get Region.", cqe);
         }
@@ -1080,7 +1089,8 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   private void waitForEvent(VM vm, final int event, final String cqName, final String key) {
-    vm.invoke(new CacheSerializableRunnable("validate cq count") {
+    vm.invoke(new CacheSerializableRunnable(
+        "wait for event (" + event + ") in cq " + cqName + "; key=" + key) {
       @Override
       public void run2() throws CacheException {
         // Get CQ Service.
@@ -1378,7 +1388,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
             return excuse;
           }
         };
-        Wait.waitForCriterion(wc, 60 * 1000, 1000, true);
+        GeodeAwaitility.await().untilAsserted(wc);
 
         CertifiableTestCacheListener ctl =
             (CertifiableTestCacheListener) region.getAttributes().getCacheListener();
@@ -1857,7 +1867,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
             return excuse;
           }
         };
-        Wait.waitForCriterion(wc, 30 * 1000, 250, true);
+        GeodeAwaitility.await().untilAsserted(wc);
 
         Region region = getRootRegion().getSubregion(regions[0]);
         assertNotNull(region);
@@ -2276,7 +2286,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         QueryService cqService = null;
         try {
           cqService = getCache().getQueryService();
-          cqService.stopCqs("/root/" + regions[0]);
+          cqService.stopCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
         } catch (Exception cqe) {
           Assert.fail("Failed to getCQService.", cqe);
         }
@@ -2299,7 +2309,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         QueryService cqService = null;
         try {
           cqService = getCache().getQueryService();
-          cqService.executeCqs("/root/" + regions[0]);
+          cqService.executeCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
         } catch (Exception cqe) {
           Assert.fail("Failed to getCQService.", cqe);
         }
@@ -2784,23 +2794,32 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         QueryService cqService = null;
         try {
           cqService = getCache().getQueryService();
-          CqQuery[] cq = cqService.getCqs("/root/" + regions[0]);
+          CqQuery[] cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
           assertNotNull(
-              "CQservice should not return null for cqs on this region : /root/" + regions[0], cq);
-          getCache().getLogger().info("cqs for region: /root/" + regions[0] + " : " + cq.length);
+              "CQservice should not return null for cqs on this region : " + SEPARATOR + "root"
+                  + SEPARATOR + regions[0],
+              cq);
+          getCache().getLogger().info(
+              "cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[0] + " : " + cq.length);
           // closing on of the cqs.
 
           cq[0].close();
-          cq = cqService.getCqs("/root/" + regions[0]);
+          cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[0]);
           assertNotNull(
-              "CQservice should not return null for cqs on this region : /root/" + regions[0], cq);
-          getCache().getLogger().info("cqs for region: /root/" + regions[0]
-              + " after closeing one of the cqs : " + cq.length);
+              "CQservice should not return null for cqs on this region : " + SEPARATOR + "root"
+                  + SEPARATOR + regions[0],
+              cq);
+          getCache().getLogger()
+              .info("cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[0]
+                  + " after closeing one of the cqs : " + cq.length);
 
-          cq = cqService.getCqs("/root/" + regions[1]);
-          getCache().getLogger().info("cqs for region: /root/" + regions[1] + " : " + cq.length);
+          cq = cqService.getCqs(SEPARATOR + "root" + SEPARATOR + regions[1]);
+          getCache().getLogger().info(
+              "cqs for region: " + SEPARATOR + "root" + SEPARATOR + regions[1] + " : " + cq.length);
           assertNotNull(
-              "CQservice should not return null for cqs on this region : /root/" + regions[1], cq);
+              "CQservice should not return null for cqs on this region : " + SEPARATOR + "root"
+                  + SEPARATOR + regions[1],
+              cq);
         } catch (Exception cqe) {
           Assert.fail("Failed to getCQService", cqe);
         }
@@ -2983,7 +3002,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port to serve up the given region.
+   * Starts a cache server on the given port to serve up the given region.
    *
    * @since GemFire 4.0
    */
@@ -2992,7 +3011,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    *
    * @since GemFire 4.0
@@ -3008,7 +3027,7 @@ public class CqQueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    *
    * @since GemFire 4.0
    */

@@ -23,15 +23,17 @@ import java.util.UUID;
 
 import org.apache.geode.cache.EntryDestroyedException;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.internal.DataSerializableFixedID;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.LocalRegion;
-import org.apache.geode.internal.cache.LocalRegion.NonTXEntry;
+import org.apache.geode.internal.cache.NonTXEntry;
 import org.apache.geode.internal.cache.Token;
 import org.apache.geode.internal.offheap.OffHeapHelper;
 import org.apache.geode.internal.offheap.annotations.Released;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.BlobHelper;
 
 /**
@@ -139,7 +141,8 @@ public class SnapshotPacket implements DataSerializableFixedID {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
       InternalDataSerializer.writeByteArray(key, out);
       InternalDataSerializer.writeByteArray(value, out);
     }
@@ -151,7 +154,8 @@ public class SnapshotPacket implements DataSerializableFixedID {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
       key = InternalDataSerializer.readByteArray(in);
       value = InternalDataSerializer.readByteArray(in);
     }
@@ -195,7 +199,7 @@ public class SnapshotPacket implements DataSerializableFixedID {
     this.windowId = windowId;
     this.packetId = UUID.randomUUID().toString();
     this.sender = sender;
-    records = recs.toArray(new SnapshotRecord[recs.size()]);
+    records = recs.toArray(new SnapshotRecord[0]);
   }
 
   /**
@@ -240,10 +244,11 @@ public class SnapshotPacket implements DataSerializableFixedID {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     out.writeInt(windowId);
     InternalDataSerializer.writeString(packetId, out);
-    InternalDataSerializer.writeObject(sender, out);
+    context.getSerializer().writeObject(sender, out);
 
     InternalDataSerializer.writeArrayLength(records.length, out);
     for (SnapshotRecord rec : records) {
@@ -252,10 +257,11 @@ public class SnapshotPacket implements DataSerializableFixedID {
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     windowId = in.readInt();
     packetId = InternalDataSerializer.readString(in);
-    sender = InternalDataSerializer.readObject(in);
+    sender = context.getDeserializer().readObject(in);
 
     int count = InternalDataSerializer.readArrayLength(in);
     records = new SnapshotRecord[count];

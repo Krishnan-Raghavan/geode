@@ -38,19 +38,20 @@ import java.util.regex.Pattern;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelException;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.RegionService;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.CopyOnWriteHashSet;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.PdxSerializerObject;
 import org.apache.geode.internal.util.concurrent.CopyOnWriteWeakHashMap;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.pdx.FieldType;
 import org.apache.geode.pdx.NonPortableClassException;
 import org.apache.geode.pdx.PdxReader;
 import org.apache.geode.pdx.PdxSerializationException;
 import org.apache.geode.pdx.PdxWriter;
 import org.apache.geode.pdx.ReflectionBasedAutoSerializer;
-import org.apache.geode.pdx.internal.unsafe.UnsafeWrapper;
+import org.apache.geode.unsafe.internal.sun.misc.Unsafe;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * The core of auto serialization which is used in both aspect and reflection-based
@@ -93,7 +94,7 @@ public class AutoSerializableManager {
    * future customer issues.
    */
   public static final String NO_HARDCODED_EXCLUDES_PARAM =
-      DistributionConfig.GEMFIRE_PREFIX + "auto.serialization.no.hardcoded.excludes";
+      GeodeGlossary.GEMFIRE_PREFIX + "auto.serialization.no.hardcoded.excludes";
 
   private boolean noHardcodedExcludes = Boolean.getBoolean(NO_HARDCODED_EXCLUDES_PARAM);
 
@@ -236,7 +237,9 @@ public class AutoSerializableManager {
     }
     String className = clazz.getName();
     if (isExcluded(className)) {
-      return false;
+      if (!PdxSerializerObject.class.isAssignableFrom(clazz)) {
+        return false;
+      }
     }
 
     for (Pattern p : classPatterns) {
@@ -653,20 +656,21 @@ public class AutoSerializableManager {
 
   // unsafe will be null if the Unsafe class is not available or SAFE was requested.
   // We attempt to use Unsafe by default for best performance.
-  private static final UnsafeWrapper unsafe;
+  @Immutable
+  private static final Unsafe unsafe;
   static {
-    UnsafeWrapper tmp = null;
+    Unsafe tmp = null;
     // only use Unsafe if SAFE was not explicitly requested
-    if (!Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "AutoSerializer.SAFE")) {
+    if (!Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "AutoSerializer.SAFE")) {
       try {
-        tmp = new UnsafeWrapper();
+        tmp = new Unsafe();
         // only throw an exception if UNSAFE was explicitly requested
       } catch (RuntimeException ex) {
-        if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "AutoSerializer.UNSAFE")) {
+        if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "AutoSerializer.UNSAFE")) {
           throw ex;
         }
       } catch (Error ex) {
-        if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "AutoSerializer.UNSAFE")) {
+        if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "AutoSerializer.UNSAFE")) {
           throw ex;
         }
       }
@@ -2050,7 +2054,7 @@ public class AutoSerializableManager {
   }
 
   private static final boolean USE_CONSTRUCTOR =
-      !Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "autopdx.ignoreConstructor");
+      !Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "autopdx.ignoreConstructor");
 
   /**
    * Using the given PdxReader, recreate the given object.
@@ -2202,8 +2206,8 @@ public class AutoSerializableManager {
         }
       } catch (Exception ex) {
         throw new PdxSerializationException(
-            LocalizedStrings.DataSerializer_COULD_NOT_CREATE_AN_INSTANCE_OF_A_CLASS_0
-                .toLocalizedString(clazz.getName()),
+            String.format("Could not create an instance of a class %s",
+                clazz.getName()),
             ex);
       }
       return result;
@@ -2413,9 +2417,9 @@ public class AutoSerializableManager {
     final int prime = 31;
     int result = 1;
     result = prime * result + (checkPortability ? 1231 : 1237);
-    result = prime * result + ((classPatterns == null) ? 0 : classPatterns.hashCode());
-    result = prime * result + ((excludePatterns == null) ? 0 : excludePatterns.hashCode());
-    result = prime * result + ((identityPatterns == null) ? 0 : identityPatterns.hashCode());
+    result = prime * result + classPatterns.hashCode();
+    result = prime * result + excludePatterns.hashCode();
+    result = prime * result + identityPatterns.hashCode();
     return result;
   }
 
@@ -2430,20 +2434,11 @@ public class AutoSerializableManager {
     AutoSerializableManager other = (AutoSerializableManager) obj;
     if (checkPortability != other.checkPortability)
       return false;
-    if (classPatterns == null) {
-      if (other.classPatterns != null)
-        return false;
-    } else if (!classPatterns.equals(other.classPatterns))
+    if (!classPatterns.equals(other.classPatterns))
       return false;
-    if (excludePatterns == null) {
-      if (other.excludePatterns != null)
-        return false;
-    } else if (!excludePatterns.equals(other.excludePatterns))
+    if (!excludePatterns.equals(other.excludePatterns))
       return false;
-    if (identityPatterns == null) {
-      if (other.identityPatterns != null)
-        return false;
-    } else if (!identityPatterns.equals(other.identityPatterns))
+    if (!identityPatterns.equals(other.identityPatterns))
       return false;
     return true;
   }

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -22,9 +23,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -35,11 +34,11 @@ import org.apache.geode.cache.query.CqAttributesFactory;
 import org.apache.geode.cache.query.CqListener;
 import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.QueryService;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.ServerCQImpl;
 import org.apache.geode.cache.query.internal.DefaultQueryService;
 import org.apache.geode.cache.query.internal.cq.CqService;
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
-import org.apache.geode.cache.query.internal.cq.ServerCQImpl;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.test.dunit.Assert;
@@ -73,6 +72,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // system before creating connection pools
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -101,6 +101,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final String cqName = "testCQPerf_0";
 
     client.invoke(new CacheSerializableRunnable("Create CQ :" + cqName) {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create CQ. ###" + cqName);
         // Get CQ Service.
@@ -144,6 +145,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createValuesWithTime(client, cqDUnitTest.regions[0], size);
 
     client.invoke(new CacheSerializableRunnable("Validate CQs") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Validating CQ. ### " + cqName);
         // Get CQ Service.
@@ -225,6 +227,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // Entry is made into the CQs cache hashset.
     // testKeyMaintainance_0 with 1 entry and testKeyMaintainance_1 with 0
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeys1") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -257,6 +260,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // Entry/check is made into the CQs cache hashset.
     // testKeyMaintainance_0 with 1 entry and testKeyMaintainance_1 with 1
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeysAfterUpdate1") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -288,6 +292,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // Entry/check is made into the CQs cache hashset.
     // testKeyMaintainance_0 with 1 entry and testKeyMaintainance_1 with 1
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeysAfterUpdate2") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -321,6 +326,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // Entry/check is made into the CQs cache hashset.
     // testKeyMaintainance_0 with 1 entry and testKeyMaintainance_1 with 1
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeysAfterUpdate2") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -350,6 +356,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createValues(server, cqDUnitTest.regions[0], 12);
 
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeysAfterUpdate2") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -381,6 +388,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     // This will remove the caching for this CQ.
     cqDUnitTest.closeCQ(client, "testKeyMaintainance_1");
     server.invoke(new CacheSerializableRunnable("LookForCachedEventKeysAfterUpdate2") {
+      @Override
       public void run2() throws CacheException {
         CqService cqService = null;
         try {
@@ -890,6 +898,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
   public void validateMatchingCqs(VM server, final int mapSize, final String query,
       final int numCqSize) {
     server.invoke(new CacheSerializableRunnable("validateMatchingCqs") {
+      @Override
       public void run2() throws CacheException {
         CqServiceImpl cqService = null;
         try {
@@ -901,7 +910,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
         }
 
         Map matchedCqMap = cqService.getMatchingCqMap();
-        Awaitility.await().atMost(30, TimeUnit.SECONDS)
+        await()
             .untilAsserted(
                 () -> assertEquals("The number of matched cq is not as expected.", mapSize,
                     matchedCqMap.size()));
@@ -911,7 +920,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
             fail("Query not found in the matched cq map. Query:" + query);
           }
           Collection cqs = (Collection) matchedCqMap.get(query);
-          Awaitility.await().atMost(30, TimeUnit.SECONDS)
+          await()
               .untilAsserted(() -> assertEquals(
                   "Number of matched cqs are not equal to the expected matched cqs", numCqSize,
                   cqs.size()));
@@ -922,6 +931,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   public void printCqQueryExecutionTime(VM server) {
     server.invoke(new CacheSerializableRunnable("printCqQueryExecutionTime") {
+      @Override
       public void run2() throws CacheException {
         CqServiceImpl cqService = null;
         try {
@@ -940,7 +950,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   public String[] generateCqQueries(boolean uniqueQueries) {
-    ArrayList initQueries = new ArrayList();
+    ArrayList<String> initQueries = new ArrayList<>();
     // From Portfolio object.
     String[] names = {"aaa", "bbb", "ccc", "ddd"};
     int nameIndex = 0;
@@ -958,7 +968,7 @@ public class CqPerfUsingPoolDUnitTest extends JUnit4CacheTestCase {
     }
 
     int numMatchedQueries = 10;
-    ArrayList cqQueries = new ArrayList();
+    ArrayList<String> cqQueries = new ArrayList<>();
     Iterator iter = initQueries.iterator();
     while (iter.hasNext()) {
       String query = (String) iter.next();

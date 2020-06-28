@@ -14,16 +14,18 @@
  */
 package org.apache.geode.distributed;
 
-import static org.apache.commons.lang.StringUtils.EMPTY;
-import static org.apache.commons.lang.StringUtils.defaultIfBlank;
-import static org.apache.commons.lang.StringUtils.isBlank;
-import static org.apache.commons.lang.StringUtils.isNotBlank;
-import static org.apache.commons.lang.StringUtils.lowerCase;
+import static java.lang.System.lineSeparator;
+import static org.apache.commons.lang3.StringUtils.EMPTY;
+import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
+import static org.apache.commons.lang3.StringUtils.isBlank;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.lowerCase;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.NAME;
 import static org.apache.geode.distributed.ConfigurationProperties.SERVER_BIND_ADDRESS;
 import static org.apache.geode.internal.lang.StringUtils.wrap;
 import static org.apache.geode.internal.lang.SystemUtils.CURRENT_DIRECTORY;
+import static org.apache.geode.internal.process.ProcessLauncherContext.OVERRIDDEN_DEFAULTS_PREFIX;
 import static org.apache.geode.internal.util.IOUtils.tryGetCanonicalPathElseGetAbsolutePath;
 
 import java.io.File;
@@ -40,24 +42,34 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import joptsimple.OptionException;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
-import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.annotations.VisibleForTesting;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.Cache;
+import org.apache.geode.cache.Region;
+import org.apache.geode.cache.control.ResourceManager;
 import org.apache.geode.cache.partition.PartitionRegionHelper;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.internal.DefaultServerLauncherCacheProvider;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.GemFireVersion;
 import org.apache.geode.internal.cache.AbstractCacheServer;
@@ -65,14 +77,15 @@ import org.apache.geode.internal.cache.CacheConfig;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.PartitionedRegion;
+import org.apache.geode.internal.cache.control.InternalResourceManager;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerHelper;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.inet.LocalHostUtil;
 import org.apache.geode.internal.lang.ObjectUtils;
-import org.apache.geode.internal.net.SocketCreator;
 import org.apache.geode.internal.process.ConnectionFailedException;
 import org.apache.geode.internal.process.ControlNotificationHandler;
 import org.apache.geode.internal.process.ControllableProcess;
 import org.apache.geode.internal.process.FileAlreadyExistsException;
+import org.apache.geode.internal.process.FileControllableProcess;
 import org.apache.geode.internal.process.MBeanInvocationFailedException;
 import org.apache.geode.internal.process.PidUnavailableException;
 import org.apache.geode.internal.process.ProcessController;
@@ -82,86 +95,101 @@ import org.apache.geode.internal.process.ProcessLauncherContext;
 import org.apache.geode.internal.process.ProcessType;
 import org.apache.geode.internal.process.UnableToControlProcessException;
 import org.apache.geode.lang.AttachAPINotFoundException;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
-import org.apache.geode.management.internal.cli.json.GfJsonArray;
-import org.apache.geode.management.internal.cli.json.GfJsonException;
-import org.apache.geode.management.internal.cli.json.GfJsonObject;
-import org.apache.geode.management.internal.cli.util.HostUtils;
+import org.apache.geode.logging.internal.executors.LoggingThread;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.management.internal.i18n.CliStrings;
+import org.apache.geode.management.internal.util.HostUtils;
+import org.apache.geode.management.internal.util.JsonUtil;
 import org.apache.geode.pdx.PdxSerializer;
 import org.apache.geode.security.AuthenticationRequiredException;
 import org.apache.geode.security.GemFireSecurityException;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * The ServerLauncher class is a launcher class with main method to start a GemFire Server (implying
  * a GemFire Cache Server process).
  *
- * @see org.apache.geode.distributed.AbstractLauncher
- * @see org.apache.geode.distributed.LocatorLauncher
+ * @see AbstractLauncher
+ * @see LocatorLauncher
  * @since GemFire 7.0
  */
-@SuppressWarnings({"unused"})
+@SuppressWarnings("unused")
 public class ServerLauncher extends AbstractLauncher<String> {
 
-  private static final Map<String, String> helpMap = new HashMap<>();
+  private static final Logger log = LogService.getLogger();
+
+  @Immutable
+  private static final Map<String, String> helpMap;
 
   static {
-    helpMap.put("launcher",
-        LocalizedStrings.ServerLauncher_SERVER_LAUNCHER_HELP.toLocalizedString());
-    helpMap.put(Command.START.getName(), LocalizedStrings.ServerLauncher_START_SERVER_HELP
-        .toLocalizedString(String.valueOf(getDefaultServerPort())));
-    helpMap.put(Command.STATUS.getName(),
-        LocalizedStrings.ServerLauncher_STATUS_SERVER_HELP.toLocalizedString());
-    helpMap.put(Command.STOP.getName(),
-        LocalizedStrings.ServerLauncher_STOP_SERVER_HELP.toLocalizedString());
-    helpMap.put(Command.VERSION.getName(),
-        LocalizedStrings.ServerLauncher_VERSION_SERVER_HELP.toLocalizedString());
-    helpMap.put("assign-buckets",
-        LocalizedStrings.ServerLauncher_SERVER_ASSIGN_BUCKETS_HELP.toLocalizedString());
-    helpMap.put("debug", LocalizedStrings.ServerLauncher_SERVER_DEBUG_HELP.toLocalizedString());
-    helpMap.put("delete-pid-file-on-stop",
+    Map<String, String> help = new HashMap<>();
+    help.put("launcher",
+        "A GemFire launcher used to start, stop and determine a Server's status.");
+    help.put(Command.START.getName(), String.format(
+        "Starts a Server running in the current working directory listening on the default port (%s) bound to all IP addresses available to the localhost.  The Server must be given a member name in the GemFire cluster.  The default server-bind-address and server-port may be overridden using the corresponding command-line options.",
+        String.valueOf(getDefaultServerPort())));
+    help.put(Command.STATUS.getName(),
+        "Displays the status of a Server given any combination of the member name/ID, PID, or the directory in which the Server is running.");
+    help.put(Command.STOP.getName(),
+        "Stops a running Server given given a member name/ID, PID, or the directory in which the Server is running.");
+    help.put(Command.VERSION.getName(),
+        "Displays GemFire product version information.");
+    help.put("assign-buckets",
+        "Causes buckets to be assigned to the partitioned regions in the GemFire cache on Server start.");
+    help.put("debug", "Displays verbose information during the invocation of the launcher.");
+    help.put("delete-pid-file-on-stop",
         "Specifies that this Server's PID file should be deleted on stop.  The default is to not delete this Server's PID file until JVM exit if --delete-pid-file-on-stop is not specified.");
-    helpMap.put("dir", LocalizedStrings.ServerLauncher_SERVER_DIR_HELP.toLocalizedString());
-    helpMap.put("disable-default-server",
-        LocalizedStrings.ServerLauncher_SERVER_DISABLE_DEFAULT_SERVER_HELP.toLocalizedString());
-    helpMap.put("force", LocalizedStrings.ServerLauncher_SERVER_FORCE_HELP.toLocalizedString());
-    helpMap.put("help",
-        LocalizedStrings.SystemAdmin_CAUSES_GEMFIRE_TO_PRINT_OUT_INFORMATION_INSTEAD_OF_PERFORMING_THE_COMMAND_THIS_OPTION_IS_SUPPORTED_BY_ALL_COMMANDS
-            .toLocalizedString());
-    helpMap.put("member", LocalizedStrings.ServerLauncher_SERVER_MEMBER_HELP.toLocalizedString());
-    helpMap.put("pid", LocalizedStrings.ServerLauncher_SERVER_PID_HELP.toLocalizedString());
-    helpMap.put("rebalance",
-        LocalizedStrings.ServerLauncher_SERVER_REBALANCE_HELP.toLocalizedString());
-    helpMap.put("redirect-output",
-        LocalizedStrings.ServerLauncher_SERVER_REDIRECT_OUTPUT_HELP.toLocalizedString());
-    helpMap.put(SERVER_BIND_ADDRESS,
-        LocalizedStrings.ServerLauncher_SERVER_BIND_ADDRESS_HELP.toLocalizedString());
-    helpMap.put("hostname-for-clients",
-        LocalizedStrings.ServerLauncher_SERVER_HOSTNAME_FOR_CLIENT_HELP.toLocalizedString());
-    helpMap.put("server-port", LocalizedStrings.ServerLauncher_SERVER_PORT_HELP
-        .toLocalizedString(String.valueOf(getDefaultServerPort())));
+    help.put("dir",
+        "Specifies the working directory where the Server is running.  Defaults to the current working directory.");
+    help.put("disable-default-server",
+        "Disables the addition of a default GemFire cache server.");
+    help.put("force",
+        "Enables any existing Server PID file to be overwritten on start.  The default is to throw an error if a PID file already exists and --force is not specified.");
+    help.put("help",
+        "Causes GemFire to print out information instead of performing the command. This option is supported by all commands.");
+    help.put("member", "Identifies the Server by member name or ID in the GemFire cluster.");
+    help.put("pid", "Indicates the OS process ID of the running Server.");
+    help.put("rebalance",
+        "An option to cause the GemFire cache's partitioned regions to be rebalanced on start.");
+    help.put("redirect-output",
+        "An option to cause the Server to redirect standard out and standard error to the GemFire log file.");
+    help.put(SERVER_BIND_ADDRESS,
+        "Specifies the IP address on which to bind, or on which the Server is bound, listening for client requests.  Defaults to all IP addresses available to the localhost.");
+    help.put("hostname-for-clients",
+        "An option to specify the hostname or IP address to send to clients so they can connect to this Server. The default is to use the IP address to which the Server is bound.");
+    help.put("server-port", String.format(
+        "Specifies the port on which the Server is listening for client requests. Defaults to %s.",
+        String.valueOf(getDefaultServerPort())));
+    helpMap = Collections.unmodifiableMap(help);
   }
 
-  private static final Map<Command, String> usageMap = new TreeMap<>();
+  @Immutable
+  private static final Map<Command, String> usageMap;
 
   static {
-    usageMap.put(Command.START,
+    Map<Command, String> usage = new TreeMap<>();
+    usage.put(Command.START,
         "start <member-name> [--assign-buckets] [--disable-default-server] [--rebalance] [--server-bind-address=<IP-address>] [--server-port=<port>] [--force] [--debug] [--help]");
-    usageMap.put(Command.STATUS,
+    usage.put(Command.STATUS,
         "status [--member=<member-ID/Name>] [--pid=<process-ID>] [--dir=<Server-working-directory>] [--debug] [--help]");
-    usageMap.put(Command.STOP,
+    usage.put(Command.STOP,
         "stop [--member=<member-ID/Name>] [--pid=<process-ID>] [--dir=<Server-working-directory>] [--debug] [--help]");
-    usageMap.put(Command.VERSION, "version");
+    usage.put(Command.VERSION, "version");
+    usageMap = Collections.unmodifiableMap(usage);
   }
 
   private static final String DEFAULT_SERVER_LOG_EXT = ".log";
   private static final String DEFAULT_SERVER_LOG_NAME = "gemfire";
   private static final String SERVER_SERVICE_NAME = "Server";
 
+  @MakeNotStatic
   private static final AtomicReference<ServerLauncher> INSTANCE = new AtomicReference<>();
 
+  @Immutable
   private static final ServerLauncherCacheProvider DEFAULT_CACHE_PROVIDER =
       new DefaultServerLauncherCacheProvider();
 
+  private static final Logger logger = LogService.getLogger();
   private volatile boolean debug;
 
   private final ControlNotificationHandler controlHandler;
@@ -213,6 +241,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
   private volatile ControllableProcess process;
 
   private final ServerControllerParameters controllerParameters;
+  private final Runnable startupCompletionAction;
+  private final Consumer<Throwable> startupExceptionAction;
+  private final ServerLauncherCacheProvider serverLauncherCacheProvider;
+  private final Supplier<ControllableProcess> controllableProcessFactory;
 
   /**
    * Launches a GemFire Server from the command-line configured with the given arguments.
@@ -261,39 +293,41 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *
    * @param builder an instance of ServerLauncher.Builder for configuring and constructing an
    *        instance of the ServerLauncher.
-   * @see org.apache.geode.distributed.ServerLauncher.Builder
+   * @see ServerLauncher.Builder
    */
   private ServerLauncher(final Builder builder) {
-    this.cache = builder.getCache(); // testing
-    this.cacheConfig = builder.getCacheConfig();
-    this.command = builder.getCommand();
-    this.assignBuckets = Boolean.TRUE.equals(builder.getAssignBuckets());
+    cache = builder.getCache();
+    cacheConfig = builder.getCacheConfig();
+    command = builder.getCommand();
+    assignBuckets = Boolean.TRUE.equals(builder.getAssignBuckets());
     setDebug(Boolean.TRUE.equals(builder.getDebug()));
-    this.deletePidFileOnStop = Boolean.TRUE.equals(builder.getDeletePidFileOnStop());
-    this.disableDefaultServer = Boolean.TRUE.equals(builder.getDisableDefaultServer());
-    this.distributedSystemProperties = builder.getDistributedSystemProperties();
-    this.force = Boolean.TRUE.equals(builder.getForce());
-    this.help = Boolean.TRUE.equals(builder.getHelp());
-    this.hostNameForClients = builder.getHostNameForClients();
-    this.memberName = builder.getMemberName();
-    this.pid = builder.getPid();
-    this.rebalance = Boolean.TRUE.equals(builder.getRebalance());
-    this.redirectOutput = Boolean.TRUE.equals(builder.getRedirectOutput());
-    this.serverBindAddress = builder.getServerBindAddress();
-    this.serverPort = builder.getServerPort();
-    this.springXmlLocation = builder.getSpringXmlLocation();
-    this.workingDirectory = builder.getWorkingDirectory();
-    this.criticalHeapPercentage = builder.getCriticalHeapPercentage();
-    this.evictionHeapPercentage = builder.getEvictionHeapPercentage();
-    this.criticalOffHeapPercentage = builder.getCriticalOffHeapPercentage();
-    this.evictionOffHeapPercentage = builder.getEvictionOffHeapPercentage();
-    this.maxConnections = builder.getMaxConnections();
-    this.maxMessageCount = builder.getMaxMessageCount();
-    this.maxThreads = builder.getMaxThreads();
-    this.messageTimeToLive = builder.getMessageTimeToLive();
-    this.socketBufferSize = builder.getSocketBufferSize();
-    this.controllerParameters = new ServerControllerParameters();
-    this.controlHandler = new ControlNotificationHandler() {
+    deletePidFileOnStop = Boolean.TRUE.equals(builder.getDeletePidFileOnStop());
+    disableDefaultServer = Boolean.TRUE.equals(builder.getDisableDefaultServer());
+    distributedSystemProperties = builder.getDistributedSystemProperties();
+    force = Boolean.TRUE.equals(builder.getForce());
+    help = Boolean.TRUE.equals(builder.getHelp());
+    hostNameForClients = builder.getHostNameForClients();
+    memberName = builder.getMemberName();
+    pid = builder.getPid();
+    rebalance = Boolean.TRUE.equals(builder.getRebalance());
+    redirectOutput = Boolean.TRUE.equals(builder.getRedirectOutput());
+    serverBindAddress = builder.getServerBindAddress();
+    serverPort = builder.getServerPort();
+    springXmlLocation = builder.getSpringXmlLocation();
+    workingDirectory = builder.getWorkingDirectory();
+    criticalHeapPercentage = builder.getCriticalHeapPercentage();
+    evictionHeapPercentage = builder.getEvictionHeapPercentage();
+    criticalOffHeapPercentage = builder.getCriticalOffHeapPercentage();
+    evictionOffHeapPercentage = builder.getEvictionOffHeapPercentage();
+    maxConnections = builder.getMaxConnections();
+    maxMessageCount = builder.getMaxMessageCount();
+    maxThreads = builder.getMaxThreads();
+    messageTimeToLive = builder.getMessageTimeToLive();
+    socketBufferSize = builder.getSocketBufferSize();
+    controllerParameters = new ServerControllerParameters();
+    startupCompletionAction = builder.getStartupCompletionAction();
+    startupExceptionAction = builder.getStartupExceptionAction();
+    controlHandler = new ControlNotificationHandler() {
       @Override
       public void handleStop() {
         if (isStoppable()) {
@@ -306,45 +340,44 @@ public class ServerLauncher extends AbstractLauncher<String> {
         return statusInProcess();
       }
     };
+    serverLauncherCacheProvider = builder.getServerLauncherCacheProvider();
+    controllableProcessFactory = builder.getControllableProcessFactory();
 
-    // GEODE-5256: set startup properties on CacheServerLauncher statics, used later to start the
-    // server through CacheCreation if a cache.xml or if the cluster-configuration-service is
-    // enabled.
     Integer serverPort =
-        (builder.isServerPortSetByUser() && this.serverPort != null) ? this.serverPort : null;
+        builder.isServerPortSetByUser() && this.serverPort != null ? this.serverPort : null;
     String serverBindAddress =
-        (builder.isServerBindAddressSetByUser() && this.serverBindAddress != null)
+        builder.isServerBindAddressSetByUser() && this.serverBindAddress != null
             ? this.serverBindAddress.getHostAddress() : null;
 
     ServerLauncherParameters.INSTANCE
         .withPort(serverPort)
-        .withMaxThreads(this.maxThreads)
+        .withMaxThreads(maxThreads)
         .withBindAddress(serverBindAddress)
-        .withMaxConnections(this.maxConnections)
-        .withMaxMessageCount(this.maxMessageCount)
-        .withSocketBufferSize(this.socketBufferSize)
-        .withMessageTimeToLive(this.messageTimeToLive)
-        .withHostnameForClients(this.hostNameForClients)
-        .withDisableDefaultServer(this.disableDefaultServer);
+        .withMaxConnections(maxConnections)
+        .withMaxMessageCount(maxMessageCount)
+        .withSocketBufferSize(socketBufferSize)
+        .withMessageTimeToLive(messageTimeToLive)
+        .withHostnameForClients(hostNameForClients)
+        .withDisableDefaultServer(disableDefaultServer);
   }
 
   /**
-   * Gets a reference to the Cache that was created when the GemFire Server was started.
+   * Gets a reference to the {@code Cache} that was created by this {@code ServerLauncher}.
    *
-   * @return a reference to the Cache created by the GemFire Server start operation.
-   * @see org.apache.geode.cache.Cache
+   * @return a reference to the Cache
+   * @see Cache
    */
-  Cache getCache() {
-    if (this.cache != null) {
-      boolean isReconnecting = this.cache.isReconnecting();
+  public Cache getCache() {
+    if (cache != null) {
+      boolean isReconnecting = cache.isReconnecting();
       if (isReconnecting) {
-        Cache newCache = this.cache.getReconnectedCache();
+        Cache newCache = cache.getReconnectedCache();
         if (newCache != null) {
-          this.cache = newCache;
+          cache = newCache;
         }
       }
     }
-    return this.cache;
+    return cache;
   }
 
   /**
@@ -356,7 +389,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    */
   public CacheConfig getCacheConfig() {
     final CacheConfig copy = new CacheConfig();
-    copy.setDeclarativeConfig(this.cacheConfig);
+    copy.setDeclarativeConfig(cacheConfig);
     return copy;
   }
 
@@ -383,10 +416,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * Get the Server launcher command used to invoke the Server.
    *
    * @return the Server launcher command used to invoke the Server.
-   * @see org.apache.geode.distributed.ServerLauncher.Command
+   * @see ServerLauncher.Command
    */
   public Command getCommand() {
-    return this.command;
+    return command;
   }
 
   /**
@@ -396,7 +429,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @return a boolean indicating if buckets should be assigned upon Server start.
    */
   public boolean isAssignBuckets() {
-    return this.assignBuckets;
+    return assignBuckets;
   }
 
   /**
@@ -405,7 +438,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @return a boolean value indicating whether to add a default cache server.
    */
   public boolean isDisableDefaultServer() {
-    return this.disableDefaultServer;
+    return disableDefaultServer;
   }
 
   /**
@@ -415,7 +448,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @return boolean indicating if force has been enabled.
    */
   public boolean isForcing() {
-    return this.force;
+    return force;
   }
 
   /**
@@ -425,10 +458,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * command-line.
    *
    * @return a boolean value indicating if this launcher is used for displaying help information.
-   * @see org.apache.geode.distributed.ServerLauncher.Command
+   * @see ServerLauncher.Command
    */
   public boolean isHelping() {
-    return this.help;
+    return help;
   }
 
   /**
@@ -438,7 +471,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @return a boolean indicating if the cache will be rebalance when the GemFire server starts.
    */
   public boolean isRebalancing() {
-    return this.rebalance;
+    return rebalance;
   }
 
   /**
@@ -449,7 +482,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *         starting a new Server process
    */
   public boolean isRedirectingOutput() {
-    return this.redirectOutput;
+    return redirectOutput;
   }
 
   /**
@@ -471,7 +504,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    */
   @Override
   public String getMemberName() {
-    return defaultIfBlank(this.memberName, super.getMemberName());
+    return defaultIfBlank(memberName, super.getMemberName());
   }
 
   /**
@@ -482,7 +515,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    */
   @Override
   public Integer getPid() {
-    return this.pid;
+    return pid;
   }
 
   /**
@@ -490,10 +523,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *
    * @return a Properties object containing the configuration settings for the GemFire Distributed
    *         System (cluster).
-   * @see java.util.Properties
+   * @see Properties
    */
   public Properties getProperties() {
-    return (Properties) this.distributedSystemProperties.clone();
+    return (Properties) distributedSystemProperties.clone();
   }
 
   /**
@@ -506,7 +539,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *         accepting cache client connections in a client/server topology.
    */
   public InetAddress getServerBindAddress() {
-    return this.serverBindAddress;
+    return serverBindAddress;
   }
 
   /**
@@ -520,7 +553,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *
    * @return the hostname or IP address of the host running the Server, based on the bind-address,
    *         or 'localhost/127.0.0.1' if the bind address is null and localhost is unknown.
-   * @see java.net.InetAddress
+   * @see InetAddress
    * @see #getServerBindAddress()
    */
   public String getServerBindAddressAsString() {
@@ -529,9 +562,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
         return getServerBindAddress().getCanonicalHostName();
       }
 
-      final InetAddress localhost = SocketCreator.getLocalHost();
-
-      return localhost.getCanonicalHostName();
+      return LocalHostUtil.getCanonicalLocalHostName();
     } catch (UnknownHostException handled) {
       // Returning localhost/127.0.0.1 implies the serverBindAddress was null and no IP address
       // for localhost could be found
@@ -549,7 +580,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *         connections in the client/server topology.
    */
   public Integer getServerPort() {
-    return this.serverPort;
+    return serverPort;
   }
 
   /**
@@ -581,10 +612,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * <p>
    *
    * @return a String indicating the location of the Spring XML configuration file.
-   * @see org.apache.geode.distributed.ServerLauncher.Builder#getSpringXmlLocation()
+   * @see ServerLauncher.Builder#getSpringXmlLocation()
    */
   public String getSpringXmlLocation() {
-    return this.springXmlLocation;
+    return springXmlLocation;
   }
 
   /**
@@ -596,7 +627,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *         configuration meta-data.
    */
   public boolean isSpringXmlLocationSpecified() {
-    return isNotBlank(this.springXmlLocation);
+    return isNotBlank(springXmlLocation);
   }
 
   /**
@@ -606,48 +637,50 @@ public class ServerLauncher extends AbstractLauncher<String> {
    */
   @Override
   public String getWorkingDirectory() {
-    return this.workingDirectory;
+    return workingDirectory;
   }
 
   public Float getCriticalHeapPercentage() {
-    return this.criticalHeapPercentage;
+    return criticalHeapPercentage;
   }
 
   public Float getEvictionHeapPercentage() {
-    return this.evictionHeapPercentage;
+    return evictionHeapPercentage;
   }
 
   public Float getCriticalOffHeapPercentage() {
-    return this.criticalOffHeapPercentage;
+    return criticalOffHeapPercentage;
   }
 
   public Float getEvictionOffHeapPercentage() {
-    return this.evictionOffHeapPercentage;
+    return evictionOffHeapPercentage;
   }
 
   public String getHostNameForClients() {
-    return this.hostNameForClients;
+    return hostNameForClients;
   }
 
   public Integer getMaxConnections() {
-    return this.maxConnections;
+    return maxConnections;
   }
 
   public Integer getMaxMessageCount() {
-    return this.maxMessageCount;
+    return maxMessageCount;
   }
 
   public Integer getMessageTimeToLive() {
-    return this.messageTimeToLive;
+    return messageTimeToLive;
   }
 
   public Integer getMaxThreads() {
-    return this.maxThreads;
+    return maxThreads;
   }
 
   public Integer getSocketBufferSize() {
-    return this.socketBufferSize;
+    return socketBufferSize;
   }
+
+  private static final String TWO_NEW_LINES = lineSeparator() + lineSeparator();
 
   /**
    * Displays help for the specified Server launcher command to standard err. If the Server launcher
@@ -661,15 +694,15 @@ public class ServerLauncher extends AbstractLauncher<String> {
       usage();
     } else {
       info(wrap(helpMap.get(command.getName()), 80, ""));
-      info("\n\nusage: \n\n");
+      info(TWO_NEW_LINES + "usage: " + TWO_NEW_LINES);
       info(wrap("> java ... " + getClass().getName() + ' ' + usageMap.get(command), 80, "\t\t"));
-      info("\n\noptions: \n\n");
+      info(TWO_NEW_LINES + "options: " + TWO_NEW_LINES);
 
       for (final String option : command.getOptions()) {
-        info(wrap("--" + option + ": " + helpMap.get(option) + '\n', 80, "\t"));
+        info(wrap("--" + option + ": " + helpMap.get(option) + lineSeparator(), 80, "\t"));
       }
 
-      info("\n\n");
+      info(TWO_NEW_LINES);
     }
   }
 
@@ -677,15 +710,15 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * Displays usage information on the proper invocation of the ServerLauncher from the command-line
    * to standard err.
    *
-   * @see #help(org.apache.geode.distributed.ServerLauncher.Command)
+   * @see #help(ServerLauncher.Command)
    */
   public void usage() {
     info(wrap(helpMap.get("launcher"), 80, "\t"));
-    info("\n\nSTART\n\n");
+    info(TWO_NEW_LINES + "START" + TWO_NEW_LINES);
     help(Command.START);
-    info("STATUS\n\n");
+    info("STATUS" + TWO_NEW_LINES);
     help(Command.STATUS);
-    info("STOP\n\n");
+    info("STOP" + TWO_NEW_LINES);
     help(Command.STOP);
   }
 
@@ -694,7 +727,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * From run, a user can invoke 'start', 'status', 'stop' and 'version'. Note, that 'version' is
    * also a command-line option, but can be treated as a "command" as well.
    *
-   * @see java.lang.Runnable
+   * @see Runnable
    */
   @Override
   public void run() {
@@ -739,7 +772,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @see #start()
    */
   private boolean isStartable() {
-    return !isRunning() && this.starting.compareAndSet(false, true);
+    return !isRunning() && starting.compareAndSet(false, true);
   }
 
   /**
@@ -750,12 +783,12 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @see #run()
    */
   public ServerState start() {
+    long startTime = System.currentTimeMillis();
     if (isStartable()) {
       INSTANCE.compareAndSet(null, this);
 
       try {
-        process = new ControllableProcess(this.controlHandler, new File(getWorkingDirectory()),
-            ProcessType.SERVER, isForcing());
+        process = getControllableProcess();
 
         if (!isDisableDefaultServer()) {
           assertPortAvailable(getServerBindAddress(), getServerPort());
@@ -766,40 +799,43 @@ public class ServerLauncher extends AbstractLauncher<String> {
         ProcessLauncherContext.set(isRedirectingOutput(), getOverriddenDefaults(),
             (String statusMessage) -> {
               debug("Callback setStatus(String) called with message (%1$s)...", statusMessage);
-              ServerLauncher.this.statusMessage = statusMessage;
+              this.statusMessage = statusMessage;
             });
 
         try {
           final Properties gemfireProperties = getDistributedSystemProperties(getProperties());
-          this.cache = createCache(gemfireProperties);
+          cache = createCache(gemfireProperties);
 
           // Set the resource manager options
-          if (this.criticalHeapPercentage != null) {
-            this.cache.getResourceManager().setCriticalHeapPercentage(getCriticalHeapPercentage());
+          if (criticalHeapPercentage != null) {
+            cache.getResourceManager().setCriticalHeapPercentage(getCriticalHeapPercentage());
           }
-          if (this.evictionHeapPercentage != null) {
-            this.cache.getResourceManager().setEvictionHeapPercentage(getEvictionHeapPercentage());
+          if (evictionHeapPercentage != null) {
+            cache.getResourceManager().setEvictionHeapPercentage(getEvictionHeapPercentage());
           }
-          if (this.criticalOffHeapPercentage != null) {
-            this.cache.getResourceManager()
+          if (criticalOffHeapPercentage != null) {
+            cache.getResourceManager()
                 .setCriticalOffHeapPercentage(getCriticalOffHeapPercentage());
           }
-          if (this.evictionOffHeapPercentage != null) {
-            this.cache.getResourceManager()
+          if (evictionOffHeapPercentage != null) {
+            cache.getResourceManager()
                 .setEvictionOffHeapPercentage(getEvictionOffHeapPercentage());
           }
 
-          this.cache.setIsServer(true);
-          startCacheServer(this.cache);
-          assignBuckets(this.cache);
-          rebalance(this.cache);
+          cache.setIsServer(true);
+          startCacheServer(cache);
+
+          assignBuckets(cache);
+          rebalance(cache);
         } finally {
           ProcessLauncherContext.remove();
         }
 
-        debug("Running Server on (%1$s) in (%2$s) as (%2$s)...", getId(), getWorkingDirectory(),
+        awaitStartupTasks(cache, startTime);
+
+        debug("Running Server on (%1$s) in (%2$s) as (%3$s)...", getId(), getWorkingDirectory(),
             getMember());
-        this.running.set(true);
+        running.set(true);
 
         return new ServerState(this, Status.ONLINE);
       } catch (AuthenticationRequiredException e) {
@@ -812,19 +848,20 @@ public class ServerLauncher extends AbstractLauncher<String> {
         throw new GemFireSecurityException(e.getMessage());
       } catch (IOException e) {
         failOnStart(e);
-        throw new RuntimeException(LocalizedStrings.Launcher_Command_START_IO_ERROR_MESSAGE
-            .toLocalizedString(getServiceName(), getWorkingDirectory(), getId(), e.getMessage()),
+        throw new RuntimeException(
+            String.format("An IO error occurred while starting a %s in %s on %s: %s",
+                getServiceName(), getWorkingDirectory(), getId(), e.getMessage()),
             e);
       } catch (FileAlreadyExistsException e) {
         failOnStart(e);
         throw new RuntimeException(
-            LocalizedStrings.Launcher_Command_START_PID_FILE_ALREADY_EXISTS_ERROR_MESSAGE
-                .toLocalizedString(getServiceName(), getWorkingDirectory(), getId()),
+            String.format("A PID file already exists and a %s may be running in %s on %s.",
+                getServiceName(), getWorkingDirectory(), getId()),
             e);
       } catch (PidUnavailableException e) {
         failOnStart(e);
         throw new RuntimeException(
-            LocalizedStrings.Launcher_Command_START_PID_UNAVAILABLE_ERROR_MESSAGE.toLocalizedString(
+            String.format("The process ID could not be determined while starting %s %s in %s: %s",
                 getServiceName(), getId(), getWorkingDirectory(), e.getMessage()),
             e);
       } catch (RuntimeException | Error e) {
@@ -834,18 +871,17 @@ public class ServerLauncher extends AbstractLauncher<String> {
         failOnStart(e);
         throw new RuntimeException(e);
       } finally {
-        this.starting.set(false);
+        starting.set(false);
       }
-    } else {
-      throw new IllegalStateException(
-          LocalizedStrings.Launcher_Command_START_SERVICE_ALREADY_RUNNING_ERROR_MESSAGE
-              .toLocalizedString(getServiceName(), getWorkingDirectory(), getId()));
     }
+
+    throw new IllegalStateException(
+        String.format("A %s is already running in %s on %s.",
+            getServiceName(), getWorkingDirectory(), getId()));
   }
 
-  private Cache createCache(Properties gemfireProperties) {
-    ServiceLoader<ServerLauncherCacheProvider> loader =
-        ServiceLoader.load(ServerLauncherCacheProvider.class);
+  Cache createCache(Properties gemfireProperties) {
+    Iterable<ServerLauncherCacheProvider> loader = getServerLauncherCacheProviders();
     for (ServerLauncherCacheProvider provider : loader) {
       Cache cache = provider.createCache(gemfireProperties, this);
       if (cache != null) {
@@ -856,6 +892,12 @@ public class ServerLauncher extends AbstractLauncher<String> {
     return DEFAULT_CACHE_PROVIDER.createCache(gemfireProperties, this);
   }
 
+  private Iterable<ServerLauncherCacheProvider> getServerLauncherCacheProviders() {
+    return serverLauncherCacheProvider != null
+        ? Collections.singleton(serverLauncherCacheProvider)
+        : ServiceLoader.load(ServerLauncherCacheProvider.class);
+  }
+
   /**
    * A helper method to ensure the same sequence of actions are taken when the Server fails to start
    * caused by some exception.
@@ -863,18 +905,18 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @param cause the Throwable thrown during the startup operation on the Server.
    */
   private void failOnStart(final Throwable cause) {
-    if (this.cache != null) {
-      this.cache.close();
-      this.cache = null;
+    if (cache != null) {
+      cache.close();
+      cache = null;
     }
-    if (this.process != null) {
-      this.process.stop(this.deletePidFileOnStop);
-      this.process = null;
+    if (process != null) {
+      process.stop(deletePidFileOnStop);
+      process = null;
     }
 
     INSTANCE.compareAndSet(this, null);
 
-    this.running.set(false);
+    running.set(false);
   }
 
   /**
@@ -896,7 +938,6 @@ public class ServerLauncher extends AbstractLauncher<String> {
    *         cluster).
    */
   boolean isWaiting(final Cache cache) {
-    // return (isRunning() && !getCache().isClosed());
     return isRunning() && (cache.getDistributedSystem().isConnected() || cache.isReconnecting());
   }
 
@@ -949,7 +990,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @param cache the Cache to which the server will be added.
    * @throws IOException if the Cache server fails to start due to IO error.
    */
-  void startCacheServer(final Cache cache) throws IOException {
+  private void startCacheServer(final Cache cache) throws IOException {
     if (isDefaultServerEnabled(cache)) {
       final String serverBindAddress =
           getServerBindAddress() == null ? null : getServerBindAddress().getHostAddress();
@@ -988,11 +1029,42 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
   }
 
+  private void awaitStartupTasks(Cache cache, long startTime) {
+    Runnable afterStartup = startupCompletionAction == null
+        ? () -> logStartCompleted(startTime) : startupCompletionAction;
+
+    Consumer<Throwable> exceptionAction = startupExceptionAction == null
+        ? (throwable) -> logStartCompletedWithError(startTime, throwable) : startupExceptionAction;
+
+    CompletableFuture<Void> startupTasks =
+        ((InternalResourceManager) cache.getResourceManager())
+            .allOfStartupTasks();
+
+    startupTasks
+        .thenRun(afterStartup)
+        .exceptionally((throwable) -> {
+          exceptionAction.accept(throwable);
+          return null;
+        })
+        .join();
+  }
+
+  private void logStartCompleted(long startTime) {
+    long startupDuration = System.currentTimeMillis() - startTime;
+    log.info("Server {} startup completed in {} ms", memberName, startupDuration);
+  }
+
+  private void logStartCompletedWithError(long startTime, Throwable throwable) {
+    long startupDuration = System.currentTimeMillis() - startTime;
+    log.error("Server {} startup completed in {} ms with error: {}", memberName, startupDuration,
+        throwable, throwable);
+  }
+
   /**
    * Causes a rebalance operation to occur on the given Cache.
    *
    * @param cache the reference to the Cache to rebalance.
-   * @see org.apache.geode.cache.control.ResourceManager#createRebalanceFactory()
+   * @see ResourceManager#createRebalanceFactory()
    */
   private void rebalance(final Cache cache) {
     if (isRebalancing()) {
@@ -1018,7 +1090,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * Assigns buckets to individual Partitioned Regions of the Cache.
    *
    * @param cache the Cache who's Partitioned Regions are accessed to assign buckets to.
-   * @see PartitionRegionHelper#assignBucketsToPartitions(org.apache.geode.cache.Region)
+   * @see PartitionRegionHelper#assignBucketsToPartitions(Region)
    */
   private void assignBuckets(final Cache cache) {
     if (isAssignBucketsAllowed(cache)) {
@@ -1034,7 +1106,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * @return a boolean indicating if the Server is starting or is already running.
    */
   protected boolean isStartingOrRunning() {
-    return this.starting.get() || isRunning();
+    return starting.get() || isRunning();
   }
 
   /**
@@ -1048,14 +1120,16 @@ public class ServerLauncher extends AbstractLauncher<String> {
       debug(
           "Getting status from the ServerLauncher instance that actually launched the GemFire Cache Server.%n");
       return new ServerState(this, isRunning() ? Status.ONLINE : Status.STARTING);
-    } else if (isPidInProcess() && launcher != null) {
+    }
+    if (isPidInProcess() && launcher != null) {
       return launcher.statusInProcess();
-    } else if (getPid() != null) {
+    }
+    if (getPid() != null) {
       debug("Getting Server status using process ID (%1$s)%n", getPid());
       return statusWithPid();
     }
     // attempt to get status using workingDirectory
-    else if (getWorkingDirectory() != null) {
+    if (getWorkingDirectory() != null) {
       debug("Getting Server status using working directory (%1$s)%n", getWorkingDirectory());
       return statusWithWorkingDirectory();
     }
@@ -1070,15 +1144,14 @@ public class ServerLauncher extends AbstractLauncher<String> {
       debug(
           "Getting status from the ServerLauncher instance that actually launched the GemFire Cache Server.%n");
       return new ServerState(this, isRunning() ? Status.ONLINE : Status.STARTING);
-    } else {
-      return new ServerState(this, Status.NOT_RESPONDING);
     }
+    return new ServerState(this, Status.NOT_RESPONDING);
   }
 
   private ServerState statusWithPid() {
     try {
       final ProcessController controller = new ProcessControllerFactory()
-          .createProcessController(this.controllerParameters, getPid());
+          .createProcessController(controllerParameters, getPid());
       controller.checkPidSupport();
       final String statusJson = controller.status();
       return ServerState.fromJson(statusJson);
@@ -1097,7 +1170,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     int parsedPid = 0;
     try {
       final ProcessController controller =
-          new ProcessControllerFactory().createProcessController(this.controllerParameters,
+          new ProcessControllerFactory().createProcessController(controllerParameters,
               new File(getWorkingDirectory()), ProcessType.SERVER.getPidFileName());
       parsedPid = controller.getProcessId();
 
@@ -1155,15 +1228,15 @@ public class ServerLauncher extends AbstractLauncher<String> {
       return stopInProcess();
     }
     // if in-process but difference instance of ServerLauncher
-    else if (isPidInProcess() && launcher != null) {
+    if (isPidInProcess() && launcher != null) {
       return launcher.stopInProcess();
     }
     // attempt to stop using pid if provided
-    else if (getPid() != null) {
+    if (getPid() != null) {
       return stopWithPid();
     }
     // attempt to stop using workingDirectory
-    else if (getWorkingDirectory() != null) {
+    if (getWorkingDirectory() != null) {
       return stopWithWorkingDirectory();
     }
 
@@ -1172,43 +1245,43 @@ public class ServerLauncher extends AbstractLauncher<String> {
 
   private ServerState stopInProcess() {
     if (isStoppable()) {
-      if (this.cache.isReconnecting()) {
-        this.cache.getDistributedSystem().stopReconnecting();
+      if (cache.isReconnecting()) {
+        cache.getDistributedSystem().stopReconnecting();
       }
 
       // Another case of needing to use a non-daemon thread to keep the JVM alive until a clean
       // shutdown can be performed. If not, the JVM may exit too early causing the member to be
       // seen as having crashed and not cleanly departed.
-      final ServerLauncher shadow = this;
-      Thread t = new Thread(() -> {
-        shadow.cache.close();
-        shadow.cache = null;
-        if (shadow.process != null) {
-          shadow.process.stop(shadow.deletePidFileOnStop);
-          shadow.process = null;
-        }
-      });
-      t.setDaemon(false);
+      Thread t = new LoggingThread("ServerLauncherStopper", false, this::doStopInProcess);
       t.start();
 
       try {
         t.join();
-      } catch (InterruptedException e) {
+      } catch (InterruptedException ignore) {
         // no matter, we're shutting down...
       }
 
-      INSTANCE.compareAndSet(this, null); // note: other thread may return Status.NOT_RESPONDING now
-      this.running.set(false);
+      // note: other thread may return Status.NOT_RESPONDING now
+      INSTANCE.compareAndSet(this, null);
+      running.set(false);
       return new ServerState(this, Status.STOPPED);
-    } else {
-      return new ServerState(this, Status.NOT_RESPONDING);
+    }
+    return new ServerState(this, Status.NOT_RESPONDING);
+  }
+
+  private void doStopInProcess() {
+    cache.close();
+    cache = null;
+    if (process != null) {
+      process.stop(deletePidFileOnStop);
+      process = null;
     }
   }
 
   private ServerState stopWithPid() {
     try {
       final ProcessController controller = new ProcessControllerFactory()
-          .createProcessController(this.controllerParameters, getPid());
+          .createProcessController(controllerParameters, getPid());
       controller.checkPidSupport();
       controller.stop();
       return new ServerState(this, Status.STOPPED);
@@ -1227,7 +1300,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     int parsedPid = 0;
     try {
       final ProcessController controller =
-          new ProcessControllerFactory().createProcessController(this.controllerParameters,
+          new ProcessControllerFactory().createProcessController(controllerParameters,
               new File(getWorkingDirectory()), ProcessType.SERVER.getPidFileName());
       parsedPid = controller.getProcessId();
 
@@ -1268,29 +1341,32 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
   }
 
-  // For testing purposes only!
-  void setIsRunningForTest() {
-    this.running.set(true);
-  }
-
   private ServerState createNoResponseState(final Exception cause, final String errorMessage) {
-    debug(ExceptionUtils.getFullStackTrace(cause) + errorMessage);
+    debug(ExceptionUtils.getStackTrace(cause) + errorMessage);
     return new ServerState(this, Status.NOT_RESPONDING, errorMessage);
   }
 
   private Properties getOverriddenDefaults() throws IOException {
     final Properties overriddenDefaults = new Properties();
 
-    overriddenDefaults.put(ProcessLauncherContext.OVERRIDDEN_DEFAULTS_PREFIX.concat(LOG_FILE),
+    overriddenDefaults.setProperty(OVERRIDDEN_DEFAULTS_PREFIX.concat(LOG_FILE),
         getLogFile().getCanonicalPath());
 
     for (String key : System.getProperties().stringPropertyNames()) {
-      if (key.startsWith(ProcessLauncherContext.OVERRIDDEN_DEFAULTS_PREFIX)) {
-        overriddenDefaults.put(key, System.getProperty(key));
+      if (key.startsWith(OVERRIDDEN_DEFAULTS_PREFIX)) {
+        overriddenDefaults.setProperty(key, System.getProperty(key));
       }
     }
 
     return overriddenDefaults;
+  }
+
+  private ControllableProcess getControllableProcess()
+      throws IOException, FileAlreadyExistsException, PidUnavailableException {
+    return controllableProcessFactory != null
+        ? controllableProcessFactory.get()
+        : new FileControllableProcess(controlHandler, new File(getWorkingDirectory()),
+            ProcessType.SERVER, isForcing());
   }
 
   private class ServerControllerParameters implements ProcessControllerParameters {
@@ -1301,7 +1377,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
 
     @Override
     public File getDirectory() {
-      return new File(ServerLauncher.this.getWorkingDirectory());
+      return new File(getWorkingDirectory());
     }
 
     @Override
@@ -1356,6 +1432,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    */
   public static class Builder {
 
+    @Immutable
     protected static final Command DEFAULT_COMMAND = Command.UNSPECIFIED;
 
     private boolean serverBindAddressSetByUser;
@@ -1400,12 +1477,18 @@ public class ServerLauncher extends AbstractLauncher<String> {
     private Integer messageTimeToLive;
     private Integer socketBufferSize;
     private Integer maxThreads;
+    private Runnable startupCompletionAction;
+    private Consumer<Throwable> startupExceptionAction;
+    private ServerLauncherCacheProvider serverLauncherCacheProvider;
+    private Supplier<ControllableProcess> controllableProcessFactory;
 
     /**
      * Default constructor used to create an instance of the Builder class for programmatical
      * access.
      */
-    public Builder() {}
+    public Builder() {
+      // nothing
+    }
 
     /**
      * Constructor used to create and configure an instance of the Builder class with the specified
@@ -1605,8 +1688,8 @@ public class ServerLauncher extends AbstractLauncher<String> {
 
       } catch (OptionException e) {
         throw new IllegalArgumentException(
-            LocalizedStrings.Launcher_Builder_PARSE_COMMAND_LINE_ARGUMENT_ERROR_MESSAGE
-                .toLocalizedString("Server", e.getMessage()),
+            String.format("An error occurred while parsing command-line arguments for the %s: %s",
+                "Server", e.getMessage()),
             e);
       } catch (Exception e) {
         throw new RuntimeException(e.getMessage(), e);
@@ -1617,7 +1700,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * Iterates the list of arguments in search of the target Server launcher command.
      *
      * @param args an array of arguments from which to search for the Server launcher command.
-     * @see org.apache.geode.distributed.ServerLauncher.Command#valueOfName(String)
+     * @see ServerLauncher.Command#valueOfName(String)
      * @see #parseArguments(String...)
      */
     protected void parseCommand(final String... args) {
@@ -1639,7 +1722,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      *
      * @param args the array of arguments from which to search for the Server's member name in
      *        GemFire.
-     * @see org.apache.geode.distributed.ServerLauncher.Command#isCommand(String)
+     * @see ServerLauncher.Command#isCommand(String)
      * @see #parseArguments(String...)
      */
     protected void parseMemberName(final String... args) {
@@ -1659,18 +1742,18 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return the CacheConfig object used to configure PDX on the GemFire Cache by the Builder.
      */
     CacheConfig getCacheConfig() {
-      return this.cacheConfig;
+      return cacheConfig;
     }
 
     /**
      * Gets the Server launcher command used during the invocation of the ServerLauncher.
      *
      * @return the Server launcher command used to invoke (run) the ServerLauncher class.
-     * @see #setCommand(org.apache.geode.distributed.ServerLauncher.Command)
-     * @see org.apache.geode.distributed.ServerLauncher.Command
+     * @see #setCommand(ServerLauncher.Command)
+     * @see ServerLauncher.Command
      */
     public Command getCommand() {
-      return this.command != null ? this.command : DEFAULT_COMMAND;
+      return command != null ? command : DEFAULT_COMMAND;
     }
 
     /**
@@ -1680,7 +1763,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      *        ServerLauncher.
      * @return this Builder instance.
      * @see #getCommand()
-     * @see org.apache.geode.distributed.ServerLauncher.Command
+     * @see ServerLauncher.Command
      */
     public Builder setCommand(final Command command) {
       this.command = command;
@@ -1695,7 +1778,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setAssignBuckets(Boolean)
      */
     public Boolean getAssignBuckets() {
-      return this.assignBuckets;
+      return assignBuckets;
     }
 
     /**
@@ -1711,12 +1794,12 @@ public class ServerLauncher extends AbstractLauncher<String> {
       return this;
     }
 
-    // For testing purposes only!
+    @VisibleForTesting
     Cache getCache() {
-      return this.cache;
+      return cache;
     }
 
-    // For testing purposes only!
+    @VisibleForTesting
     Builder setCache(final Cache cache) {
       this.cache = cache;
       return this;
@@ -1729,7 +1812,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setDebug(Boolean)
      */
     public Boolean getDebug() {
-      return this.debug;
+      return debug;
     }
 
     /**
@@ -1753,7 +1836,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setDeletePidFileOnStop(Boolean)
      */
     public Boolean getDeletePidFileOnStop() {
-      return this.deletePidFileOnStop;
+      return deletePidFileOnStop;
     }
 
     /**
@@ -1777,7 +1860,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setDisableDefaultServer(Boolean)
      */
     public Boolean getDisableDefaultServer() {
-      return this.disableDefaultServer;
+      return disableDefaultServer;
     }
 
     /**
@@ -1798,10 +1881,10 @@ public class ServerLauncher extends AbstractLauncher<String> {
      *
      * @return a Properties object containing configuration settings for the GemFire Distributed
      *         System (cluster).
-     * @see java.util.Properties
+     * @see Properties
      */
     public Properties getDistributedSystemProperties() {
-      return this.distributedSystemProperties;
+      return distributedSystemProperties;
     }
 
     /**
@@ -1813,7 +1896,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setForce(Boolean)
      */
     public Boolean getForce() {
-      return this.force != null ? this.force : DEFAULT_FORCE;
+      return force != null ? force : DEFAULT_FORCE;
     }
 
     /**
@@ -1839,7 +1922,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setHelp(Boolean)
      */
     public Boolean getHelp() {
-      return this.help;
+      return help;
     }
 
     /**
@@ -1873,7 +1956,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setRebalance(Boolean)
      */
     public Boolean getRebalance() {
-      return this.rebalance;
+      return rebalance;
     }
 
     /**
@@ -1897,7 +1980,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setMemberName(String)
      */
     public String getMemberName() {
-      return this.memberName;
+      return memberName;
     }
 
     /**
@@ -1910,9 +1993,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      */
     public Builder setMemberName(final String memberName) {
       if (isBlank(memberName)) {
-        throw new IllegalArgumentException(
-            LocalizedStrings.Launcher_Builder_MEMBER_NAME_ERROR_MESSAGE
-                .toLocalizedString("Server"));
+        throw new IllegalArgumentException("The Server member name must be specified.");
       }
       this.memberName = memberName;
       return this;
@@ -1927,7 +2008,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setPid(Integer)
      */
     public Integer getPid() {
-      return this.pid;
+      return pid;
     }
 
     /**
@@ -1944,7 +2025,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     public Builder setPid(final Integer pid) {
       if (pid != null && pid < 0) {
         throw new IllegalArgumentException(
-            LocalizedStrings.Launcher_Builder_PID_ERROR_MESSAGE.toLocalizedString());
+            "A process ID (PID) must be a non-negative integer value.");
       }
       this.pid = pid;
       return this;
@@ -1959,7 +2040,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setRedirectOutput(Boolean)
      */
     public Boolean getRedirectOutput() {
-      return this.redirectOutput;
+      return redirectOutput;
     }
 
     /**
@@ -1994,11 +2075,11 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setServerBindAddress(String)
      */
     public InetAddress getServerBindAddress() {
-      return this.serverBindAddress;
+      return serverBindAddress;
     }
 
     boolean isServerBindAddressSetByUser() {
-      return this.serverBindAddressSetByUser;
+      return serverBindAddressSetByUser;
     }
 
     /**
@@ -2018,24 +2099,23 @@ public class ServerLauncher extends AbstractLauncher<String> {
         this.serverBindAddress = null;
         return this;
       }
+
       // NOTE only set the 'bind address' if the user specified a value
-      else {
-        try {
-          InetAddress bindAddress = InetAddress.getByName(serverBindAddress);
-          if (SocketCreator.isLocalHost(bindAddress)) {
-            this.serverBindAddress = bindAddress;
-            this.serverBindAddressSetByUser = true;
-            return this;
-          } else {
-            throw new IllegalArgumentException(
-                serverBindAddress + " is not an address for this machine.");
-          }
-        } catch (UnknownHostException e) {
-          throw new IllegalArgumentException(
-              LocalizedStrings.Launcher_Builder_UNKNOWN_HOST_ERROR_MESSAGE
-                  .toLocalizedString("Server"),
-              e);
+      try {
+        InetAddress bindAddress = InetAddress.getByName(serverBindAddress);
+        if (LocalHostUtil.isLocalHost(bindAddress)) {
+          this.serverBindAddress = bindAddress;
+          serverBindAddressSetByUser = true;
+          return this;
         }
+
+        throw new IllegalArgumentException(
+            serverBindAddress + " is not an address for this machine.");
+      } catch (UnknownHostException e) {
+        throw new IllegalArgumentException(
+            String.format("The hostname/IP address to which the %s will be bound is unknown.",
+                "Server"),
+            e);
       }
     }
 
@@ -2048,11 +2128,11 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setServerPort(Integer)
      */
     public Integer getServerPort() {
-      return this.serverPort != null ? this.serverPort : getDefaultServerPort();
+      return serverPort != null ? serverPort : getDefaultServerPort();
     }
 
     boolean isServerPortSetByUser() {
-      return this.serverPortSetByUser;
+      return serverPortSetByUser;
     }
 
     /**
@@ -2068,22 +2148,21 @@ public class ServerLauncher extends AbstractLauncher<String> {
     public Builder setServerPort(final Integer serverPort) {
       if (serverPort == null) {
         this.serverPort = null;
-        this.serverPortSetByUser = false;
+        serverPortSetByUser = false;
         return this;
       }
 
-      if ((serverPort < 0 || serverPort > 65535)) {
+      if (serverPort < 0 || serverPort > 65535) {
         throw new IllegalArgumentException(
-            LocalizedStrings.Launcher_Builder_INVALID_PORT_ERROR_MESSAGE
-                .toLocalizedString("Server"));
+            "The port on which the Server will listen must be between 1 and 65535 inclusive.");
       }
 
       if (serverPort == 0) {
         this.serverPort = 0;
-        this.serverPortSetByUser = false;
+        serverPortSetByUser = false;
       } else {
         this.serverPort = serverPort;
-        this.serverPortSetByUser = true;
+        serverPortSetByUser = true;
       }
 
       return this;
@@ -2098,7 +2177,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @see #setSpringXmlLocation(String)
      */
     public String getSpringXmlLocation() {
-      return this.springXmlLocation;
+      return springXmlLocation;
     }
 
     /**
@@ -2125,7 +2204,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      */
     public String getWorkingDirectory() {
       return tryGetCanonicalPathElseGetAbsolutePath(
-          new File(defaultIfBlank(this.workingDirectory, DEFAULT_WORKING_DIRECTORY)));
+          new File(defaultIfBlank(workingDirectory, DEFAULT_WORKING_DIRECTORY)));
     }
 
     /**
@@ -2139,13 +2218,13 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @throws IllegalArgumentException wrapping a FileNotFoundException if the working directory
      *         pathname cannot be found.
      * @see #getWorkingDirectory()
-     * @see java.io.FileNotFoundException
+     * @see FileNotFoundException
      */
     public Builder setWorkingDirectory(final String workingDirectory) {
       if (!new File(defaultIfBlank(workingDirectory, DEFAULT_WORKING_DIRECTORY)).isDirectory()) {
         throw new IllegalArgumentException(
-            LocalizedStrings.Launcher_Builder_WORKING_DIRECTORY_NOT_FOUND_ERROR_MESSAGE
-                .toLocalizedString("Server"),
+            String.format(AbstractLauncher.WORKING_DIRECTORY_NOT_FOUND_ERROR_MESSAGE,
+                "Server"),
             new FileNotFoundException(workingDirectory));
       }
       this.workingDirectory = workingDirectory;
@@ -2153,7 +2232,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Float getCriticalHeapPercentage() {
-      return this.criticalHeapPercentage;
+      return criticalHeapPercentage;
     }
 
     public Builder setCriticalHeapPercentage(final Float criticalHeapPercentage) {
@@ -2169,7 +2248,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Float getCriticalOffHeapPercentage() {
-      return this.criticalOffHeapPercentage;
+      return criticalOffHeapPercentage;
     }
 
     public Builder setCriticalOffHeapPercentage(final Float criticalOffHeapPercentage) {
@@ -2185,7 +2264,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Float getEvictionHeapPercentage() {
-      return this.evictionHeapPercentage;
+      return evictionHeapPercentage;
     }
 
     public Builder setEvictionHeapPercentage(final Float evictionHeapPercentage) {
@@ -2201,7 +2280,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Float getEvictionOffHeapPercentage() {
-      return this.evictionOffHeapPercentage;
+      return evictionOffHeapPercentage;
     }
 
     public Builder setEvictionOffHeapPercentage(final Float evictionOffHeapPercentage) {
@@ -2217,20 +2296,21 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public String getHostNameForClients() {
-      return this.hostNameForClients;
+      return hostNameForClients;
     }
 
     public Builder setHostNameForClients(String hostNameForClients) {
       if (isBlank(hostNameForClients)) {
         throw new IllegalArgumentException(
-            "The hostname used by clients to connect to the Server must have an argument if the --hostname-for-clients command-line option is specified!");
+            "The hostname used by clients to connect to the Server must have an argument if the "
+                + "--hostname-for-clients command-line option is specified!");
       }
       this.hostNameForClients = hostNameForClients;
       return this;
     }
 
     public Integer getMaxConnections() {
-      return this.maxConnections;
+      return maxConnections;
     }
 
     public Builder setMaxConnections(Integer maxConnections) {
@@ -2243,7 +2323,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Integer getMaxMessageCount() {
-      return this.maxMessageCount;
+      return maxMessageCount;
     }
 
     public Builder setMaxMessageCount(Integer maxMessageCount) {
@@ -2256,7 +2336,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Integer getMaxThreads() {
-      return this.maxThreads;
+      return maxThreads;
     }
 
     public Builder setMaxThreads(Integer maxThreads) {
@@ -2269,7 +2349,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Integer getMessageTimeToLive() {
-      return this.messageTimeToLive;
+      return messageTimeToLive;
     }
 
     public Builder setMessageTimeToLive(Integer messageTimeToLive) {
@@ -2282,7 +2362,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public Integer getSocketBufferSize() {
-      return this.socketBufferSize;
+      return socketBufferSize;
     }
 
     public Builder setSocketBufferSize(Integer socketBufferSize) {
@@ -2304,7 +2384,20 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder set(final String propertyName, final String propertyValue) {
-      this.distributedSystemProperties.setProperty(propertyName, propertyValue);
+      distributedSystemProperties.setProperty(propertyName, propertyValue);
+      return this;
+    }
+
+    /**
+     * add the properties in the Gemfire Distributed System Property
+     *
+     * @param properties a property object that holds one or more Gemfire Distributed System
+     *        properties as described in {@link ConfigurationProperties}
+     * @return this Builder instance
+     * @since Geode 1.12
+     */
+    public Builder set(final Properties properties) {
+      distributedSystemProperties.putAll(properties);
       return this;
     }
 
@@ -2316,7 +2409,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder setPdxPersistent(final boolean persistent) {
-      this.cacheConfig.setPdxPersistent(persistent);
+      cacheConfig.setPdxPersistent(persistent);
       return this;
     }
 
@@ -2328,7 +2421,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder setPdxDiskStore(final String pdxDiskStore) {
-      this.cacheConfig.setPdxDiskStore(pdxDiskStore);
+      cacheConfig.setPdxDiskStore(pdxDiskStore);
       return this;
     }
 
@@ -2340,7 +2433,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder setPdxIgnoreUnreadFields(final boolean ignore) {
-      this.cacheConfig.setPdxIgnoreUnreadFields(ignore);
+      cacheConfig.setPdxIgnoreUnreadFields(ignore);
       return this;
     }
 
@@ -2353,7 +2446,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder setPdxReadSerialized(final boolean readSerialized) {
-      this.cacheConfig.setPdxReadSerialized(readSerialized);
+      cacheConfig.setPdxReadSerialized(readSerialized);
       return this;
     }
 
@@ -2366,7 +2459,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return this Builder instance.
      */
     public Builder setPdxSerializer(final PdxSerializer pdxSerializer) {
-      this.cacheConfig.setPdxSerializer(pdxSerializer);
+      cacheConfig.setPdxSerializer(pdxSerializer);
       return this;
     }
 
@@ -2390,23 +2483,25 @@ public class ServerLauncher extends AbstractLauncher<String> {
     /**
      * Validates the arguments passed to the Builder when the 'start' command has been issued.
      *
-     * @see org.apache.geode.distributed.ServerLauncher.Command#START
+     * @see ServerLauncher.Command#START
      */
     void validateOnStart() {
       if (Command.START == getCommand()) {
         if (isBlank(getMemberName())
-            && !isSet(System.getProperties(), DistributionConfig.GEMFIRE_PREFIX + NAME)
+            && !isSet(System.getProperties(), GeodeGlossary.GEMFIRE_PREFIX + NAME)
             && !isSet(getDistributedSystemProperties(), NAME)
             && !isSet(loadGemFireProperties(DistributedSystem.getPropertyFileURL()), NAME)) {
           throw new IllegalStateException(
-              LocalizedStrings.Launcher_Builder_MEMBER_NAME_VALIDATION_ERROR_MESSAGE
-                  .toLocalizedString("Server"));
+              String.format(
+                  MEMBER_NAME_ERROR_MESSAGE,
+                  "Server", "Server"));
         }
 
         if (!CURRENT_DIRECTORY.equalsIgnoreCase(getWorkingDirectory())) {
           throw new IllegalStateException(
-              LocalizedStrings.Launcher_Builder_WORKING_DIRECTORY_OPTION_NOT_VALID_ERROR_MESSAGE
-                  .toLocalizedString("Server"));
+              String.format(
+                  AbstractLauncher.WORKING_DIRECTORY_OPTION_NOT_VALID_ERROR_MESSAGE,
+                  "Server", "Server"));
         }
       }
     }
@@ -2414,7 +2509,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     /**
      * Validates the arguments passed to the Builder when the 'status' command has been issued.
      *
-     * @see org.apache.geode.distributed.ServerLauncher.Command#STATUS
+     * @see ServerLauncher.Command#STATUS
      */
     void validateOnStatus() {
       if (Command.STATUS == getCommand()) {
@@ -2425,7 +2520,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
     /**
      * Validates the arguments passed to the Builder when the 'stop' command has been issued.
      *
-     * @see org.apache.geode.distributed.ServerLauncher.Command#STOP
+     * @see ServerLauncher.Command#STOP
      */
     void validateOnStop() {
       if (Command.STOP == getCommand()) {
@@ -2439,11 +2534,93 @@ public class ServerLauncher extends AbstractLauncher<String> {
      *
      * @return a newly constructed instance of the ServerLauncher configured with this Builder.
      * @see #validate()
-     * @see org.apache.geode.distributed.ServerLauncher
+     * @see ServerLauncher
      */
     public ServerLauncher build() {
       validate();
       return new ServerLauncher(this);
+    }
+
+    /**
+     * Sets the action to run when the server is online.
+     *
+     * @param startupCompletionAction the action to run
+     * @return this builder
+     */
+    Builder setStartupCompletionAction(Runnable startupCompletionAction) {
+      this.startupCompletionAction = startupCompletionAction;
+      return this;
+    }
+
+    /**
+     * Gets the action to run when the server is online.
+     *
+     * @return the action to run
+     */
+    Runnable getStartupCompletionAction() {
+      return startupCompletionAction;
+    }
+
+    /**
+     * Sets the action to run when server startup completes with errors.
+     *
+     * @param startupExceptionAction the action to run
+     * @return this builder
+     */
+    Builder setStartupExceptionAction(Consumer<Throwable> startupExceptionAction) {
+      this.startupExceptionAction = startupExceptionAction;
+      return this;
+    }
+
+    /**
+     * Gets the action to run when server startup completed with errors.
+     *
+     * @return the action to run
+     */
+    Consumer<Throwable> getStartupExceptionAction() {
+      return startupExceptionAction;
+    }
+
+    /**
+     * Sets the ServerLauncherCacheProvider to use when creating the cache.
+     *
+     * @param serverLauncherCacheProvider the cache provider to use
+     * @return this builder
+     */
+    Builder setServerLauncherCacheProvider(
+        ServerLauncherCacheProvider serverLauncherCacheProvider) {
+      this.serverLauncherCacheProvider = serverLauncherCacheProvider;
+      return this;
+    }
+
+    /**
+     * Gets the ServerLauncherCacheProvider to use when creating the cache.
+     *
+     * @return the cache provider
+     */
+    ServerLauncherCacheProvider getServerLauncherCacheProvider() {
+      return serverLauncherCacheProvider;
+    }
+
+    /**
+     * Sets the factory to use to get a {@code ControllableProcess} when starting the server.
+     *
+     * @param controllableProcessFactory the controllable process factory to use
+     * @return this builder
+     */
+    Builder setControllableProcessFactory(
+        Supplier<ControllableProcess> controllableProcessFactory) {
+      this.controllableProcessFactory = controllableProcessFactory;
+      return this;
+    }
+
+    /**
+     * Gets the factory used to get a {@code ControllableProcess} when starting the server.
+     *
+     * @return the controllable process factory
+     */
+    Supplier<ControllableProcess> getControllableProcessFactory() {
+      return controllableProcessFactory;
     }
   }
 
@@ -2517,7 +2694,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      * @return a String value indicating the name of the Server launcher command.
      */
     public String getName() {
-      return this.name;
+      return name;
     }
 
     /**
@@ -2528,7 +2705,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
      *         command.
      */
     public List<String> getOptions() {
-      return this.options;
+      return options;
     }
 
     /**
@@ -2568,7 +2745,7 @@ public class ServerLauncher extends AbstractLauncher<String> {
    * given moment in time. The state of the Server is assessed at the exact moment an instance of
    * this class is constructed.
    *
-   * @see org.apache.geode.distributed.AbstractLauncher.ServiceState
+   * @see AbstractLauncher.ServiceState
    */
   public static class ServerState extends ServiceState<String> {
 
@@ -2579,21 +2756,20 @@ public class ServerLauncher extends AbstractLauncher<String> {
      */
     public static ServerState fromJson(final String json) {
       try {
-        final GfJsonObject gfJsonObject = new GfJsonObject(json);
+        final JsonNode jsonObject = new ObjectMapper().readTree(json);
 
-        final Status status = Status.valueOfDescription(gfJsonObject.getString(JSON_STATUS));
-        final List<String> jvmArguments =
-            Arrays.asList(GfJsonArray.toStringArray(gfJsonObject.getJSONArray(JSON_JVMARGUMENTS)));
+        final Status status = Status.valueOfDescription(jsonObject.get(JSON_STATUS).asText());
+        final List<String> jvmArguments = JsonUtil.toStringList(jsonObject.get(JSON_JVMARGUMENTS));
 
-        return new ServerState(status, gfJsonObject.getString(JSON_STATUSMESSAGE),
-            gfJsonObject.getLong(JSON_TIMESTAMP), gfJsonObject.getString(JSON_LOCATION),
-            gfJsonObject.getInt(JSON_PID), gfJsonObject.getLong(JSON_UPTIME),
-            gfJsonObject.getString(JSON_WORKINGDIRECTORY), jvmArguments,
-            gfJsonObject.getString(JSON_CLASSPATH), gfJsonObject.getString(JSON_GEMFIREVERSION),
-            gfJsonObject.getString(JSON_JAVAVERSION), gfJsonObject.getString(JSON_LOGFILE),
-            gfJsonObject.getString(JSON_HOST), gfJsonObject.getString(JSON_PORT),
-            gfJsonObject.getString(JSON_MEMBERNAME));
-      } catch (GfJsonException e) {
+        return new ServerState(status, jsonObject.get(JSON_STATUSMESSAGE).asText(),
+            jsonObject.get(JSON_TIMESTAMP).asLong(), jsonObject.get(JSON_LOCATION).asText(),
+            jsonObject.get(JSON_PID).asInt(), jsonObject.get(JSON_UPTIME).asLong(),
+            jsonObject.get(JSON_WORKINGDIRECTORY).asText(), jvmArguments,
+            jsonObject.get(JSON_CLASSPATH).asText(), jsonObject.get(JSON_GEMFIREVERSION).asText(),
+            jsonObject.get(JSON_JAVAVERSION).asText(), jsonObject.get(JSON_LOGFILE).asText(),
+            jsonObject.get(JSON_HOST).asText(), jsonObject.get(JSON_PORT).asText(),
+            jsonObject.get(JSON_MEMBERNAME).asText());
+      } catch (Exception e) {
         throw new IllegalArgumentException("Unable to create ServerStatus from JSON: " + json, e);
       }
     }
@@ -2611,32 +2787,40 @@ public class ServerLauncher extends AbstractLauncher<String> {
     }
 
     public ServerState(final ServerLauncher launcher, final Status status) {
-      this(status, launcher.statusMessage, System.currentTimeMillis(), launcher.getId(),
-          identifyPid(), ManagementFactory.getRuntimeMXBean().getUptime(),
-          launcher.getWorkingDirectory(), ManagementFactory.getRuntimeMXBean().getInputArguments(),
-          System.getProperty("java.class.path"), GemFireVersion.getGemFireVersion(),
-          System.getProperty("java.version"), getServerLogFileCanonicalPath(launcher),
-          getServerBindAddressAsString(launcher), getServerPortAsString(launcher),
+      this(status,
+          launcher.statusMessage,
+          System.currentTimeMillis(),
+          launcher.getId(),
+          identifyPid(),
+          ManagementFactory.getRuntimeMXBean().getUptime(),
+          launcher.getWorkingDirectory(),
+          ManagementFactory.getRuntimeMXBean().getInputArguments(),
+          System.getProperty("java.class.path"),
+          GemFireVersion.getGemFireVersion(),
+          System.getProperty("java.version"),
+          getServerLogFileCanonicalPath(launcher),
+          getServerBindAddressAsString(launcher),
+          getServerPortAsString(launcher),
           launcher.getMemberName());
     }
 
     public ServerState(final ServerLauncher launcher, final Status status,
         final String errorMessage) {
-      this(status, // status
-          errorMessage, // statusMessage
-          System.currentTimeMillis(), // timestamp
-          getServerLocation(launcher), // serverLocation
-          null, // pid
-          0L, // uptime
-          launcher.getWorkingDirectory(), // workingDirectory
-          ManagementFactory.getRuntimeMXBean().getInputArguments(), // jvmArguments
-          null, // classpath
-          GemFireVersion.getGemFireVersion(), // gemfireVersion
-          System.getProperty("java.version"), // javaVersion
-          null, // logFile
-          getServerBindAddressAsString(launcher), // host
-          launcher.getServerPortAsString(), // port
-          null);// memberName
+      this(status,
+          errorMessage,
+          System.currentTimeMillis(),
+          getServerLocation(launcher),
+          null,
+          0L,
+          launcher.getWorkingDirectory(),
+          ManagementFactory.getRuntimeMXBean().getInputArguments(),
+          null,
+          GemFireVersion.getGemFireVersion(),
+          System.getProperty("java.version"),
+          null,
+          getServerBindAddressAsString(launcher),
+          launcher.getServerPortAsString(),
+          null);
     }
 
     /*
@@ -2678,7 +2862,6 @@ public class ServerLauncher extends AbstractLauncher<String> {
       return launcher.getLogFileCanonicalPath();
     }
 
-    @SuppressWarnings("unchecked")
     private static String getServerBindAddressAsString(final ServerLauncher launcher) {
       final InternalCache internalCache = GemFireCacheImpl.getInstance();
 
@@ -2695,7 +2878,6 @@ public class ServerLauncher extends AbstractLauncher<String> {
       return launcher.getServerBindAddressAsString();
     }
 
-    @SuppressWarnings("unchecked")
     private static String getServerPortAsString(final ServerLauncher launcher) {
       final InternalCache internalCache = GemFireCacheImpl.getInstance();
 

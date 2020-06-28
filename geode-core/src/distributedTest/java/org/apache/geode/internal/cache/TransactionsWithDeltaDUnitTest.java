@@ -69,6 +69,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
 
   private Integer createRegionOnServer(VM vm, final boolean startServer, final boolean accessor) {
     return (Integer) vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         createRegion(accessor, 0, null);
         if (startServer) {
@@ -108,6 +109,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
 
   private void createClientRegion(VM vm, final int port, final boolean isEmpty, final boolean ri) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientCacheFactory ccf = new ClientCacheFactory();
         ccf.addPoolServer("localhost"/* getServerHostName(Host.getHost(0)) */, port);
@@ -162,6 +164,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
       return name;
     }
 
+    @Override
     public void fromDelta(DataInput in) throws IOException, InvalidDeltaException {
       if (in.readBoolean()) {
         id = in.readInt();
@@ -172,10 +175,12 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
       fromDeltaCalled = true;
     }
 
+    @Override
     public boolean hasDelta() {
       return this.idChanged || this.nameChanged;
     }
 
+    @Override
     public void toDelta(DataOutput out) throws IOException {
       out.writeBoolean(idChanged);
       if (idChanged) {
@@ -244,26 +249,83 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
 
   @Test
   public void testTxWithCloning() {
-    AttributesFactory af = new AttributesFactory();
-    af.setDataPolicy(DataPolicy.REPLICATE);
-    af.setScope(Scope.DISTRIBUTED_ACK);
-    af.setCloningEnabled(true);
-    basicTest(af.create());
-  }
-
-  @Test
-  public void testExceptionThrown() {
-    AttributesFactory af = new AttributesFactory();
-    af.setDataPolicy(DataPolicy.REPLICATE);
-    af.setScope(Scope.DISTRIBUTED_ACK);
-    final RegionAttributes attr = af.create();
     Host host = Host.getHost(0);
     VM vm1 = host.getVM(0);
     VM vm2 = host.getVM(1);
     final String regionName = getUniqueName();
 
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
+        AttributesFactory af = new AttributesFactory();
+        af.setDataPolicy(DataPolicy.REPLICATE);
+        af.setScope(Scope.DISTRIBUTED_ACK);
+        af.setCloningEnabled(true);
+        getCache().createRegion(regionName, af.create());
+        return null;
+      }
+    };
+
+    vm1.invoke(createRegion);
+    vm2.invoke(createRegion);
+    final String key = "cust1";
+
+    vm1.invoke(new SerializableCallable() {
+      @Override
+      public Object call() throws Exception {
+        TXManagerImpl mgr = getGemfireCache().getTxManager();
+        Region r = getCache().getRegion(regionName);
+        Customer cust = new Customer(1, "cust1");
+        r.put(key, cust);
+        mgr.begin();
+        cust.setName("");
+        r.put(key, cust);
+        return null;
+      }
+    });
+
+    vm2.invoke(new SerializableCallable() {
+      @Override
+      public Object call() throws Exception {
+        Region<String, Customer> r = getCache().getRegion(regionName);
+        Customer c = r.get(key);
+        c.setName("cust1updated");
+        r.put(key, c);
+        return null;
+      }
+    });
+
+    vm1.invoke(new SerializableCallable() {
+      @Override
+      public Object call() throws Exception {
+        TXManagerImpl mgr = getGemfireCache().getTxManager();
+        Region r = getCache().getRegion(regionName);
+        assertNotNull(mgr.getTXState());
+        try {
+          mgr.commit();
+          fail("expected CommitConflict not thrown");
+        } catch (CommitConflictException e) {
+          // expected
+        }
+        return null;
+      }
+    });
+  }
+
+  @Test
+  public void testExceptionThrown() {
+    Host host = Host.getHost(0);
+    VM vm1 = host.getVM(0);
+    VM vm2 = host.getVM(1);
+    final String regionName = getUniqueName();
+
+    SerializableCallable createRegion = new SerializableCallable() {
+      @Override
+      public Object call() throws Exception {
+        AttributesFactory af = new AttributesFactory();
+        af.setDataPolicy(DataPolicy.REPLICATE);
+        af.setScope(Scope.DISTRIBUTED_ACK);
+        final RegionAttributes attr = af.create();
         getCache().createRegion(regionName, attr);
         return null;
       }
@@ -274,6 +336,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
     final String key = "cust1";
 
     vm1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         TXManagerImpl mgr = getGemfireCache().getTxManager();
         Region r = getCache().getRegion(regionName);
@@ -292,62 +355,6 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
     });
   }
 
-  private void basicTest(final RegionAttributes regionAttr) {
-    Host host = Host.getHost(0);
-    VM vm1 = host.getVM(0);
-    VM vm2 = host.getVM(1);
-    final String regionName = getUniqueName();
-
-    SerializableCallable createRegion = new SerializableCallable() {
-      public Object call() throws Exception {
-        getCache().createRegion(regionName, regionAttr);
-        return null;
-      }
-    };
-
-    vm1.invoke(createRegion);
-    vm2.invoke(createRegion);
-    final String key = "cust1";
-
-    vm1.invoke(new SerializableCallable() {
-      public Object call() throws Exception {
-        TXManagerImpl mgr = getGemfireCache().getTxManager();
-        Region r = getCache().getRegion(regionName);
-        Customer cust = new Customer(1, "cust1");
-        r.put(key, cust);
-        mgr.begin();
-        cust.setName("");
-        r.put(key, cust);
-        return null;
-      }
-    });
-
-    vm2.invoke(new SerializableCallable() {
-      public Object call() throws Exception {
-        Region<String, Customer> r = getCache().getRegion(regionName);
-        Customer c = r.get(key);
-        c.setName("cust1updated");
-        r.put(key, c);
-        return null;
-      }
-    });
-
-    vm1.invoke(new SerializableCallable() {
-      public Object call() throws Exception {
-        TXManagerImpl mgr = getGemfireCache().getTxManager();
-        Region r = getCache().getRegion(regionName);
-        assertNotNull(mgr.getTXState());
-        try {
-          mgr.commit();
-          fail("expected CommitConflict not thrown");
-        } catch (CommitConflictException e) {
-          // expected
-        }
-        return null;
-      }
-    });
-  }
-
   @Test
   public void testClientServerDelta() {
     Host host = Host.getHost(0);
@@ -357,6 +364,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
     createClientRegion(client, port, false, false);
 
     server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Region<CustId, Customer> pr = getCache().getRegion(CUSTOMER);
         CustId cust1 = new CustId(1);
@@ -372,6 +380,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
     });
 
     client.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Region<CustId, Customer> pr = getCache().getRegion(CUSTOMER);
         TXManagerImpl mgr = getGemfireCache().getTxManager();
@@ -396,6 +405,7 @@ public class TransactionsWithDeltaDUnitTest extends JUnit4CacheTestCase {
       }
     });
     server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Region<CustId, Customer> pr = getCache().getRegion(CUSTOMER);
         CustId cust1 = new CustId(1);

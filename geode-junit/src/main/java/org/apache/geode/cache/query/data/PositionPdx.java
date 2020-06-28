@@ -49,7 +49,7 @@ public class PositionPdx implements Serializable, PdxSerializable, Comparable {
   /* public no-arg constructor required for DataSerializable */
   public PositionPdx() {
     this.numInstance++;
-    // GemFireCacheImpl.getInstance().getLoggerI18n().fine(new Exception("DEBUG"));
+    // GemFireCacheImpl.getInstance().getLogger().fine(new Exception("DEBUG"));
   }
 
   public PositionPdx(String id, double out) {
@@ -60,7 +60,7 @@ public class PositionPdx implements Serializable, PdxSerializable, Comparable {
     pid = cnt++;
     this.mktValue = cnt;
     this.numInstance++;
-    // GemFireCacheImpl.getInstance().getLoggerI18n().fine(new Exception("DEBUG" + this.secId));
+    // GemFireCacheImpl.getInstance().getLogger().fine(new Exception("DEBUG" + this.secId));
   }
 
   @Override
@@ -121,6 +121,7 @@ public class PositionPdx implements Serializable, PdxSerializable, Comparable {
     return pid;
   }
 
+  @Override
   public void fromData(PdxReader in) {
     this.avg20DaysVol = in.readLong("avg20DaysVol");
     this.bondRating = in.readString("bondRating");
@@ -139,10 +140,11 @@ public class PositionPdx implements Serializable, PdxSerializable, Comparable {
     this.volatility = in.readLong("volatility");
     this.pid = in.readInt("pid");
     this.portfolioId = in.readInt("portfolioId");
-    // GemFireCacheImpl.getInstance().getLoggerI18n().fine(new Exception("DEBUG fromData() " +
+    // GemFireCacheImpl.getInstance().getLogger().fine(new Exception("DEBUG fromData() " +
     // this.secId));
   }
 
+  @Override
   public void toData(PdxWriter out) {
     out.writeLong("avg20DaysVol", this.avg20DaysVol);
     out.writeString("bondRating", this.bondRating);
@@ -166,6 +168,7 @@ public class PositionPdx implements Serializable, PdxSerializable, Comparable {
   }
 
 
+  @Override
   public int compareTo(Object o) {
     if (o == this || ((PositionPdx) o).secId.equals(this.secId)) {
       return 0;

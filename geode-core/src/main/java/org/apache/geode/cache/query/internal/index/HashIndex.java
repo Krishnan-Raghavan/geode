@@ -68,12 +68,12 @@ import org.apache.geode.cache.query.types.ObjectType;
 import org.apache.geode.internal.cache.CachedDeserializable;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.LocalRegion;
+import org.apache.geode.internal.cache.NonTXEntry;
 import org.apache.geode.internal.cache.RegionEntry;
 import org.apache.geode.internal.cache.Token;
 import org.apache.geode.internal.cache.persistence.query.CloseableIterator;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.StoredObject;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A HashIndex is an index that can be used for equal and not equals queries It is created only when
@@ -154,6 +154,7 @@ public class HashIndex extends AbstractIndex {
    *
    * @return the type of index
    */
+  @Override
   public IndexType getType() {
     return IndexType.HASH;
   }
@@ -172,6 +173,7 @@ public class HashIndex extends AbstractIndex {
     this.internalIndexStats.incUpdateTime(endTime - startTime);
   }
 
+  @Override
   void addMapping(RegionEntry entry) throws IMQException {
     this.evaluator.evaluate(entry, true);
     this.internalIndexStats.incNumUpdates();
@@ -189,7 +191,9 @@ public class HashIndex extends AbstractIndex {
 
     try {
       if (DefaultQuery.testHook != null) {
-        DefaultQuery.testHook.doTestHook(3);
+        DefaultQuery.testHook.doTestHook(
+            DefaultQuery.TestHook.SPOTS.BEFORE_ADD_OR_UPDATE_MAPPING_OR_DESERIALIZING_NTH_STREAMINGOPERATION,
+            null, null);
       }
       Object newKey = TypeUtils.indexKeyFor(key);
       if (newKey.equals(QueryService.UNDEFINED)) {
@@ -260,6 +264,7 @@ public class HashIndex extends AbstractIndex {
   /**
    * @param opCode one of OTHER_OP, BEFORE_UPDATE_OP, AFTER_UPDATE_OP.
    */
+  @Override
   void removeMapping(RegionEntry entry, int opCode) throws IMQException {
     // logger.debug("##### In RemoveMapping: entry : "
     // + entry );
@@ -333,6 +338,7 @@ public class HashIndex extends AbstractIndex {
   }
 
   // // IndexProtocol interface implementation
+  @Override
   public boolean clear() throws QueryException {
     throw new UnsupportedOperationException("Not yet implemented");
   }
@@ -340,6 +346,7 @@ public class HashIndex extends AbstractIndex {
   /**
    * computes the resultset of an equijoin query
    */
+  @Override
   public List queryEquijoinCondition(IndexProtocol indx, ExecutionContext context)
       throws TypeMismatchException, FunctionDomainException, NameResolutionException,
       QueryInvocationTargetException {
@@ -434,6 +441,7 @@ public class HashIndex extends AbstractIndex {
     return evaluateEntry(indexInfo, context, keyVal);
   }
 
+  @Override
   public int getSizeEstimate(Object key, int operator, int matchLevel)
       throws TypeMismatchException {
     // Get approx size;
@@ -501,6 +509,7 @@ public class HashIndex extends AbstractIndex {
   }
 
   /** Method called while appropriate lock held on index */
+  @Override
   void lockedQuery(Object lowerBoundKey, int lowerBoundOperator, Object upperBoundKey,
       int upperBoundOperator, Collection results, Set keysToRemove, ExecutionContext context)
       throws TypeMismatchException, FunctionDomainException, NameResolutionException,
@@ -575,6 +584,7 @@ public class HashIndex extends AbstractIndex {
     this.comparator = ((IMQEvaluator) evaluator).comparator;
   }
 
+  @Override
   public ObjectType getResultSetType() {
     return this.evaluator.getIndexResultSetType();
   }
@@ -589,7 +599,7 @@ public class HashIndex extends AbstractIndex {
       boolean applyOrderBy, boolean asc, long iteratorCreationTime) throws FunctionDomainException,
       TypeMismatchException, NameResolutionException, QueryInvocationTargetException {
     QueryObserver observer = QueryObserverHolder.getInstance();
-    if (result == null || (limit != -1 && result != null && result.size() == limit)) {
+    if (result == null || limit != -1 && result.size() == limit) {
       return;
     }
     List orderedKeys = null;
@@ -601,7 +611,7 @@ public class HashIndex extends AbstractIndex {
     int i = 0;
     while (entriesIter.hasNext()) {
       // Check if query execution on this thread is canceled.
-      QueryMonitor.isQueryExecutionCanceled();
+      QueryMonitor.throwExceptionIfQueryOnCurrentThreadIsCanceled();
       if (IndexManager.testHook != null) {
         if (logger.isDebugEnabled()) {
           logger.debug("IndexManager TestHook is set in addToResultsFromEntries.");
@@ -749,7 +759,7 @@ public class HashIndex extends AbstractIndex {
     } else if (this.indexOnRegionKeys) {
       return entry.getKey();
     }
-    return ((LocalRegion) getRegion()).new NonTXEntry(entry);
+    return new NonTXEntry((LocalRegion) getRegion(), entry);
   }
 
   private Object getTargetObjectForUpdate(RegionEntry entry) {
@@ -773,9 +783,10 @@ public class HashIndex extends AbstractIndex {
     } else if (this.indexOnRegionKeys) {
       return entry.getKey();
     }
-    return ((LocalRegion) getRegion()).new NonTXEntry(entry);
+    return new NonTXEntry((LocalRegion) getRegion(), entry);
   }
 
+  @Override
   void recreateIndexData() throws IMQException {
     // Mark the data maps to null & call the initialization code of index
     this.entriesSet.clear();
@@ -830,6 +841,7 @@ public class HashIndex extends AbstractIndex {
     return sb.toString();
   }
 
+  @Override
   protected InternalIndexStatistics createStats(String indexName) {
     return new RangeIndexStatistics(indexName);
   }
@@ -844,50 +856,62 @@ public class HashIndex extends AbstractIndex {
     /**
      * Return the total number of times this index has been updated
      */
+    @Override
     public long getNumUpdates() {
       return this.vsdStats.getNumUpdates();
     }
 
+    @Override
     public void incNumValues(int delta) {
       this.vsdStats.incNumValues(delta);
     }
 
+    @Override
     public void incNumUpdates() {
       this.vsdStats.incNumUpdates();
     }
 
+    @Override
     public void incNumUpdates(int delta) {
       this.vsdStats.incNumUpdates(delta);
     }
 
+    @Override
     public void updateNumKeys(long numKeys) {
       this.vsdStats.updateNumKeys(numKeys);
     }
 
+    @Override
     public void incNumKeys(long numKeys) {
       this.vsdStats.incNumKeys(numKeys);
     }
 
+    @Override
     public void incUpdateTime(long delta) {
       this.vsdStats.incUpdateTime(delta);
     }
 
+    @Override
     public void incUpdatesInProgress(int delta) {
       this.vsdStats.incUpdatesInProgress(delta);
     }
 
+    @Override
     public void incNumUses() {
       this.vsdStats.incNumUses();
     }
 
+    @Override
     public void incUseTime(long delta) {
       this.vsdStats.incUseTime(delta);
     }
 
+    @Override
     public void incUsesInProgress(int delta) {
       this.vsdStats.incUsesInProgress(delta);
     }
 
+    @Override
     public void incReadLockCount(int delta) {
       this.vsdStats.incReadLockCount(delta);
     }
@@ -895,6 +919,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * Returns the total amount of time (in nanoseconds) spent updating this index.
      */
+    @Override
     public long getTotalUpdateTime() {
       return this.vsdStats.getTotalUpdateTime();
     }
@@ -902,6 +927,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * Returns the total number of times this index has been accessed by a query.
      */
+    @Override
     public long getTotalUses() {
       return this.vsdStats.getTotalUses();
     }
@@ -909,6 +935,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * Returns the number of keys in this index.
      */
+    @Override
     public long getNumberOfKeys() {
       return this.vsdStats.getNumberOfKeys();
     }
@@ -916,6 +943,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * Returns the number of values in this index.
      */
+    @Override
     public long getNumberOfValues() {
       return this.vsdStats.getNumberOfValues();
     }
@@ -923,6 +951,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * Return the number of values for the specified key in this index.
      */
+    @Override
     public long getNumberOfValues(Object key) {
       Object rgnEntries = HashIndex.this.entriesSet.get(key);
       if (rgnEntries == null) {
@@ -938,10 +967,12 @@ public class HashIndex extends AbstractIndex {
     /**
      * Return the number of read locks taken on this index
      */
+    @Override
     public int getReadLockCount() {
       return this.vsdStats.getReadLockCount();
     }
 
+    @Override
     public void close() {
       this.vsdStats.close();
     }
@@ -1032,18 +1063,22 @@ public class HashIndex extends AbstractIndex {
       }
     }
 
+    @Override
     public String getIndexedExpression() {
       return HashIndex.this.getCanonicalizedIndexedExpression();
     }
 
+    @Override
     public String getProjectionAttributes() {
       return HashIndex.this.getCanonicalizedProjectionAttributes();
     }
 
+    @Override
     public String getFromClause() {
       return HashIndex.this.getCanonicalizedFromClause();
     }
 
+    @Override
     public void expansion(List expandedResults, Object lowerBoundKey, Object upperBoundKey,
         int lowerBoundOperator, int upperBoundOperator, Object value) throws IMQException {
       // no-op
@@ -1052,6 +1087,7 @@ public class HashIndex extends AbstractIndex {
     /**
      * @param add true if adding to index, false if removing
      */
+    @Override
     public void evaluate(RegionEntry target, boolean add) throws IMQException {
       assert !target.isInvalid() : "value in RegionEntry should not be INVALID";
       ExecutionContext context = null;
@@ -1084,6 +1120,7 @@ public class HashIndex extends AbstractIndex {
      * This function is used for creating Index data at the start
      *
      */
+    @Override
     public void initializeIndex(boolean loadEntries) throws IMQException {
       this.initEntriesUpdated = 0;
       try {
@@ -1163,7 +1200,7 @@ public class HashIndex extends AbstractIndex {
         QueryInvocationTargetException, IMQException {
       if (QueryMonitor.isLowMemory()) {
         throw new IMQException(
-            LocalizedStrings.IndexCreationMsg_CANCELED_DUE_TO_LOW_MEMORY.toLocalizedString());
+            "Index creation canceled due to low memory");
       }
 
       Object indexKey = null;
@@ -1173,11 +1210,11 @@ public class HashIndex extends AbstractIndex {
       if (indexKey == null) {
         indexKey = IndexManager.NULL;
       }
-      LocalRegion.NonTXEntry temp = null;
+      NonTXEntry temp = null;
       if (this.isFirstItrOnEntry && this.additionalProj != null) {
-        temp = (LocalRegion.NonTXEntry) additionalProj.evaluate(this.initContext);
+        temp = (NonTXEntry) additionalProj.evaluate(this.initContext);
       } else {
-        temp = (LocalRegion.NonTXEntry) (((RuntimeIterator) currentRuntimeIters.get(0))
+        temp = (NonTXEntry) (((RuntimeIterator) currentRuntimeIters.get(0))
             .evaluate(this.initContext));
       }
       re = temp.getRegionEntry();
@@ -1267,10 +1304,12 @@ public class HashIndex extends AbstractIndex {
       return this.initEntriesUpdated;
     }
 
+    @Override
     public ObjectType getIndexResultSetType() {
       return this.indexResultSetType;
     }
 
+    @Override
     public List getAllDependentIterators() {
       return fromIterators;
     }
@@ -1341,6 +1380,7 @@ public class HashIndex extends AbstractIndex {
     }
 
     class HashIndexComparator implements Comparator {
+      @Override
       public int compare(Object arg0, Object arg1) {
         // This comparator is used to sort results from the hash index
         // However some values may have been updated since being added to the result set.
@@ -1362,6 +1402,7 @@ public class HashIndex extends AbstractIndex {
 
   }
 
+  @Override
   void lockedQuery(Object key, int operator, Collection results, CompiledValue iterOps,
       RuntimeIterator indpndntItr, ExecutionContext context, List projAttrib,
       SelectResults intermediateResults, boolean isIntersection) throws TypeMismatchException,
@@ -1370,6 +1411,7 @@ public class HashIndex extends AbstractIndex {
         intermediateResults, isIntersection);
   }
 
+  @Override
   void lockedQuery(Object key, int operator, Collection results, Set keysToRemove,
       ExecutionContext context) throws TypeMismatchException, FunctionDomainException,
       NameResolutionException, QueryInvocationTargetException {
@@ -1388,6 +1430,7 @@ public class HashIndex extends AbstractIndex {
     // TODO Auto-generated method stub
   }
 
+  @Override
   public boolean isEmpty() {
     return entriesSet.isEmpty();
   }

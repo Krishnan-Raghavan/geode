@@ -20,6 +20,7 @@
  */
 package org.apache.geode.cache30;
 
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -43,10 +44,10 @@ import org.apache.geode.cache.Scope;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache.util.CacheWriterAdapter;
 import org.apache.geode.distributed.DistributedSystem;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 
@@ -154,6 +155,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
     //////////////// testing create call backs//////////////
 
     vm0.invoke(new CacheSerializableRunnable("put entries") {
+      @Override
       public void run2() throws CacheException {
         Map m = new HashMap();
         paperRegion.put("callbackCame", "false");
@@ -166,11 +168,12 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
         } catch (Exception ex) {
           throw new RuntimeException("exception putting entries", ex);
         }
-        LogWriterUtils.getLogWriter()
+        getLogWriter()
             .info("****************paperRegion.get(afterCreate)***************"
                 + paperRegion.get("afterCreate"));
 
         WaitCriterion ev = new WaitCriterion() {
+          @Override
           public boolean done() {
             int size = region.size();
             if (size != ((Integer) paperRegion.get("afterCreate")).intValue() - 1) {
@@ -182,16 +185,18 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
             return true;
           }
 
+          @Override
           public String description() {
             return "Waiting for event";
           }
         };
-        Wait.waitForCriterion(ev, 3000, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
       }
     });
 
 
     vm1.invoke(new CacheSerializableRunnable("validate callbacks") {
+      @Override
       public void run2() throws CacheException {
         if (!notified) {
           try {
@@ -221,6 +226,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
     VM vm1 = host.getVM(1);
 
     vm0.invoke(new CacheSerializableRunnable("put and then update") {
+      @Override
       public void run2() throws CacheException {
         paperRegion.put("callbackCame", "false");
         // to invoke afterUpdate we should make sure that entries are already present
@@ -247,6 +253,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
     });
 
     vm1.invoke(new CacheSerializableRunnable("validate callbacks") {
+      @Override
       public void run2() throws CacheException {
 
         if (!notified) {
@@ -332,6 +339,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
   }
 
   static class AfterCreateCallback extends CacheListenerAdapter {
+    @Override
     public void afterCreate(EntryEvent event) {
       paperRegion.put("callbackCame", "true");
       Integer counter = (Integer) paperRegion.get("afterCreate");
@@ -356,6 +364,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
           "*******afterCreate***** Key :" + event.getKey() + " Value :" + event.getNewValue());
     }
 
+    @Override
     public void afterUpdate(EntryEvent event) {
       paperRegion.put("callbackCame", "true");
       Integer counter = (Integer) paperRegion.get("afterUpdate");
@@ -384,6 +393,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
   }
   static class BeforeCreateCallback extends CacheWriterAdapter {
     // static class BeforeCreateCallback extends CapacityControllerAdapter {
+    @Override
     public void beforeCreate(EntryEvent event) {
       Integer counter = (Integer) paperRegion.get("beforeCreate");
       if (counter == null)
@@ -392,6 +402,7 @@ public class PutAllCallBkRemoteVMDUnitTest extends JUnit4DistributedTestCase {
       LogWriterUtils.getLogWriter().info("*******BeforeCreate***** event=" + event);
     }
 
+    @Override
     public void beforeUpdate(EntryEvent event) {
       Integer counter = (Integer) paperRegion.get("beforeUpdate");
       if (counter == null)

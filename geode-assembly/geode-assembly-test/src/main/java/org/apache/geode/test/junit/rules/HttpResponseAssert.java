@@ -19,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,11 +32,13 @@ import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.AbstractCharSequenceAssert;
 import org.assertj.core.api.ListAssert;
 
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.util.ArrayUtils;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.management.api.ClusterManagementRealizationResult;
+import org.apache.geode.management.api.ClusterManagementResult;
+import org.apache.geode.management.configuration.AbstractConfiguration;
 
 public class HttpResponseAssert extends AbstractAssert<HttpResponseAssert, HttpResponse> {
-  private static Logger logger = LogService.getLogger();
+  private static final Logger logger = LogService.getLogger();
   private String responseBody;
   private String logMessage;
 
@@ -62,7 +66,7 @@ public class HttpResponseAssert extends AbstractAssert<HttpResponseAssert, HttpR
     int statusCode = actual.getStatusLine().getStatusCode();
     assertThat(statusCode)
         .describedAs(logMessage + "\n" + descriptionText())
-        .isIn(ArrayUtils.toIntegerArray(httpStatus));
+        .isIn(Arrays.stream(httpStatus).boxed().collect(Collectors.toList()));
     return this;
   }
 
@@ -72,6 +76,20 @@ public class HttpResponseAssert extends AbstractAssert<HttpResponseAssert, HttpR
 
   public AbstractCharSequenceAssert<?, String> hasResponseBody() {
     return assertThat(responseBody);
+  }
+
+  @SuppressWarnings("unchecked")
+  public <R extends AbstractConfiguration> ClusterManagementResult getClusterManagementResult()
+      throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(responseBody, ClusterManagementResult.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  public <R extends AbstractConfiguration> ClusterManagementRealizationResult getClusterManagementRealizationResult()
+      throws Exception {
+    ObjectMapper mapper = new ObjectMapper();
+    return mapper.readValue(responseBody, ClusterManagementRealizationResult.class);
   }
 
   public HttpResponseAssert hasContentType(String contentType) {

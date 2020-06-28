@@ -92,24 +92,18 @@ public abstract class ManagedSystemMemberImpl extends SystemMemberImpl
     return this.getEntityConfig().getHost();
   }
 
+  @Override
   public int setState(int state) {
-    if (this.stateChange == null) {
-      // The initial state is set in the constructor before
-      // stateChange is initialized.
+
+    synchronized (this.stateChange) {
       int oldState = this.state;
       this.state = state;
+
+      this.stateChange.notifyAll();
+
       return oldState;
-
-    } else {
-      synchronized (this.stateChange) {
-        int oldState = this.state;
-        this.state = state;
-
-        this.stateChange.notifyAll();
-
-        return oldState;
-      }
     }
+
   }
 
   /**
@@ -164,6 +158,7 @@ public abstract class ManagedSystemMemberImpl extends SystemMemberImpl
   /**
    * Waits until this system member's "state" is {@link #RUNNING}.
    */
+  @Override
   public boolean waitToStart(long timeout) throws InterruptedException {
 
     if (Thread.interrupted())
@@ -189,6 +184,7 @@ public abstract class ManagedSystemMemberImpl extends SystemMemberImpl
   /**
    * Waits until this system member's "state" is {@link #STOPPED}.
    */
+  @Override
   public boolean waitToStop(long timeout) throws InterruptedException {
 
     if (Thread.interrupted())

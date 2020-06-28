@@ -14,8 +14,11 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static java.lang.Thread.yield;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -45,9 +48,9 @@ import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
-import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.Wait;
@@ -409,6 +412,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
 
   private CacheSerializableRunnable resetFlags() {
     CacheSerializableRunnable resetFlags = new CacheSerializableRunnable("resetFlags") {
+      @Override
       public void run2() throws CacheException {
         destroyed = false;
         invalidated = false;
@@ -418,7 +422,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   }
 
   public static void commitTransactionOnClient() {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     try {
       cache.getCacheTransactionManager().begin();
@@ -433,33 +437,37 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   }
 
   public static void verifyUpdatesOnServer() {
-    final Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    final Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     try {
-      LogWriterUtils.getLogWriter().info("vlaue for the key k1" + r1.getEntry(k1).getValue());
+      getLogWriter().info("vlaue for the key k1" + r1.getEntry(k1).getValue());
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k1).getValue().equals(client_k1);
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k2).getValue().equals(client_k2);
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
     } catch (Exception e) {
       fail("Exception in trying to get due to " + e);
     }
@@ -467,7 +475,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
 
 
   public static void putInTransaction(String server) {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     cache.getCacheTransactionManager().begin();
     if (server.equals("server1")) {
@@ -484,7 +492,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   }
 
   public static void invalidateInTransaction(String server) throws Exception {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     cache.getCacheTransactionManager().begin();
     if (server.equals("server1")) {
@@ -499,7 +507,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   }
 
   public static void destroyInTransaction(String server) throws Exception {
-    Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     cache.getCacheTransactionManager().begin();
     if (server.equals("server1")) {
@@ -533,70 +541,78 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   }
 
   public static void verifyNotUpdated() {
-    final Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    final Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
     try {
-      LogWriterUtils.getLogWriter().info("vlaue for the key k1" + r1.getEntry(k1).getValue());
+      getLogWriter().info("vlaue for the key k1" + r1.getEntry(k1).getValue());
       // wait until
       // condition is
       // met
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k1).getValue().equals(k1);
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k2).getValue().equals(k2);
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
     } catch (Exception e) {
       fail("Exception in trying to get due to " + e);
     }
   }
 
   public static void verifyUpdates() {
-    final Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    final Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
     assertNotNull(r1);
 
     try {
       WaitCriterion ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k1).getValue().equals(server1_k1);
         }
 
+        @Override
         public String description() {
           return "Value for entry " + r1 + " never became " + server1_k1 + "; it is still "
               + r1.getEntry(k1).getValue();
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       ev = new WaitCriterion() {
+        @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return r1.getEntry(k2).getValue().equals(server1_k2);
         }
 
+        @Override
         public String description() {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
     } catch (Exception e) {
       fail("Exception in trying to get due to " + e);
     }
@@ -655,6 +671,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
     factory.setScope(Scope.LOCAL);
     factory.setPoolName(p.getName());
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterDestroy(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           destroyed = true;
@@ -662,6 +679,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
         }
       }
 
+      @Override
       public void afterInvalidate(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           invalidated = true;
@@ -689,6 +707,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
     factory.setScope(Scope.LOCAL);
     factory.setPoolName(p.getName());
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterDestroy(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           destroyed = true;
@@ -696,6 +715,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
         }
       }
 
+      @Override
       public void afterInvalidate(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           invalidated = true;
@@ -725,6 +745,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setDataPolicy(DataPolicy.REPLICATE);
     factory.setCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterDestroy(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           destroyed = true;
@@ -732,6 +753,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
         }
       }
 
+      @Override
       public void afterInvalidate(EntryEvent event) {
         synchronized (CacheServerTransactionsDUnitTest.class) {
           invalidated = true;
@@ -753,7 +775,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
 
   public static void createEntries() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       if (!r.containsKey(k1)) {
         r.create(k1, k1);
@@ -776,7 +798,7 @@ public class CacheServerTransactionsDUnitTest extends JUnit4DistributedTestCase 
   public static void registerKeys() {
     List keys = new ArrayList();
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       keys.add(k1);
       keys.add(k2);

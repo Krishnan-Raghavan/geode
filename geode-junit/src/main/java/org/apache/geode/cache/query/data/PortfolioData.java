@@ -112,7 +112,7 @@ public class PortfolioData implements Declarable, Serializable {
     if (this == p) {
       return true;
     }
-    if (p == null || !(p instanceof PortfolioData)) {
+    if (!(p instanceof PortfolioData)) {
       return false;
     }
     PortfolioData pd = (PortfolioData) p;
@@ -123,6 +123,7 @@ public class PortfolioData implements Declarable, Serializable {
     }
   }
 
+  @Override
   public void init(Properties props) {
     this.ID = Integer.parseInt(props.getProperty("id"));
     this.type = props.getProperty("type", "type1");

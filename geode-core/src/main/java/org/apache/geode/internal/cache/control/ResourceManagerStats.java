@@ -19,6 +19,7 @@ import org.apache.geode.Statistics;
 import org.apache.geode.StatisticsFactory;
 import org.apache.geode.StatisticsType;
 import org.apache.geode.StatisticsTypeFactory;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.PoolStatHelper;
 import org.apache.geode.distributed.internal.QueueStatHelper;
 import org.apache.geode.internal.statistics.StatisticsTypeFactoryImpl;
@@ -29,12 +30,16 @@ import org.apache.geode.internal.statistics.StatisticsTypeFactoryImpl;
  */
 public class ResourceManagerStats {
   // static fields
+  @Immutable
   private static final StatisticsType type;
 
   private static final int rebalancesInProgressId;
   private static final int rebalancesCompletedId;
   private static final int autoRebalanceAttemptsId;
   private static final int rebalanceTimeId;
+  private static final int restoreRedundanciesInProgressId;
+  private static final int restoreRedundanciesCompletedId;
+  private static final int restoreRedundancyTimeId;
   private static final int rebalanceBucketCreatesInProgressId;
   private static final int rebalanceBucketCreatesCompletedId;
   private static final int rebalanceBucketCreatesFailedId;
@@ -89,6 +94,16 @@ public class ResourceManagerStats {
                 "Total number of cache auto-rebalance attempts.", "operations"),
             f.createLongCounter("rebalanceTime",
                 "Total time spent directing cache rebalance operations.", "nanoseconds", false),
+
+            f.createLongCounter("restoreRedundanciesInProgress",
+                "Current number of cache restore redundancy operations being directed by this process.",
+                "operations"),
+            f.createLongCounter("restoreRedundanciesCompleted",
+                "Total number of cache restore redundancy operations directed by this process.",
+                "operations"),
+            f.createLongCounter("restoreRedundancyTime",
+                "Total time spent directing cache restore redundancy operations.", "nanoseconds",
+                false),
 
             f.createIntGauge("rebalanceBucketCreatesInProgress",
                 "Current number of bucket create operations being directed for rebalancing.",
@@ -193,6 +208,9 @@ public class ResourceManagerStats {
     rebalancesCompletedId = type.nameToId("rebalancesCompleted");
     autoRebalanceAttemptsId = type.nameToId("autoRebalanceAttempts");
     rebalanceTimeId = type.nameToId("rebalanceTime");
+    restoreRedundanciesInProgressId = type.nameToId("restoreRedundanciesInProgress");
+    restoreRedundanciesCompletedId = type.nameToId("restoreRedundanciesCompleted");
+    restoreRedundancyTimeId = type.nameToId("restoreRedundancyTime");
     rebalanceBucketCreatesInProgressId = type.nameToId("rebalanceBucketCreatesInProgress");
     rebalanceBucketCreatesCompletedId = type.nameToId("rebalanceBucketCreatesCompleted");
     rebalanceBucketCreatesFailedId = type.nameToId("rebalanceBucketCreatesFailed");
@@ -256,6 +274,18 @@ public class ResourceManagerStats {
     this.stats.incInt(rebalancesInProgressId, -1);
     this.stats.incInt(rebalancesCompletedId, 1);
     this.stats.incLong(rebalanceTimeId, elapsed);
+  }
+
+  public long startRestoreRedundancy() {
+    this.stats.incLong(restoreRedundanciesInProgressId, 1);
+    return System.nanoTime();
+  }
+
+  public void endRestoreRedundancy(long start) {
+    long elapsed = System.nanoTime() - start;
+    this.stats.incLong(restoreRedundanciesInProgressId, -1);
+    this.stats.incLong(restoreRedundanciesCompletedId, 1);
+    this.stats.incLong(restoreRedundancyTimeId, elapsed);
   }
 
   public void startBucketCreate(int regions) {
@@ -339,6 +369,18 @@ public class ResourceManagerStats {
 
   public long getRebalanceTime() {
     return this.stats.getLong(rebalanceTimeId);
+  }
+
+  public long getRestoreRedundanciesInProgress() {
+    return this.stats.getLong(restoreRedundanciesInProgressId);
+  }
+
+  public long getRestoreRedundanciesCompleted() {
+    return this.stats.getLong(restoreRedundanciesCompletedId);
+  }
+
+  public long getRestoreRedundancyTime() {
+    return this.stats.getLong(restoreRedundancyTimeId);
   }
 
   public int getRebalanceBucketCreatesInProgress() {

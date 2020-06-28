@@ -14,11 +14,9 @@
  */
 package org.apache.geode.cache.wan;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.distributed.internal.InternalLocator;
@@ -51,13 +49,13 @@ public class WANRollingUpgradeEventProcessingMixedSiteOneOldSiteTwo
     String hostName = NetworkUtils.getServerHostName(host);
     final int[] availablePorts = AvailablePortHelper.getRandomAvailableTCPPorts(2);
     final int site1LocatorPort = availablePorts[0];
-    DistributedTestUtils.deleteLocatorStateFile(site1LocatorPort);
+    site1Locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(site1LocatorPort));
     final String site1Locators = hostName + "[" + site1LocatorPort + "]";
     final int site1DistributedSystemId = 0;
 
     // Get old site locator properties
     final int site2LocatorPort = availablePorts[1];
-    DistributedTestUtils.deleteLocatorStateFile(site2LocatorPort);
+    site2Locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(site2LocatorPort));
     final String site2Locators = hostName + "[" + site2LocatorPort + "]";
     final int site2DistributedSystemId = 1;
 
@@ -72,12 +70,12 @@ public class WANRollingUpgradeEventProcessingMixedSiteOneOldSiteTwo
     // Locators before 1.4 handled configuration asynchronously.
     // We must wait for configuration configuration to be ready, or confirm that it is disabled.
     site1Locator.invoke(
-        () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+        () -> await()
             .untilAsserted(() -> assertTrue(
                 !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                     || InternalLocator.getLocator().isSharedConfigurationRunning())));
     site2Locator.invoke(
-        () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+        () -> await()
             .untilAsserted(() -> assertTrue(
                 !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                     || InternalLocator.getLocator().isSharedConfigurationRunning())));

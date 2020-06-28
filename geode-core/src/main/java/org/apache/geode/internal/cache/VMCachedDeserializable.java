@@ -22,11 +22,13 @@ import java.io.IOException;
 import org.apache.geode.CopyHelper;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.cache.Region;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.eviction.EvictableEntry;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.lang.StringUtils;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.pdx.PdxInstance;
 
 /**
@@ -60,7 +62,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
   public VMCachedDeserializable(byte[] serializedValue) {
     if (serializedValue == null)
       throw new NullPointerException(
-          LocalizedStrings.VMCachedDeserializable_VALUE_MUST_NOT_BE_NULL.toLocalizedString());
+          "value must not be null");
     this.value = serializedValue;
     this.valueSize = CachedDeserializableFactory.getByteSize(serializedValue);
   }
@@ -80,6 +82,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
     this.valueSize = objectSize;
   }
 
+  @Override
   public Object getDeserializedValue(Region r, RegionEntry re) {
     Object v = this.value;
     if (v instanceof byte[]) {
@@ -156,6 +159,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
     return v;
   }
 
+  @Override
   public Object getDeserializedForReading() {
     Object v = this.value;
     if (v instanceof byte[]) {
@@ -165,6 +169,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
     }
   }
 
+  @Override
   public Object getDeserializedWritableCopy(Region r, RegionEntry re) {
     Object v = this.value;
     if (v instanceof byte[]) {
@@ -183,6 +188,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
   /**
    * Return the serialized value as a byte[]
    */
+  @Override
   public byte[] getSerializedValue() {
     Object v = this.value;
     if (v instanceof byte[])
@@ -194,30 +200,38 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
    * Return current value regardless of whether it is serialized or deserialized: if it was
    * serialized than it is a byte[], otherwise it is not a byte[].
    */
+  @Override
   public Object getValue() {
     return this.value;
   }
 
+  @Override
   public int getSizeInBytes() {
     return MEM_OVERHEAD + this.valueSize;
   }
 
+  @Override
   public int getValueSizeInBytes() {
     return valueSize;
   }
 
+  @Override
   public int getDSFID() {
     return VM_CACHED_DESERIALIZABLE;
   }
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     // fix for bug 38309
     byte[] bytes = DataSerializer.readByteArray(in);
     this.valueSize = bytes.length;
     this.value = bytes;
   }
 
-  public void toData(DataOutput out) throws IOException {
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     // fix for bug 38309
     DataSerializer.writeObjectAsByteArray(getValue(), out);
   }
@@ -232,10 +246,12 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
     return getShortClassName() + "@" + this.hashCode();
   }
 
+  @Override
   public void writeValueAsByteArray(DataOutput out) throws IOException {
-    toData(out);
+    toData(out, InternalDataSerializer.createSerializationContext(out));
   }
 
+  @Override
   public void fillSerializedValue(BytesAndBitsForCompactor wrapper, byte userBits) {
     Object v = this.value;
     if (v instanceof byte[]) {
@@ -247,6 +263,7 @@ public class VMCachedDeserializable implements CachedDeserializable, DataSeriali
 
   }
 
+  @Override
   public String getStringForm() {
     try {
       return StringUtils.forceToString(getDeserializedForReading());

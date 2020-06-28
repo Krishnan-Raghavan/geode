@@ -76,7 +76,6 @@ import org.apache.geode.internal.cache.control.ResourceAdvisor;
 import org.apache.geode.internal.cache.control.ResourceListener;
 import org.apache.geode.internal.cache.control.TestMemoryThresholdListener;
 import org.apache.geode.internal.cache.partitioned.RegionAdvisor;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DistributedTestUtils;
@@ -100,14 +99,12 @@ import org.apache.geode.test.junit.categories.OffHeapTest;
 @Category({OffHeapTest.class})
 public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
-  final String expectedEx = LocalizedStrings.MemoryMonitor_MEMBER_ABOVE_CRITICAL_THRESHOLD
-      .getRawText().replaceAll("\\{[0-9]+\\}", ".*?");
+  final String expectedEx = "Member: .*? above .*? critical threshold";
   final String addExpectedExString =
       "<ExpectedException action=add>" + this.expectedEx + "</ExpectedException>";
   final String removeExpectedExString =
       "<ExpectedException action=remove>" + this.expectedEx + "</ExpectedException>";
-  final String expectedBelow = LocalizedStrings.MemoryMonitor_MEMBER_BELOW_CRITICAL_THRESHOLD
-      .getRawText().replaceAll("\\{[0-9]+\\}", ".*?");
+  final String expectedBelow = "Member: .*? below .*? critical threshold";
   final String addExpectedBelow =
       "<ExpectedException action=add>" + this.expectedBelow + "</ExpectedException>";
   final String removeExpectedBelow =
@@ -125,6 +122,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
   }
 
   private SerializableCallable resetResourceManager = new SerializableCallable() {
+    @Override
     public Object call() throws Exception {
       InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
       Set<ResourceListener> listeners = irm.getResourceListeners(ResourceType.OFFHEAP_MEMORY);
@@ -277,6 +275,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     // verify that stats on server2 are not changed by events on server1
     server2.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
         assertEquals(0, irm.getStats().getOffHeapEvictionStartEvents());
@@ -290,15 +289,16 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
   private void setUsageAboveCriticalThreshold(final VM vm, final String regionName) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
-        getCache().getLoggerI18n().fine(addExpectedExString);
+        getCache().getLogger().fine(addExpectedExString);
         Region region = getRootRegion().getSubregion(regionName);
         if (!region.containsKey("oh1")) {
           region.put("oh5", new byte[954204]);
         } else {
           region.put("oh5", new byte[122880]);
         }
-        getCache().getLoggerI18n().fine(removeExpectedExString);
+        getCache().getLogger().fine(removeExpectedExString);
         return null;
       }
     });
@@ -306,14 +306,15 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
   private void setUsageAboveEvictionThreshold(final VM vm, final String regionName) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
-        getCache().getLoggerI18n().fine(addExpectedBelow);
+        getCache().getLogger().fine(addExpectedBelow);
         Region region = getRootRegion().getSubregion(regionName);
         region.put("oh1", new byte[245760]);
         region.put("oh2", new byte[184320]);
         region.put("oh3", new byte[33488]);
         region.put("oh4", new byte[378160]);
-        getCache().getLoggerI18n().fine(removeExpectedBelow);
+        getCache().getLogger().fine(removeExpectedBelow);
         return null;
       }
     });
@@ -321,15 +322,16 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
   private void setUsageBelowEviction(final VM vm, final String regionName) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
-        getCache().getLoggerI18n().fine(addExpectedBelow);
+        getCache().getLogger().fine(addExpectedBelow);
         Region region = getRootRegion().getSubregion(regionName);
         region.remove("oh1");
         region.remove("oh2");
         region.remove("oh3");
         region.remove("oh4");
         region.remove("oh5");
-        getCache().getLoggerI18n().fine(removeExpectedBelow);
+        getCache().getLogger().fine(removeExpectedBelow);
         return null;
       }
     });
@@ -339,6 +341,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       final float criticalThreshold) {
 
     server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ResourceManager irm = getCache().getResourceManager();
         irm.setCriticalOffHeapPercentage(criticalThreshold);
@@ -467,6 +470,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
     if (localDestroy) {
       // local destroy the region on sick member
       server2.invoke(new SerializableCallable("local destroy") {
+        @Override
         public Object call() throws Exception {
           Region r = getRootRegion().getSubregion(regionName);
           r.localDestroyRegion();
@@ -475,6 +479,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       });
     } else if (cacheClose) {
       server2.invoke(new SerializableCallable() {
+        @Override
         public Object call() throws Exception {
           getCache().close();
           return null;
@@ -486,12 +491,15 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     // wait for remote region destroyed message to be processed
     server1.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "remote localRegionDestroyed message not received";
           }
 
+          @Override
           public boolean done() {
             DistributedRegion dr = (DistributedRegion) getRootRegion().getSubregion(regionName);
             return dr.getAtomicThresholdInfo().getMembersThatReachedThreshold().size() == 0;
@@ -565,12 +573,14 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     final Integer expected =
         (Integer) replicate1.invoke(new SerializableCallable("test Local DistributedRegion Load") {
+          @Override
           public Object call() throws Exception {
             final DistributedRegion r = (DistributedRegion) getCache().getRegion(rName);
             AttributesMutator<Integer, String> am = r.getAttributesMutator();
             am.setCacheLoader(new CacheLoader<Integer, String>() {
               final AtomicInteger numLoaderInvocations = new AtomicInteger(0);
 
+              @Override
               public String load(LoaderHelper<Integer, String> helper) throws CacheLoaderException {
                 Integer expectedInvocations = (Integer) helper.getArgument();
                 final int actualInvocations = this.numLoaderInvocations.getAndIncrement();
@@ -581,6 +591,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
                 return helper.getKey().toString();
               }
 
+              @Override
               public void close() {}
             });
 
@@ -597,10 +608,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
             r.put("oh3", new byte[157287]);
 
             WaitCriterion wc = new WaitCriterion() {
+              @Override
               public String description() {
                 return "expected region " + r + " to set memoryThreshold";
               }
 
+              @Override
               public boolean done() {
                 return r.isMemoryThresholdReached();
               }
@@ -613,10 +626,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
             r.destroy("oh3");
             wc = new WaitCriterion() {
+              @Override
               public String description() {
                 return "expected region " + r + " to unset memoryThreshold";
               }
 
+              @Override
               public boolean done() {
                 return !r.isMemoryThresholdReached();
               }
@@ -650,6 +665,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
     replicate2.invoke(validateData1);
 
     replicate2.invoke(new SerializableCallable("test DistributedRegion netLoad") {
+      @Override
       public Object call() throws Exception {
         final DistributedRegion r = (DistributedRegion) getCache().getRegion(rName);
         final OffHeapMemoryMonitor ohmm =
@@ -665,10 +681,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         // Place in a critical state for the next test
         r.put("oh3", new byte[157287]);
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "expected region " + r + " to set memoryThreshold";
           }
 
+          @Override
           public boolean done() {
             return r.isMemoryThresholdReached();
           }
@@ -681,10 +699,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
         r.destroy("oh3");
         wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "expected region " + r + " to unset memoryThreshold";
           }
 
+          @Override
           public boolean done() {
             return !r.isMemoryThresholdReached();
           }
@@ -723,17 +743,19 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
 
   private SerializableRunnable addExpectedException = new SerializableRunnable("addExpectedEx") {
+    @Override
     public void run() {
-      getCache().getLoggerI18n().fine(addExpectedExString);
-      getCache().getLoggerI18n().fine(addExpectedBelow);
+      getCache().getLogger().fine(addExpectedExString);
+      getCache().getLogger().fine(addExpectedBelow);
     };
   };
 
   private SerializableRunnable removeExpectedException =
       new SerializableRunnable("removeExpectedException") {
+        @Override
         public void run() {
-          getCache().getLoggerI18n().fine(removeExpectedExString);
-          getCache().getLoggerI18n().fine(removeExpectedBelow);
+          getCache().getLogger().fine(removeExpectedExString);
+          getCache().getLogger().fine(removeExpectedBelow);
         };
       };
 
@@ -786,6 +808,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
     startCacheServer(servers[2], 0f, 90f, regionName, true/* createPR */,
         false/* notifyBySubscription */, redundancy);
     accessor.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         getSystem(getOffHeapProperties());
         getCache();
@@ -812,6 +835,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     final Set<InternalDistributedMember> criticalMembers =
         (Set) servers[0].invoke(new SerializableCallable() {
+          @Override
           public Object call() throws Exception {
             final PartitionedRegion pr =
                 (PartitionedRegion) getRootRegion().getSubregion(regionName);
@@ -821,13 +845,16 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         });
 
     accessor.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion().getSubregion(regionName);
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "remote bucket not marked sick";
           }
 
+          @Override
           public boolean done() {
             boolean keyFoundOnSickMember = false;
             boolean caughtException = false;
@@ -870,6 +897,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     // Find all VMs that have a critical region
     SerializableCallable getMyId = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         return ((GemFireCacheImpl) getCache()).getMyId();
       }
@@ -886,6 +914,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       // local destroy the region on sick members
       for (final VM vm : criticalServers) {
         vm.invoke(new SerializableCallable("local destroy sick member") {
+          @Override
           public Object call() throws Exception {
             Region r = getRootRegion().getSubregion(regionName);
             LogWriterUtils.getLogWriter().info("PRLocalDestroy");
@@ -898,6 +927,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       // close cache on sick members
       for (final VM vm : criticalServers) {
         vm.invoke(new SerializableCallable("close cache sick member") {
+          @Override
           public Object call() throws Exception {
             getCache().close();
             return null;
@@ -913,13 +943,16 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     // do put all in a loop to allow distribution of message
     accessor.invoke(new SerializableCallable("Put in a loop") {
+      @Override
       public Object call() throws Exception {
         final Region r = getRootRegion().getSubregion(regionName);
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "pr should have gone un-critical";
           }
 
+          @Override
           public boolean done() {
             boolean done = true;
             for (int i = 0; i < 20; i++) {
@@ -970,6 +1003,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     Integer ex = (Integer) accessor
         .invoke(new SerializableCallable("Invoke loader from accessor, non-critical") {
+          @Override
           public Object call() throws Exception {
             Region<Integer, String> r = getCache().getRegion(rName);
             Integer k = new Integer(1);
@@ -986,6 +1020,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     ex = (Integer) ds1
         .invoke(new SerializableCallable("Invoke loader from datastore, non-critical") {
+          @Override
           public Object call() throws Exception {
             Region<Integer, String> r = getCache().getRegion(rName);
             Integer k = new Integer(2);
@@ -1008,6 +1043,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     ex = (Integer) ds1
         .invoke(new SerializableCallable("Set critical state, assert local load behavior") {
+          @Override
           public Object call() throws Exception {
             final OffHeapMemoryMonitor ohmm =
                 ((InternalResourceManager) getCache().getResourceManager()).getOffHeapMonitor();
@@ -1018,10 +1054,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
             pr.put("oh3", new byte[157287]);
 
             WaitCriterion wc = new WaitCriterion() {
+              @Override
               public String description() {
                 return "verify critical state";
               }
 
+              @Override
               public boolean done() {
                 for (final ProxyBucketRegion bucket : advisor.getProxyBucketArray()) {
                   if (bucket.isBucketSick()) {
@@ -1050,6 +1088,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     ex = (Integer) accessor.invoke(new SerializableCallable(
         "During critical state on datastore, assert accesor load behavior") {
+      @Override
       public Object call() throws Exception {
         final Integer k = new Integer(2); // reload with same key again and again
         Integer expectedInvocations6 = new Integer(expectedInvocations.incrementAndGet());
@@ -1066,6 +1105,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     ex = (Integer) ds1.invoke(
         new SerializableCallable("Set safe state on datastore, assert local load behavior") {
+          @Override
           public Object call() throws Exception {
             final PartitionedRegion r = (PartitionedRegion) getCache().getRegion(rName);
             final OffHeapMemoryMonitor ohmm =
@@ -1073,10 +1113,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
             r.destroy("oh3");
             WaitCriterion wc = new WaitCriterion() {
+              @Override
               public String description() {
                 return "verify critical state";
               }
 
+              @Override
               public boolean done() {
                 return !ohmm.getState().isCritical();
               }
@@ -1094,6 +1136,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     accessor.invoke(new SerializableCallable(
         "Data store in safe state, assert load behavior, accessor sets critical state, assert load behavior") {
+      @Override
       public Object call() throws Exception {
         final OffHeapMemoryMonitor ohmm =
             ((InternalResourceManager) getCache().getResourceManager()).getOffHeapMonitor();
@@ -1114,10 +1157,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         localRegion.put("oh3", new byte[157287]);
 
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "verify critical state";
           }
 
+          @Override
           public boolean done() {
             return ohmm.getState().isCritical();
           }
@@ -1133,10 +1178,12 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         // Clean up critical state
         localRegion.destroy("oh3");
         wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "verify critical state";
           }
 
+          @Override
           public boolean done() {
             return !ohmm.getState().isCritical();
           }
@@ -1160,6 +1207,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       af.setCacheLoader(new CacheLoader<Integer, String>() {
         final AtomicInteger numLoaderInvocations = new AtomicInteger(0);
 
+        @Override
         public String load(LoaderHelper<Integer, String> helper) throws CacheLoaderException {
           Integer expectedInvocations = (Integer) helper.getArgument();
           final int actualInvocations = this.numLoaderInvocations.getAndIncrement();
@@ -1170,6 +1218,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
           return helper.getKey().toString();
         }
 
+        @Override
         public void close() {}
       });
 
@@ -1203,11 +1252,13 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         AttributesFactory<Integer, String> af = getLocalRegionAttributesFactory();
         final AtomicInteger numLoaderInvocations = new AtomicInteger(0);
         af.setCacheLoader(new CacheLoader<Integer, String>() {
+          @Override
           public String load(LoaderHelper<Integer, String> helper) throws CacheLoaderException {
             numLoaderInvocations.incrementAndGet();
             return helper.getKey().toString();
           }
 
+          @Override
           public void close() {}
         });
         final LocalRegion r = (LocalRegion) getCache().createRegion(rName, af.create());
@@ -1225,15 +1276,17 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         r.getAll(createRanges(10, 12));
         assertEquals(expectedInvocations++, numLoaderInvocations.get());
 
-        getCache().getLoggerI18n().fine(addExpectedExString);
+        getCache().getLogger().fine(addExpectedExString);
         r.put("oh1", new byte[838860]);
         r.put("oh3", new byte[157287]);
-        getCache().getLoggerI18n().fine(removeExpectedExString);
+        getCache().getLogger().fine(removeExpectedExString);
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "expected region " + r + " to set memoryThresholdReached";
           }
 
+          @Override
           public boolean done() {
             return r.isMemoryThresholdReached();
           }
@@ -1249,14 +1302,16 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         r.getAll(createRanges(13, 15));
         assertEquals(expectedInvocations++, numLoaderInvocations.get());
 
-        getCache().getLoggerI18n().fine(addExpectedBelow);
+        getCache().getLogger().fine(addExpectedBelow);
         r.destroy("oh3");
-        getCache().getLoggerI18n().fine(removeExpectedBelow);
+        getCache().getLogger().fine(removeExpectedBelow);
         wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "expected region " + r + " to unset memoryThresholdReached";
           }
 
+          @Override
           public boolean done() {
             return !r.isMemoryThresholdReached();
           }
@@ -1331,6 +1386,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
     verifyProfiles(server2, 2);
 
     server2.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         closeCache();
         return null;
@@ -1360,6 +1416,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       final boolean catchLowMemoryException) {
 
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Region r = getRootRegion().getSubregion(regionName);
         try {
@@ -1388,6 +1445,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       final boolean catchLowMemoryException, final Range rng) {
 
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         Region r = getRootRegion().getSubregion(regionName);
         Map<Integer, String> temp = new HashMap<Integer, String>();
@@ -1449,7 +1507,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
         InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
         final OffHeapMemoryMonitor ohm = irm.getOffHeapMonitor();
         assertTrue(ohm.getState().isNormal());
-        getCache().getLoggerI18n().fine(addExpectedExString);
+        getCache().getLogger().fine(addExpectedExString);
         final LocalRegion r = (LocalRegion) getRootRegion().getSubregion(regionName);
         final long bytesUsedAfterSmallKey;
         {
@@ -1469,6 +1527,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
             r.put(bigKey, new byte[943720]);
             th.verifyBeginUpdateMemoryUsed(bytesUsedAfterSmallKey + 943720 + 8, true);
             WaitCriterion waitForCritical = new WaitCriterion() {
+              @Override
               public boolean done() {
                 return th.checkUpdateStateAndSendEventBeforeProcess(
                     bytesUsedAfterSmallKey + 943720 + 8, MemoryState.EVICTION_DISABLED_CRITICAL);
@@ -1524,7 +1583,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
           };
         }
         Wait.waitForCriterion(wc, 30000, 9, true);
-        getCache().getLoggerI18n().fine(removeExpectedExString);
+        getCache().getLogger().fine(removeExpectedExString);
         return bytesUsedAfterSmallKey;
       }
     });
@@ -1536,6 +1595,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
     // make the region healthy in the server
     server.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
         final OffHeapMemoryMonitor ohm = irm.getOffHeapMonitor();
@@ -1652,6 +1712,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
   private void registerTestMemoryThresholdListener(VM vm) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         TestMemoryThresholdListener listener = new TestMemoryThresholdListener();
         InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
@@ -1667,6 +1728,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       final boolean notifyBySubscription, final int prRedundancy) throws Exception {
 
     return (Integer) server.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         getSystem(getOffHeapProperties());
         GemFireCacheImpl cache = (GemFireCacheImpl) getCache();
@@ -1706,6 +1768,7 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
       final String regionName) {
 
     client.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         getSystem(getClientProps());
         getCache();
@@ -1851,14 +1914,17 @@ public class MemoryThresholdsOffHeapDUnitTest extends ClientServerTestCase {
 
   private void verifyProfiles(VM vm, final int numberOfProfiles) {
     vm.invoke(new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         InternalResourceManager irm = ((GemFireCacheImpl) getCache()).getInternalResourceManager();
         final ResourceAdvisor ra = irm.getResourceAdvisor();
         WaitCriterion wc = new WaitCriterion() {
+          @Override
           public String description() {
             return "verify profiles failed. Current profiles: " + ra.adviseGeneric();
           }
 
+          @Override
           public boolean done() {
             return numberOfProfiles == ra.adviseGeneric().size();
           }

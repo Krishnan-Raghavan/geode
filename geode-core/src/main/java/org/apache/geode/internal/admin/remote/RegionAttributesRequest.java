@@ -21,7 +21,8 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.geode.distributed.internal.DistributionManager;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message that is sent to a particular app vm to request the region statistics of a given region.
@@ -39,7 +40,7 @@ public class RegionAttributesRequest extends RegionAdminRequest {
 
   public RegionAttributesRequest() {
     friendlyName =
-        LocalizedStrings.RegionAttributesRequest_FETCH_REGION_ATTRIBUTES.toLocalizedString();
+        "Fetch region attributes";
   }
 
   /**
@@ -51,18 +52,21 @@ public class RegionAttributesRequest extends RegionAdminRequest {
     return RegionAttributesResponse.create(dm, this.getSender(), this.getRegion(dm.getSystem()));
   }
 
+  @Override
   public int getDSFID() {
     return REGION_ATTRIBUTES_REQUEST;
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
   }
 
   @Override

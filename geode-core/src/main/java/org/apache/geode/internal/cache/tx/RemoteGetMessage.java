@@ -36,8 +36,6 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.ReplySender;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.BucketRegion.RawValue;
 import org.apache.geode.internal.cache.CachedDeserializableFactory;
 import org.apache.geode.internal.cache.DataLocationException;
@@ -48,11 +46,14 @@ import org.apache.geode.internal.cache.RemoteOperationException;
 import org.apache.geode.internal.cache.TXManagerImpl;
 import org.apache.geode.internal.cache.TXStateProxy;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.OffHeapHelper;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.BlobHelper;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is used as the request for a get operation done in a transaction that is hosted on a
@@ -119,8 +120,7 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
     } catch (DistributedSystemDisconnectedException sde) {
       sendReply(getSender(), this.processorId, dm,
           new ReplyException(new RemoteOperationException(
-              LocalizedStrings.GetMessage_OPERATION_GOT_INTERRUPTED_DUE_TO_SHUTDOWN_IN_PROGRESS_ON_REMOTE_VM
-                  .toLocalizedString(),
+              "Operation got interrupted due to shutdown in progress on remote VM.",
               sde)),
           r, startTime);
       return false;
@@ -139,21 +139,24 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
     buff.append("; key=").append(this.key).append("; callback arg=").append(this.cbArg);
   }
 
+  @Override
   public int getDSFID() {
     return R_GET_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.key = DataSerializer.readObject(in);
     this.cbArg = DataSerializer.readObject(in);
     this.context = DataSerializer.readObject(in);
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.key, out);
     DataSerializer.writeObject(this.cbArg, out);
     DataSerializer.writeObject(this.context, out);
@@ -182,7 +185,7 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
     Set<?> failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new RemoteOperationException(
-          LocalizedStrings.GetMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
 
     return p;
@@ -289,19 +292,21 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeByte(this.valueIsByteArray ? 1 : 0);
       this.rawVal.writeAsByteArray(out);
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.valueIsByteArray = (in.readByte() == 1);
       this.valueInBytes = DataSerializer.readByteArray(in);
       if (!this.valueIsByteArray) {
-        this.remoteVersion = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+        this.remoteVersion = StaticSerialization.getVersionForDataStreamOrNull(in);
       }
     }
 
@@ -371,12 +376,11 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
         return null;
       } catch (IOException e) {
         throw new RemoteOperationException(
-            LocalizedStrings.GetMessage_UNABLE_TO_DESERIALIZE_VALUE_IOEXCEPTION.toLocalizedString(),
+            "Unable to deserialize value (IOException)",
             e);
       } catch (ClassNotFoundException e) {
         throw new RemoteOperationException(
-            LocalizedStrings.GetMessage_UNABLE_TO_DESERIALIZE_VALUE_CLASSNOTFOUNDEXCEPTION
-                .toLocalizedString(),
+            "Unable to deserialize value (ClassNotFoundException)",
             e);
       }
     }
@@ -392,7 +396,7 @@ public class RemoteGetMessage extends RemoteOperationMessageWithDirectReply {
       }
       if (!this.returnValueReceived) {
         throw new RemoteOperationException(
-            LocalizedStrings.GetMessage_NO_RETURN_VALUE_RECEIVED.toLocalizedString());
+            "no return value received");
       }
       return getValue(preferCD);
     }

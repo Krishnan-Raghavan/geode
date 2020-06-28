@@ -14,11 +14,13 @@
  */
 package org.apache.geode.distributed;
 
+import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_NETWORK_PARTITION_DETECTION;
 import static org.apache.geode.distributed.ConfigurationProperties.GROUPS;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.NAME;
 import static org.apache.geode.distributed.ConfigurationProperties.ROLES;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.apache.geode.test.dunit.Assert.assertFalse;
 import static org.apache.geode.test.dunit.Assert.assertNotNull;
@@ -26,6 +28,8 @@ import static org.apache.geode.test.dunit.Assert.assertNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
 
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
@@ -35,21 +39,20 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.IncompatibleSystemException;
+import org.apache.geode.distributed.internal.Distribution;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.HighPriorityAckedMessage;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.distributed.internal.membership.gms.GMSMember;
-import org.apache.geode.distributed.internal.membership.gms.MembershipManagerHelper;
-import org.apache.geode.distributed.internal.membership.gms.mgr.GMSMembershipManager;
+import org.apache.geode.distributed.internal.membership.api.MembershipManagerHelper;
+import org.apache.geode.distributed.internal.membership.gms.GMSMembership;
+import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.SerializableRunnable;
@@ -156,6 +159,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
   public void testTwoMembersSameName() {
     disconnectFromDS(); // or assertion on # members fails when run-dunit-tests
     Host.getHost(0).getVM(0).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         Properties config = new Properties();
         config.setProperty(NAME, "name0");
@@ -163,6 +167,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
       }
     });
     Host.getHost(0).getVM(1).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         Properties config = new Properties();
         config.setProperty(NAME, "name1");
@@ -170,6 +175,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
       }
     });
     Host.getHost(0).getVM(2).invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         Properties config = new Properties();
         config.setProperty(NAME, "name0");
@@ -195,10 +201,12 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     for (int i = 0; i < vmRoles.length; i++) {
       final int vm = i;
       Host.getHost(0).getVM(vm).invoke(new SerializableRunnable() {
+        @Override
         public void run() {
           // disconnectFromDS();
           Properties config = new Properties();
           config.setProperty(ROLES, vmRoles[vm]);
+          config.setProperty(ENABLE_NETWORK_PARTITION_DETECTION, "false");
           getSystem(config);
         }
       });
@@ -208,6 +216,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     for (int i = 0; i < vmRoles.length; i++) {
       final int vm = i;
       Host.getHost(0).getVM(vm).invoke(new SerializableRunnable() {
+        @Override
         public void run() {
           InternalDistributedSystem sys = getSystem();
           assertNotNull(sys.getConfig().getRoles());
@@ -222,7 +231,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
           Role myRole = (Role) myRoles.iterator().next();
           assertTrue(vmRoles[vm].equals(myRole.getName()));
 
-          Awaitility.await().atMost(10, TimeUnit.SECONDS)
+          await()
               .until(() -> dm.getOtherNormalDistributionManagerIds().size() == 3);
           Set<InternalDistributedMember> members = dm.getOtherNormalDistributionManagerIds();
 
@@ -256,10 +265,13 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     assertTrue(system == basicGetSystem()); // senders will use basicGetSystem()
     InternalDistributedMember internalDistributedMember = system.getDistributedMember();
 
-    GMSMember gmsMember = new GMSMember((GMSMember) internalDistributedMember.getNetMember());
-    assertTrue(gmsMember.equals(internalDistributedMember.getNetMember()));
-    gmsMember.setName(null);
-    InternalDistributedMember partialID = new InternalDistributedMember(gmsMember);
+    internalDistributedMember.setName(null);
+    HeapDataOutputStream outputStream = new HeapDataOutputStream(100);
+    internalDistributedMember.writeEssentialData(outputStream);
+    DataInputStream dataInputStream =
+        new DataInputStream(new ByteArrayInputStream(outputStream.toByteArray()));
+    InternalDistributedMember partialID =
+        InternalDistributedMember.readEssentialData(dataInputStream);
     return partialID;
   }
 
@@ -295,9 +307,9 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     HighPriorityAckedMessage message = new HighPriorityAckedMessage();
     message.setSender(partialID);
 
-    GMSMembershipManager manager =
-        (GMSMembershipManager) MembershipManagerHelper.getMembershipManager(basicGetSystem());
-    manager.replacePartialIdentifierInMessage(message);
+    Distribution manager =
+        MembershipManagerHelper.getDistribution(basicGetSystem());
+    ((GMSMembership) manager.getMembership()).replacePartialIdentifierInMessage(message);
 
     assertFalse(message.getSender().isPartial());
   }
@@ -322,6 +334,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     for (int i = 0; i < 4; i++) {
       final int vm = i;
       Host.getHost(0).getVM(vm).invoke(new SerializableRunnable() {
+        @Override
         public void run() {
           // disconnectFromDS();
           Properties config = new Properties();
@@ -335,6 +348,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     for (int i = 0; i < 4; i++) {
       final int vm = i;
       Host.getHost(0).getVM(vm).invoke(new SerializableRunnable() {
+        @Override
         public void run() {
           InternalDistributedSystem sys = getSystem();
           final String expectedMyGroup = makeGroupsString(vm);
@@ -347,7 +361,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
 
           assertEquals(Arrays.asList("" + vm, makeOddEvenString(vm)), myGroups);
 
-          Awaitility.await().atMost(10, TimeUnit.SECONDS)
+          await()
               .until(() -> dm.getOtherNormalDistributionManagerIds().size() == 3);
           Set<InternalDistributedMember> members = dm.getOtherNormalDistributionManagerIds();
 
@@ -423,6 +437,7 @@ public class DistributedMemberDUnitTest extends JUnit4DistributedTestCase {
     final DistributedMember member1 = createSystemAndGetId(vm1, "name1");
     final DistributedMember member2 = createSystemAndGetId(vm2, "name2");
     vm0.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         DistributedSystem system = getSystem();
         assertEquals(member0, system.findDistributedMember("name0"));

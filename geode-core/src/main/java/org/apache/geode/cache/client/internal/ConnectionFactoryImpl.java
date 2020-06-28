@@ -23,19 +23,19 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.CancelException;
 import org.apache.geode.GemFireConfigException;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.GatewayConfigurationException;
 import org.apache.geode.cache.client.ServerRefusedConnectionException;
 import org.apache.geode.cache.client.internal.ServerDenyList.FailureTracker;
 import org.apache.geode.cache.wan.GatewaySender;
+import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.ServerLocation;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientUpdater;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.net.SocketCreatorFactory;
 import org.apache.geode.internal.security.SecurableCommunicationChannel;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.security.GemFireSecurityException;
 
 /**
@@ -64,50 +64,58 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
    * @since GemFire 5.7
    */
 
+  @MutableForTesting
   public static boolean testFailedConnectionToServer = false;
 
-  public ConnectionFactoryImpl(ConnectionSource source, EndpointManager endpointManager,
-      InternalDistributedSystem sys, int socketBufferSize, int handshakeTimeout, int readTimeout,
-      ClientProxyMembershipID proxyId, CancelCriterion cancelCriterion, boolean usedByGateway,
-      GatewaySender sender, long pingInterval, boolean multiuserSecureMode, PoolImpl pool) {
+  ConnectionFactoryImpl(ConnectionSource source, EndpointManager endpointManager,
+      InternalDistributedSystem sys, int socketBufferSize, int handshakeTimeout,
+      int readTimeout,
+      ClientProxyMembershipID proxyId, CancelCriterion cancelCriterion,
+      boolean usedByGateway,
+      GatewaySender sender, long pingInterval, boolean multiuserSecureMode,
+      PoolImpl pool, final DistributionConfig distributionConfig) {
     this(
         new ConnectionConnector(endpointManager, sys, socketBufferSize, handshakeTimeout,
-            readTimeout, cancelCriterion, usedByGateway, sender,
+            readTimeout, usedByGateway, sender,
             (usedByGateway || sender != null) ? SocketCreatorFactory
-                .getSocketCreatorForComponent(SecurableCommunicationChannel.GATEWAY)
+                .getSocketCreatorForComponent(distributionConfig,
+                    SecurableCommunicationChannel.GATEWAY)
                 : SocketCreatorFactory
-                    .getSocketCreatorForComponent(SecurableCommunicationChannel.SERVER),
+                    .getSocketCreatorForComponent(distributionConfig,
+                        SecurableCommunicationChannel.SERVER),
             new ClientSideHandshakeImpl(proxyId, sys, sys.getSecurityService(),
-                multiuserSecureMode)),
+                multiuserSecureMode),
+            pool.getSocketFactory()),
         source, pingInterval, pool, cancelCriterion);
   }
 
   public ConnectionFactoryImpl(ConnectionConnector connectionConnector, ConnectionSource source,
       long pingInterval, PoolImpl pool, CancelCriterion cancelCriterion) {
+    this.connectionConnector = connectionConnector;
     this.source = source;
-    this.denyList = new ServerDenyList(pingInterval);
     this.pool = pool;
     this.cancelCriterion = cancelCriterion;
-    this.connectionConnector = connectionConnector;
+
+    denyList = new ServerDenyList(pingInterval);
   }
 
   public void start(ScheduledExecutorService background) {
     denyList.start(background);
   }
 
+  @Override
   public ServerDenyList getDenyList() {
     return denyList;
   }
 
+  @Override
   public Connection createClientToServerConnection(ServerLocation location, boolean forQueue)
       throws GemFireSecurityException {
     FailureTracker failureTracker = denyList.getFailureTracker(location);
 
-    boolean initialized = false;
     Connection connection = null;
     try {
       connection = connectionConnector.connectClientToServer(location, forQueue);
-      initialized = true;
       failureTracker.reset();
       authenticateIfRequired(connection);
     } catch (GemFireConfigException | CancelException | GemFireSecurityException
@@ -115,29 +123,21 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
       throw e;
     } catch (ServerRefusedConnectionException src) {
       // propagate this up, don't retry
-      logger.warn(LocalizedMessage.create(
-          LocalizedStrings.AutoConnectionSourceImpl_COULD_NOT_CREATE_A_NEW_CONNECTION_TO_SERVER_0,
-          src.getMessage()));
+      logger.warn("Could not create a new connection to server: {}",
+          src.getMessage());
       testFailedConnectionToServer = true;
       throw src;
     } catch (Exception e) {
       if (e.getMessage() != null && (e.getMessage().equals("Connection refused")
-          || e.getMessage().equals("Connection reset"))) { // this is the most common case, so don't
-                                                           // print an exception
+          || e.getMessage().equals("Connection reset"))) {
+        // this is the most common case, so don't print an exception
         if (logger.isDebugEnabled()) {
           logger.debug("Unable to connect to {}: connection refused", location);
         }
-      } else {// print a warning with the exception stack trace
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.ConnectException_COULD_NOT_CONNECT_TO_0, location), e);
+      } else {
+        logger.warn("Could not connect to: " + location, e);
       }
       testFailedConnectionToServer = true;
-    } finally {
-      if (!initialized && connection != null) {
-        connection.destroy();
-        failureTracker.addFailure();
-        connection = null;
-      }
     }
 
     return connection;
@@ -159,13 +159,15 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
     }
   }
 
-  public ServerLocation findBestServer(ServerLocation currentServer, Set excludedServers) {
+  @Override
+  public ServerLocation findBestServer(ServerLocation currentServer,
+      Set<ServerLocation> excludedServers) {
     if (currentServer != null && source.isBalanced()) {
       return currentServer;
     }
-    final Set origExcludedServers = excludedServers;
-    excludedServers = new HashSet(excludedServers);
-    Set denyListedServers = denyList.getBadServers();
+    final Set<ServerLocation> origExcludedServers = excludedServers;
+    excludedServers = new HashSet<>(excludedServers);
+    Set<ServerLocation> denyListedServers = denyList.getBadServers();
     excludedServers.addAll(denyListedServers);
     ServerLocation server = source.findReplacementServer(currentServer, excludedServers);
     if (server == null) {
@@ -181,11 +183,12 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
     return server;
   }
 
-  public Connection createClientToServerConnection(Set excludedServers)
+  @Override
+  public Connection createClientToServerConnection(Set<ServerLocation> excludedServers)
       throws GemFireSecurityException {
-    final Set origExcludedServers = excludedServers;
-    excludedServers = new HashSet(excludedServers);
-    Set denyListedServers = denyList.getBadServers();
+    final Set<ServerLocation> origExcludedServers = excludedServers;
+    excludedServers = new HashSet<>(excludedServers);
+    Set<ServerLocation> denyListedServers = denyList.getBadServers();
     excludedServers.addAll(denyListedServers);
     Connection conn = null;
     RuntimeException fatalException = null;
@@ -218,14 +221,7 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
 
       try {
         conn = createClientToServerConnection(server, false);
-      } catch (CancelException e) {
-        // propagate this up immediately
-        throw e;
-      } catch (GemFireSecurityException e) {
-        // propagate this up immediately
-        throw e;
-      } catch (GatewayConfigurationException e) {
-        // propagate this up immediately
+      } catch (CancelException | GemFireSecurityException | GatewayConfigurationException e) {
         throw e;
       } catch (ServerRefusedConnectionException srce) {
         fatalException = srce;
@@ -234,8 +230,7 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
               srce);
         }
       } catch (Exception e) {
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.ConnectException_COULD_NOT_CONNECT_TO_0, server), e);
+        logger.warn(String.format("Could not connect to: %s", server), e);
       }
 
       excludedServers.add(server);
@@ -244,6 +239,7 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
     return conn;
   }
 
+  @Override
   public ClientUpdater createServerToClientConnection(Endpoint endpoint, QueueManager qManager,
       boolean isPrimary, ClientUpdater failedUpdater) {
     String clientUpdateName = CacheClientUpdater.CLIENT_UPDATER_THREAD_NAME + " on "
@@ -251,10 +247,8 @@ public class ConnectionFactoryImpl implements ConnectionFactory {
     if (logger.isDebugEnabled()) {
       logger.debug("Establishing: {}", clientUpdateName);
     }
-    // Launch the thread
-    CacheClientUpdater updater = connectionConnector.connectServerToClient(endpoint, qManager,
-        isPrimary, failedUpdater, clientUpdateName);
 
-    return updater;
+    return connectionConnector.connectServerToClient(endpoint, qManager, isPrimary, failedUpdater,
+        clientUpdateName);
   }
 }

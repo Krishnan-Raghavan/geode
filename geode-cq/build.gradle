@@ -15,16 +15,57 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+
+
 dependencies {
-  compileOnly project(':geode-core')
+  compile(platform(project(':boms:geode-all-bom')))
+  implementation(project(':geode-core'))
+  implementation(project(':geode-logging'))
+  implementation(project(':geode-membership'))
+  implementation(project(':geode-serialization'))
+  implementation('org.apache.logging.log4j:log4j-api')
 
-  testCompile project(':geode-core')
-  testCompile project(':geode-junit')
 
-  integrationTestCompile project(":geode-dunit")
+  testImplementation(project(':geode-junit'))
 
 
-  upgradeTestCompile (project(":geode-dunit")) {
-    exclude module: 'geode-core'
+  integrationTestImplementation(project(':geode-dunit'))
+  integrationTestImplementation(project(':geode-junit'))
+  integrationTestImplementation('junit:junit')
+  integrationTestImplementation('org.awaitility:awaitility')
+
+
+  distributedTestImplementation(project(':geode-gfsh'))
+  distributedTestImplementation(project(':geode-junit'))
+  distributedTestImplementation(project(':geode-dunit'))
+  distributedTestImplementation('org.apache.commons:commons-lang3')
+  distributedTestImplementation('junit:junit')
+  distributedTestImplementation('mx4j:mx4j')
+  distributedTestImplementation('org.assertj:assertj-core')
+  distributedTestImplementation('org.awaitility:awaitility')
+  distributedTestImplementation('org.hamcrest:hamcrest-all')
+  distributedTestImplementation('org.hamcrest:hamcrest-core')
+  distributedTestImplementation('org.hamcrest:hamcrest-library')
+  distributedTestImplementation('pl.pragmatists:JUnitParams')
+
+
+  upgradeTestImplementation(project(':geode-dunit'))
+  upgradeTestImplementation(project(':geode-junit'))
+  upgradeTestImplementation('junit:junit')
+  upgradeTestImplementation('org.awaitility:awaitility')
+  upgradeTestImplementation('org.mockito:mockito-core')
+
+  upgradeTestRuntimeOnly(project(path: ':geode-old-versions', configuration: 'testOutput'))
+}
+
+ext.moduleName = group + '.cq'
+
+jar {
+  inputs.property("moduleName", moduleName)
+  manifest {
+    attributes('Automatic-Module-Name': moduleName)
   }
 }

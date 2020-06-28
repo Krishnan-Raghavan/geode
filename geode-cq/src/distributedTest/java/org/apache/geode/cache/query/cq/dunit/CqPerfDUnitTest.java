@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 
@@ -21,10 +22,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -35,14 +34,14 @@ import org.apache.geode.cache.query.CqAttributesFactory;
 import org.apache.geode.cache.query.CqListener;
 import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.query.QueryService;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.ServerCQImpl;
 import org.apache.geode.cache.query.internal.DefaultQueryService;
 import org.apache.geode.cache.query.internal.cq.CqService;
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
-import org.apache.geode.cache.query.internal.cq.ServerCQImpl;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
@@ -73,6 +72,7 @@ public class CqPerfDUnitTest extends JUnit4CacheTestCase {
     // system before creating connection pools
     getSystem();
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         getSystem();
       }
@@ -129,6 +129,7 @@ public class CqPerfDUnitTest extends JUnit4CacheTestCase {
     cqDUnitTest.createValuesWithTime(client, cqDUnitTest.regions[0], size);
 
     client.invoke(new CacheSerializableRunnable("Validate CQs") {
+      @Override
       public void run2() throws CacheException {
         logger.info("### Validating CQ. ### " + cqName);
         // Get CQ Service.
@@ -861,14 +862,14 @@ public class CqPerfDUnitTest extends JUnit4CacheTestCase {
           (CqServiceImpl) ((DefaultQueryService) getCache().getQueryService()).getCqService();
 
       Map matchedCqMap = cqService.getMatchingCqMap();
-      Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+      await()
           .until(matchedCqMap::size, equalTo(mapSize));
 
       if (query != null) {
         assertThat(matchedCqMap.containsKey(query)).isTrue();
 
         Collection cqs = (Collection) matchedCqMap.get(query);
-        Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+        await()
             .until(cqs::size, equalTo(numCqSize));
       }
     });

@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.Entry;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
@@ -44,12 +46,12 @@ import org.apache.geode.distributed.DistributedSystem;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.ClientServerObserverAdapter;
 import org.apache.geode.internal.cache.ClientServerObserverHolder;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -86,7 +88,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Test
   public void testRegisterInterestResponse_NonExistent_Invalid() throws Exception {
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntry(KEY));
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
     assertFalse(r.containsValueForKey(KEY)); // invalidate
     assertEquals(null, r.getEntry(KEY).getValue()); // invalidate
@@ -95,7 +97,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Test
   public void testRegisterInterestResponse_NonExistent_Valid() throws Exception {
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
     assertEquals("ValueMatrix1", r.getEntry(KEY).getValue());
   }
@@ -103,7 +105,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Ignore("TODO: test is broken and disabled")
   @Test
   public void testRegisterInterestResponse_Valid_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "ValueMatrix1");
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntry(KEY));
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
@@ -112,7 +114,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testRegisterInterestResponse_Valid_Valid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "ValueMatrix1");
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
     assertEquals("ValueMatrix1", r.getEntry(KEY).getValue());
@@ -120,7 +122,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testRegisterInterestResponse_Invalid_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntry(KEY));
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
@@ -130,7 +132,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Ignore("TODO: test is broken and disabled")
   @Test
   public void testRegisterInterestResponse_Invalid_Valid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
     r.registerInterest(KEY, InterestResultPolicy.KEYS_VALUES);
@@ -139,7 +141,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testRegisterInterestResponse_Destroyed_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.destroy(KEY);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntry(KEY));
@@ -150,7 +152,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testRegisterInterestResponse_Destroyed_Valid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.destroy(KEY);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -162,15 +164,16 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   public void testRegisterInterest_Destroy_Concurrent() throws Exception {
     PoolImpl.BEFORE_REGISTER_CALLBACK_FLAG = true;
     ClientServerObserverHolder.setInstance(new ClientServerObserverAdapter() {
+      @Override
       public void beforeInterestRegistration() {
-        Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region r = cache.getRegion(SEPARATOR + REGION_NAME);
         r.put(KEY, "AgainDummyValue");
         r.destroy(KEY);
         PoolImpl.BEFORE_REGISTER_CALLBACK_FLAG = false;
       }
     });
 
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
 
@@ -180,8 +183,9 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   private void waitForValue(final Region r, final Object key, final Object expected) {
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
-        org.apache.geode.cache.Region.Entry entry = r.getEntry(KEY);
+        Entry entry = r.getEntry(KEY);
         if (expected == null) {
           if (!r.containsValueForKey(key)) {
             return true; // success!
@@ -196,16 +200,17 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
         return false;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 120 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
   }
 
   @Test
   public void testNotification_NonExistent_Create() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
     waitForValue(r, KEY, "ValueMatrix1");
@@ -213,7 +218,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_NonExistent_Update() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix2"));
@@ -222,7 +227,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_NonExistent_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntryOnly(KEY));
@@ -231,7 +236,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_NonExistent_Destroy() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.destroyEntry(KEY));
@@ -240,7 +245,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Valid_Create() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -249,7 +254,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Valid_Update() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix2"));
@@ -259,7 +264,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Ignore("TODO: test is broken and disabled")
   @Test
   public void testNotification_Valid_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntryOnly(KEY));
@@ -268,7 +273,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Valid_Destroy() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     r.put(KEY, "DummyValue");
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.destroyEntry(KEY));
@@ -277,7 +282,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Invalid_Create() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -286,7 +291,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Invalid_Update() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -296,7 +301,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Ignore("TODO: test is broken and disabled")
   @Test
   public void testNotification_Invalid_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntryOnly(KEY));
@@ -305,7 +310,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_Invalid_Destroy() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.destroyEntry(KEY));
@@ -314,7 +319,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_LocalInvalid_Create() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     localInvalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -323,7 +328,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_LocalInvalid_Update() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     localInvalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.updateEntry(KEY, "ValueMatrix1"));
@@ -333,7 +338,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
   @Ignore("TODO: test is broken and disabled")
   @Test
   public void testNotification_LocalInvalid_Invalid() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     localInvalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.invalidateEntryOnly(KEY));
@@ -342,7 +347,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   @Test
   public void testNotification_LocalInvalid_Destroy() throws Exception {
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME);
     invalidateEntry(KEY);
     r.registerInterest("ALL_KEYS", InterestResultPolicy.NONE);
     server1.invoke(() -> DurableResponseMatrixDUnitTest.destroyEntry(KEY));
@@ -351,7 +356,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   public static void updateEntry(String key, String value) throws Exception {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(key, value);
     } catch (Exception e) {
@@ -361,7 +366,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   public static void destroyEntry(String key) throws Exception {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.destroy(key);
     } catch (Exception e) {
@@ -371,7 +376,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   public static void invalidateEntryOnly(String key) throws Exception {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.invalidate(key);
     } catch (Exception e) {
@@ -381,7 +386,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   public static void invalidateEntry(String key) throws Exception {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(key, "DummyValue");
       r.invalidate(key);
@@ -392,7 +397,7 @@ public class DurableResponseMatrixDUnitTest extends JUnit4DistributedTestCase {
 
   public static void localInvalidateEntry(String key) throws Exception {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       assertNotNull(r);
       r.put(key, "DummyValue");
       r.localInvalidate(key);

@@ -15,6 +15,7 @@
 package org.apache.geode.rest.internal.web.controllers;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -22,15 +23,14 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import org.apache.logging.log4j.Logger;
-import org.json.JSONException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import org.apache.geode.cache.LowMemoryException;
 import org.apache.geode.cache.Region;
@@ -38,8 +38,9 @@ import org.apache.geode.cache.execute.Execution;
 import org.apache.geode.cache.execute.FunctionException;
 import org.apache.geode.cache.execute.FunctionService;
 import org.apache.geode.cache.execute.ResultCollector;
+import org.apache.geode.internal.cache.InternalRegion;
 import org.apache.geode.internal.cache.execute.util.FindRestEnabledServersFunction;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.rest.internal.web.controllers.support.RestServersResultCollector;
 import org.apache.geode.rest.internal.web.exception.GemfireRestException;
 import org.apache.geode.rest.internal.web.util.ArrayUtils;
@@ -61,7 +62,7 @@ public abstract class CommonCrudController extends AbstractBaseController {
    *
    * @return JSON document containing result
    */
-  @RequestMapping(method = RequestMethod.GET, produces = {MediaType.APPLICATION_JSON_UTF8_VALUE})
+  @RequestMapping(method = RequestMethod.GET, produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "list all resources (Regions)",
       notes = "List all available resources (Regions) in the Geode cluster")
   @ApiResponses({@ApiResponse(code = 200, message = "OK."),
@@ -73,7 +74,10 @@ public abstract class CommonCrudController extends AbstractBaseController {
     logger.debug("Listing all resources (Regions) in Geode...");
     final HttpHeaders headers = new HttpHeaders();
     headers.setLocation(toUri());
-    final Set<Region<?, ?>> regions = getCache().rootRegions();
+    final Set<Region<?, ?>> regions = new HashSet<>();
+    for (InternalRegion region : getCache().getApplicationRegions()) {
+      regions.add(region);
+    }
     String listRegionsAsJson = JSONUtils.formulateJsonForListRegions(regions, "regions");
     return new ResponseEntity<>(listRegionsAsJson, headers, HttpStatus.OK);
   }
@@ -85,7 +89,7 @@ public abstract class CommonCrudController extends AbstractBaseController {
    * @return JSON document containing result
    */
   @RequestMapping(method = RequestMethod.GET, value = "/{region}/keys",
-      produces = {MediaType.APPLICATION_JSON_UTF8_VALUE})
+      produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "list all keys", notes = "List all keys in region")
   @ApiResponses({@ApiResponse(code = 200, message = "OK"),
       @ApiResponse(code = 401, message = "Invalid Username or Password."),
@@ -107,52 +111,65 @@ public abstract class CommonCrudController extends AbstractBaseController {
   }
 
   /**
-   * Delete data for single key or specific keys in region
+   * Delete data for one or more keys from a region
    *
    * @param region gemfire region
-   * @param keys for which data is requested
    * @return JSON document containing result
    */
   @RequestMapping(method = RequestMethod.DELETE, value = "/{region}/{keys}",
-      produces = {MediaType.APPLICATION_JSON_VALUE})
+      produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "delete data for key(s)",
-      notes = "Delete data for single key or specific keys in region")
+      notes = "Delete data for one or more keys in a region. Deprecated in favor of /{region}?keys=.")
   @ApiResponses({@ApiResponse(code = 200, message = "OK"),
       @ApiResponse(code = 401, message = "Invalid Username or Password."),
       @ApiResponse(code = 403, message = "Insufficient privileges for operation."),
       @ApiResponse(code = 404, message = "Region or key(s) does not exist"),
       @ApiResponse(code = 500, message = "GemFire throws an error or exception")})
-  @PreAuthorize("@securityService.authorize('WRITE', #region, #keys)")
   public ResponseEntity<?> delete(@PathVariable("region") String region,
-      @PathVariable("keys") final String[] keys) {
-    logger.debug("Delete data for key {} on region {}", ArrayUtils.toString((Object[]) keys),
-        region);
-
+      @PathVariable("keys") String[] keys) {
     region = decode(region);
+    return deleteRegionKeys(region, keys);
+  }
 
-    deleteValues(region, (Object[]) keys);
+  private ResponseEntity<?> deleteRegionKeys(String region, String[] keys) {
+    securityService.authorize("WRITE", region, keys);
+    logger.debug("Delete data for keys {} on region {}", ArrayUtils.toString((Object[]) keys),
+        region);
+    deleteValues(region, keys);
     return new ResponseEntity<>(HttpStatus.OK);
   }
 
   /**
-   * Delete all data in region
+   * Delete all data in region or just the given keys
    *
    * @param region gemfire region
+   * @param encodedKeys optional comma separated list of keys
    * @return JSON document containing result
    */
   @RequestMapping(method = RequestMethod.DELETE, value = "/{region}")
-  @ApiOperation(value = "delete all data", notes = "Delete all data in the region")
+  @ApiOperation(value = "delete all data or the specified keys",
+      notes = "Delete all in the region or just the specified keys")
   @ApiResponses({@ApiResponse(code = 200, message = "OK"),
       @ApiResponse(code = 401, message = "Invalid Username or Password."),
       @ApiResponse(code = 403, message = "Insufficient privileges for operation."),
       @ApiResponse(code = 404, message = "Region does not exist"),
       @ApiResponse(code = 500, message = "if GemFire throws an error or exception")})
-  @PreAuthorize("@securityService.authorize('DATA', 'WRITE', #region)")
-  public ResponseEntity<?> delete(@PathVariable("region") String region) {
+  public ResponseEntity<?> deleteAllOrGivenKeys(@PathVariable("region") String region,
+      @RequestParam(value = "keys", required = false) final String[] encodedKeys) {
     logger.debug("Deleting all data in Region ({})...", region);
 
     region = decode(region);
+    if (encodedKeys == null || encodedKeys.length == 0) {
+      return deleteAllRegionData(region);
+    } else {
+      String[] decodedKeys = decode(encodedKeys);
+      return deleteRegionKeys(region, decodedKeys);
+    }
+  }
 
+  private ResponseEntity<?> deleteAllRegionData(String region) {
+    securityService.authorize("DATA", "WRITE", region);
+    logger.debug("Deleting all data in Region ({})...", region);
     deleteValues(region);
     return new ResponseEntity<>(HttpStatus.OK);
   }
@@ -170,7 +187,7 @@ public abstract class CommonCrudController extends AbstractBaseController {
   }
 
   @RequestMapping(method = {RequestMethod.GET}, value = "/servers",
-      produces = {MediaType.APPLICATION_JSON_UTF8_VALUE})
+      produces = {APPLICATION_JSON_UTF8_VALUE})
   @ApiOperation(value = "fetch all REST enabled servers in the DS",
       notes = "Find all gemfire node where developer REST service is up and running!")
   @ApiResponses({@ApiResponse(code = 200, message = "OK"),
@@ -181,30 +198,29 @@ public abstract class CommonCrudController extends AbstractBaseController {
   public ResponseEntity<?> servers() {
     logger.debug("Executing function to get REST enabled gemfire nodes in the DS!");
 
-    Execution function;
+    Execution<?, ?, ?> function;
     try {
       function = FunctionService.onMembers(getAllMembersInDS());
     } catch (FunctionException fe) {
       throw new GemfireRestException(
-          "Disributed system does not contain any valid data node that can host REST service!", fe);
+          "Distributed system does not contain any valid data node that can host REST service!",
+          fe);
     }
 
     try {
-      final ResultCollector<?, ?> results = function.withCollector(new RestServersResultCollector())
-          .execute(FindRestEnabledServersFunction.FIND_REST_ENABLED_SERVERS_FUNCTION_ID);
+      final ResultCollector<?, ?> results =
+          function.withCollector(new RestServersResultCollector<>())
+              .execute(FindRestEnabledServersFunction.FIND_REST_ENABLED_SERVERS_FUNCTION_ID);
       Object functionResult = results.getResult();
 
       if (functionResult instanceof List<?>) {
         final HttpHeaders headers = new HttpHeaders();
         headers.setLocation(toUri("servers"));
-        try {
-          String functionResultAsJson =
-              JSONUtils.convertCollectionToJson((ArrayList<Object>) functionResult);
-          return new ResponseEntity<>(functionResultAsJson, headers, HttpStatus.OK);
-        } catch (JSONException e) {
-          throw new GemfireRestException(
-              "Could not convert function results into Restful (JSON) format!", e);
-        }
+        @SuppressWarnings("unchecked")
+        final ArrayList<Object> functionResultList = (ArrayList<Object>) functionResult;
+        String functionResultAsJson =
+            JSONUtils.convertCollectionToJson(functionResultList);
+        return new ResponseEntity<>(functionResultAsJson, headers, HttpStatus.OK);
       } else {
         throw new GemfireRestException(
             "Function has returned results that could not be converted into Restful (JSON) format!");

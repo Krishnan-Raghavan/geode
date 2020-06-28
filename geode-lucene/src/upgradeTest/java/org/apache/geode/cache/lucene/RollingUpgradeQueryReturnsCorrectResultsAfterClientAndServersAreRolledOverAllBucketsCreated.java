@@ -14,11 +14,9 @@
  */
 package org.apache.geode.cache.lucene;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.cache.RegionShortcut;
@@ -62,7 +60,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
     int[] locatorPorts = new int[] {ports[0]};
     int[] csPorts = new int[] {ports[1], ports[2]};
 
-    DistributedTestUtils.deleteLocatorStateFile(locatorPorts);
+    locator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(locatorPorts));
 
     String hostName = NetworkUtils.getServerHostName(host);
     String[] hostNames = new String[] {hostName};
@@ -76,7 +74,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       locator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -85,7 +83,8 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       invokeRunnableInVMs(invokeStartCacheServer(csPorts[0]), server1);
       invokeRunnableInVMs(invokeStartCacheServer(csPorts[1]), server2);
       invokeRunnableInVMs(
-          invokeCreateClientCache(getClientSystemProperties(), hostNames, locatorPorts, false),
+          invokeCreateClientCache(getClientSystemProperties(), hostNames, locatorPorts, false,
+              singleHopEnabled),
           client);
 
       // Create the index on the servers
@@ -107,7 +106,7 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       locator = rollLocatorToCurrent(locator, hostName, locatorPorts[0], getTestMethodName(),
           locatorString);
       server1 = rollServerToCurrentCreateLuceneIndexAndCreateRegion(server1, regionType, null,
-          shortcut.name(), regionName, locatorPorts);
+          shortcut.name(), regionName, locatorPorts, reindex);
 
       // Execute a query on the client and verify the results. This also waits until flushed.
       client.invoke(() -> verifyLuceneQueryResults(regionName, numObjects));
@@ -124,8 +123,8 @@ public class RollingUpgradeQueryReturnsCorrectResultsAfterClientAndServersAreRol
       // Execute a query on the client and verify the results
       client.invoke(() -> verifyLuceneQueryResults(regionName, numObjects));
     } finally {
-      invokeRunnableInVMs(true, invokeStopLocator(), locator);
       invokeRunnableInVMs(true, invokeCloseCache(), client, server2);
+      invokeRunnableInVMs(true, invokeStopLocator(), locator);
     }
   }
 }

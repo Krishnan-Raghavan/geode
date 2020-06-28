@@ -14,8 +14,10 @@
  */
 package org.apache.geode.cache.lucene.internal.cli;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.INDEX_NAME;
 import static org.apache.geode.cache.lucene.test.LuceneTestUtilities.REGION_NAME;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertArrayEquals;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,7 +35,6 @@ import junitparams.Parameters;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.core.KeywordAnalyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -52,11 +53,10 @@ import org.apache.geode.cache.lucene.internal.LuceneIndexImpl;
 import org.apache.geode.cache.lucene.internal.LuceneServiceImpl;
 import org.apache.geode.cache.lucene.internal.repository.serializer.PrimitiveSerializer;
 import org.apache.geode.distributed.ConfigurationProperties;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.management.cli.Result.Status;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
 import org.apache.geode.management.internal.cli.result.CommandResult;
 import org.apache.geode.management.internal.cli.util.CommandStringBuilder;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.test.junit.assertions.CommandResultAssert;
 import org.apache.geode.test.junit.categories.LuceneTest;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -141,12 +141,13 @@ public class LuceneIndexCommandsIntegrationTest {
     CommandResult result = gfsh.executeAndAssertThat(csb.toString()).statusIsSuccess()
         .tableHasColumnOnlyWithValues("Index Name", INDEX_NAME)
         .tableHasColumnOnlyWithValues("Status", "INITIALIZED")
-        .tableHasColumnOnlyWithValues("Region Path", "/region")
+        .tableHasColumnOnlyWithValues("Region Path", SEPARATOR + "region")
         .tableHasColumnOnlyWithValues("Query Executions", "1")
         .getCommandResult();
 
     // the document count could be greater than 2
-    List<String> documents = result.getTableColumnValues("Documents");
+    List<String> documents =
+        result.getResultData().getTableSections().get(0).getValuesInColumn("Documents");
     assertThat(documents).hasSize(1);
     assertThat(Integer.parseInt(documents.get(0))).isGreaterThanOrEqualTo(2);
   }
@@ -464,10 +465,10 @@ public class LuceneIndexCommandsIntegrationTest {
     CommandResultAssert assertion = gfsh.executeAndAssertThat(csb.toString()).statusIsSuccess();
 
     try {
-      assertion.tableHasColumnWithExactValuesInExactOrder("key", "A", "B", "C", "D");
+      assertion.hasTableSection().hasColumn("key").containsExactly("A", "B", "C", "D");
     } catch (AssertionError e) {
       // Since B and C have the same score, we can expect them to appear in either order
-      assertion.tableHasColumnWithExactValuesInExactOrder("key", "A", "C", "B", "D");
+      assertion.hasTableSection().hasColumn("key").containsExactly("A", "C", "B", "D");
     }
   }
 
@@ -554,7 +555,7 @@ public class LuceneIndexCommandsIntegrationTest {
     csb.addOption(LuceneCliStrings.LUCENE_SEARCH_INDEX__DEFAULT_FIELD, "field2");
 
     gfsh.executeAndAssertThat(csb.toString()).statusIsError()
-        .containsOutput(getRegionNotFoundErrorMessage("/region"));
+        .containsOutput(getRegionNotFoundErrorMessage(SEPARATOR + "region"));
   }
 
   @Test
@@ -613,7 +614,7 @@ public class LuceneIndexCommandsIntegrationTest {
 
     String expectedStatus = CliStrings.format(
         LuceneCliStrings.LUCENE_DESTROY_INDEX__MSG__SUCCESSFULLY_DESTROYED_INDEX_0_FROM_REGION_1,
-        new Object[] {"index", "/region"});
+        new Object[] {"index", SEPARATOR + "region"});
     gfsh.executeAndAssertThat("destroy lucene index --name=index --region=region").statusIsSuccess()
         .containsOutput(expectedStatus);
   }
@@ -630,14 +631,14 @@ public class LuceneIndexCommandsIntegrationTest {
     // Verify destroy all indexes is successful
     String expectedOutput = CliStrings.format(
         LuceneCliStrings.LUCENE_DESTROY_INDEX__MSG__SUCCESSFULLY_DESTROYED_INDEXES_FROM_REGION_0,
-        new Object[] {"/region"});
+        new Object[] {SEPARATOR + "region"});
 
     gfsh.executeAndAssertThat("destroy lucene index --region=region").statusIsSuccess()
         .containsOutput(expectedOutput);
 
     // Verify destroy all indexes again reports no indexes exist
-    expectedOutput = LocalizedStrings.LuceneService_NO_INDEXES_WERE_FOUND_IN_REGION_0
-        .toLocalizedString(new Object[] {"/region"});
+    expectedOutput = String.format("No Lucene indexes were found in region %s",
+        new Object[] {SEPARATOR + "region"});
 
     gfsh.executeAndAssertThat("destroy lucene index --region=region").statusIsSuccess()
         .containsOutput(expectedOutput);
@@ -646,8 +647,8 @@ public class LuceneIndexCommandsIntegrationTest {
   @Test
   public void testDestroyNonExistentSingleIndex() throws Exception {
     createRegion();
-    String expectedStatus = LocalizedStrings.LuceneService_INDEX_0_NOT_FOUND_IN_REGION_1
-        .toLocalizedString(new Object[] {INDEX_NAME, '/' + REGION_NAME});
+    String expectedStatus = String.format("Lucene index %s was not found in region %s",
+        new Object[] {INDEX_NAME, SEPARATOR + REGION_NAME});
 
     gfsh.executeAndAssertThat("destroy lucene index --name=index --region=region").statusIsSuccess()
         .containsOutput(expectedStatus);
@@ -657,8 +658,8 @@ public class LuceneIndexCommandsIntegrationTest {
   public void testDestroyNonExistentIndexes() throws Exception {
     createRegion();
 
-    String expectedOutput = LocalizedStrings.LuceneService_NO_INDEXES_WERE_FOUND_IN_REGION_0
-        .toLocalizedString(new Object[] {"/region"});
+    String expectedOutput = String.format("No Lucene indexes were found in region %s",
+        new Object[] {SEPARATOR + "region"});
     gfsh.executeAndAssertThat("destroy lucene index --region=region").statusIsSuccess()
         .containsOutput(expectedOutput);
   }
@@ -698,7 +699,7 @@ public class LuceneIndexCommandsIntegrationTest {
     region.putAll(entries);
     luceneService.waitUntilFlushed(INDEX_NAME, REGION_NAME, 60000, TimeUnit.MILLISECONDS);
     LuceneIndexImpl index = (LuceneIndexImpl) luceneService.getIndex(INDEX_NAME, REGION_NAME);
-    Awaitility.await().atMost(65, TimeUnit.SECONDS).until(
+    await().until(
         () -> index.getIndexStats().getDocuments() >= countOfDocuments);
   }
 

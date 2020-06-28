@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.apache.geode.distributed.LocatorLauncher.Command;
 
+@SuppressWarnings("unused")
 public class LocatorCommand {
 
   private String javaPath;
@@ -34,11 +35,11 @@ public class LocatorCommand {
   }
 
   public LocatorCommand(final UsesLocatorCommand user) {
-    this.javaPath = user.getJavaPath();
-    this.jvmArguments = user.getJvmArguments();
-    this.classPath = user.getClassPath();
-    this.name = user.getName();
-    this.command = Command.START;
+    javaPath = user.getJavaPath();
+    jvmArguments = user.getJvmArguments();
+    classPath = user.getClassPath();
+    name = user.getName();
+    command = Command.START;
   }
 
   public LocatorCommand withJavaPath(final String javaPath) {
@@ -52,7 +53,7 @@ public class LocatorCommand {
   }
 
   public LocatorCommand addJvmArgument(final String arg) {
-    this.jvmArguments.add(arg);
+    jvmArguments.add(arg);
     return this;
   }
 
@@ -76,7 +77,7 @@ public class LocatorCommand {
   }
 
   public LocatorCommand force(final boolean value) {
-    this.force = value;
+    force = value;
     return this;
   }
 
@@ -103,5 +104,4 @@ public class LocatorCommand {
     }
     return cmd;
   }
-
 }

@@ -26,6 +26,7 @@ import org.junit.rules.ExpectedException;
 
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.cache.TransactionException;
+import org.apache.geode.cache.client.PoolFactory;
 import org.apache.geode.cache.client.ServerConnectivityException;
 import org.apache.geode.cache.client.internal.pooling.ConnectionManager;
 import org.apache.geode.distributed.internal.ServerLocation;
@@ -54,13 +55,16 @@ public class TXFailoverOpTest {
   }
 
   private OpExecutorImpl getTestableOpExecutorImpl() {
-    return new OpExecutorImpl(manager, queueManager, endpointManager, riTracker, 3, 10, false,
+    return new OpExecutorImpl(manager, queueManager, endpointManager, riTracker, 3, 10,
+        PoolFactory.DEFAULT_SERVER_CONNECTION_TIMEOUT,
         cancelCriterion, mockPool) {
 
+      @Override
       public ServerLocation getNextOpServerLocation() {
         return mock(ServerLocation.class);
       }
 
+      @Override
       protected Object executeOnServer(ServerLocation p_server, Op op, boolean accessed,
           boolean onlyUseExistingCnx) {
         throw new ServerConnectivityException();

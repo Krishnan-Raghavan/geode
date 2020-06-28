@@ -17,7 +17,9 @@ package org.apache.geode.internal.cache;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_CLUSTER_CONFIGURATION;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_NETWORK_PARTITION_DETECTION;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
+import static org.apache.geode.distributed.ConfigurationProperties.LOG_FILE;
 import static org.apache.geode.distributed.ConfigurationProperties.USE_CLUSTER_CONFIGURATION;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.VM.getHostName;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,9 +32,7 @@ import java.net.InetAddress;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -51,21 +51,19 @@ import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.Locator;
 import org.apache.geode.internal.cache.tier.sockets.ClientHealthMonitor;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.rules.CacheRule;
 import org.apache.geode.test.dunit.rules.ClientCacheRule;
 import org.apache.geode.test.dunit.rules.DistributedRule;
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.rules.serializable.SerializableTemporaryFolder;
 import org.apache.geode.test.junit.rules.serializable.SerializableTestName;
+import org.apache.geode.test.version.VersionManager;
 
 @SuppressWarnings("serial")
 public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTest
     implements Serializable {
-
-  private static final int TRANSACTION_TIMEOUT_SECOND = 2;
   private static final int VM_COUNT = 6;
 
   private String hostName;
@@ -80,6 +78,10 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
   private int locatorPort;
   private File locatorLog;
   private Host host;
+  private File server1Log;
+  private File server2Log;
+  private File server3Log;
+  private File server4Log;
 
   @Rule
   public DistributedRule distributedRule = new DistributedRule(VM_COUNT);
@@ -98,8 +100,13 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
 
   @Before
   public void setup() throws Exception {
+    server1Log = temporaryFolder.getRoot().toPath().resolve("server1.log").toFile();
+    server2Log = temporaryFolder.getRoot().toPath().resolve("server2.log").toFile();
+    server3Log = temporaryFolder.getRoot().toPath().resolve("server3.log").toFile();
+    server4Log = temporaryFolder.getRoot().toPath().resolve("server4.log").toFile();
+
     host = Host.getHost(0);
-    String startingVersion = "160";
+    String startingVersion = "1.6.0";
     server1 = host.getVM(startingVersion, 0);
     server2 = host.getVM(startingVersion, 1);
     server3 = host.getVM(startingVersion, 2);
@@ -118,11 +125,11 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
       throws Exception {
     setupPartiallyRolledVersion();
 
-    server1.invoke(() -> createServerRegion(1, false));
+    server1.invoke(() -> createServerRegion(1, false, false));
     server1.invoke(() -> cacheRule.getCache().getRegion(regionName).put(1, "originalValue"));
-    server2.invoke(() -> createServerRegion(1, true));
-    server3.invoke(() -> createServerRegion(1, true));
-    server4.invoke(() -> createServerRegion(1, true));
+    server2.invoke(() -> createServerRegion(1, true, false));
+    server3.invoke(() -> createServerRegion(1, true, false));
+    server4.invoke(() -> createServerRegion(1, true, false));
     client.invoke(() -> createClientRegion());
 
     ClientProxyMembershipID clientProxyMembershipID = client.invoke(() -> getClientId());
@@ -153,17 +160,17 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
 
   private void setupPartiallyRolledVersion() throws Exception {
     locatorPort = locator.invoke(() -> startLocator());
-    server1.invoke(() -> createCacheServer());
-    server2.invoke(() -> createCacheServer());
-    server3.invoke(() -> createCacheServer());
-    server4.invoke(() -> createCacheServer());
+    server1.invoke(() -> createCacheServer(server1Log));
+    server2.invoke(() -> createCacheServer(server2Log));
+    server3.invoke(() -> createCacheServer(server3Log));
+    server4.invoke(() -> createCacheServer(server4Log));
     client.invoke(() -> createClientCache());
 
     // roll locator
     locator = rollLocatorToCurrent(locator);
     // roll server1
-    server1 = rollServerToCurrent(server1);
-    server2 = rollServerToCurrent(server2);
+    server1 = rollServerToCurrent(server1, server1Log);
+    server2 = rollServerToCurrent(server2, server2Log);
   }
 
   private int startLocator() throws IOException {
@@ -181,17 +188,18 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
     return config;
   }
 
-  private void createCacheServer() throws Exception {
-    cacheRule.createCache(createServerConfig());
+  private void createCacheServer(File logFile) throws Exception {
+    cacheRule.createCache(createServerConfig(logFile));
 
     CacheServer server = cacheRule.getCache().addCacheServer();
     server.setPort(0);
     server.start();
   }
 
-  private Properties createServerConfig() {
+  private Properties createServerConfig(File logFile) {
     Properties config = createLocatorConfig();
     config.setProperty(LOCATORS, hostName + "[" + locatorPort + "]");
+    config.setProperty(LOG_FILE, logFile.getAbsolutePath());
     return config;
   }
 
@@ -211,15 +219,16 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
     Locator.getLocator().stop();
   }
 
-  private VM rollServerToCurrent(VM oldServer) {
+  private VM rollServerToCurrent(VM oldServer, File logFile) {
     // Roll the server
     oldServer.invoke(() -> cacheRule.getCache().close());
     VM rollServer = host.getVM(VersionManager.CURRENT_VERSION, oldServer.getId());
-    rollServer.invoke(() -> createCacheServer());
+    rollServer.invoke(() -> createCacheServer(logFile));
     return rollServer;
   }
 
-  private void createServerRegion(int totalNumBuckets, boolean isAccessor) {
+  private void createServerRegion(int totalNumBuckets, boolean isAccessor,
+      boolean setTimeoutSeconds) {
     PartitionAttributesFactory factory = new PartitionAttributesFactory();
     factory.setTotalNumBuckets(totalNumBuckets);
     if (isAccessor) {
@@ -229,8 +238,10 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
     cacheRule.getOrCreateCache().createRegionFactory(RegionShortcut.PARTITION)
         .setPartitionAttributes(partitionAttributes).create(regionName);
 
-    TXManagerImpl txManager = cacheRule.getCache().getTxManager();
-    txManager.setTransactionTimeToLiveForTest(TRANSACTION_TIMEOUT_SECOND);
+    if (setTimeoutSeconds) {
+      TXManagerImpl txManager = cacheRule.getCache().getTxManager();
+      txManager.setTransactionTimeToLiveForTest(2);
+    }
   }
 
   private void createClientRegion() {
@@ -358,7 +369,7 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
       region = cacheRule.getCache().getRegion(regionName);
     }
     int numOfEntries = numOfOperations * numOfTransactions;
-    Awaitility.await().atMost(60, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertThat(region.size()).isEqualTo(numOfEntries));
     for (int i = 1; i <= numOfEntries; i++) {
       LogService.getLogger().info("region get key {} value {} ", i, region.get(i));
@@ -372,10 +383,10 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
   public void clientTransactionExpiredAreRemovedOnRolledServer() throws Exception {
     setupPartiallyRolledVersion();
 
-    server1.invoke(() -> createServerRegion(1, false));
-    server2.invoke(() -> createServerRegion(1, true));
-    server3.invoke(() -> createServerRegion(1, true));
-    server4.invoke(() -> createServerRegion(1, true));
+    server1.invoke(() -> createServerRegion(1, false, true));
+    server2.invoke(() -> createServerRegion(1, true, true));
+    server3.invoke(() -> createServerRegion(1, true, true));
+    server4.invoke(() -> createServerRegion(1, true, true));
     client.invoke(() -> createClientRegion());
 
     ClientProxyMembershipID clientProxyMembershipID = client.invoke(() -> getClientId());
@@ -414,14 +425,14 @@ public class ClientServerTransactionFailoverWithMixedVersionServersDistributedTe
 
   private void verifyTransactionAreStarted(int numOfTransactions) {
     TXManagerImpl txManager = cacheRule.getCache().getTxManager();
-    Awaitility.await().atMost(60, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertThat(txManager.hostedTransactionsInProgressForTest())
             .isEqualTo(numOfTransactions));
   }
 
   private void verifyTransactionAreExpired() {
     TXManagerImpl txManager = cacheRule.getCache().getTxManager();
-    Awaitility.await().atMost(60, TimeUnit.SECONDS)
+    await()
         .untilAsserted(
             () -> assertThat(txManager.hostedTransactionsInProgressForTest()).isEqualTo(0));
   }

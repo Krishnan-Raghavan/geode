@@ -14,6 +14,7 @@
  */
 package org.apache.geode.management.internal.security;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -26,13 +27,9 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.RegionShortcut;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.management.cli.Result;
 import org.apache.geode.management.internal.cli.result.CommandResult;
-import org.apache.geode.management.internal.cli.result.ErrorResultData;
-import org.apache.geode.management.internal.cli.result.ModelCommandResult;
-import org.apache.geode.management.internal.cli.result.ResultBuilder;
-import org.apache.geode.security.SimpleTestSecurityManager;
 import org.apache.geode.test.junit.categories.SecurityTest;
 import org.apache.geode.test.junit.rules.ConnectionConfiguration;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -43,8 +40,9 @@ public class GfshCommandsSecurityTestBase {
   @ClassRule
   public static ServerStarterRule serverStarter =
       new ServerStarterRule().withJMXManager().withHttpService()
-          .withSecurityManager(SimpleTestSecurityManager.class)
-          .withRegion(RegionShortcut.REPLICATE_PERSISTENT, "persistentRegion");
+          .withSecurityManager(SimpleSecurityManager.class)
+          .withRegion(RegionShortcut.REPLICATE_PERSISTENT, "persistentRegion")
+          .withEmbeddedLocator();
 
   @Rule
   public GfshCommandRule gfshConnection =
@@ -138,7 +136,7 @@ public class GfshCommandsSecurityTestBase {
 
       // for permitted commands, if any error happens, it's not an Unauthorized error
       if (result.getStatus() == Result.Status.ERROR) {
-        assertThat(result.getMessageFromContent()).doesNotContain("not authorized");
+        assertThat(result.asString()).doesNotContain("not authorized");
       }
     }
 
@@ -147,23 +145,18 @@ public class GfshCommandsSecurityTestBase {
     others.removeAll(allPermitted);
     for (TestCommand other : others) {
       System.out.println("Processing unauthorized command: " + other.getCommand());
-      CommandResult result = gfshConnection.executeCommand(other.getCommand());
-      if (result instanceof ModelCommandResult) {
-        // ModelCommandResult don't send the error code anymore
-        break;
-      }
-      int errorCode = ((ErrorResultData) result.getResultData()).getErrorCode();
-
-      // for some commands there are pre execution checks to check for user input error, will skip
-      // those commands
-      if (errorCode == ResultBuilder.ERRORCODE_USER_ERROR) {
-        LogService.getLogger().info("Skip user error: " + result.getMessageFromContent());
-        continue;
-      }
-
-      assertThat(((ErrorResultData) result.getResultData()).getErrorCode())
-          .describedAs(other.getCommand()).isEqualTo(ResultBuilder.ERRORCODE_UNAUTHORIZED);
+      gfshConnection.executeAndAssertThat(other.getCommand()).statusIsError()
+          .containsOutput("Unauthorized");
     }
+  }
+
+  @Test
+  @ConnectionConfiguration(user = "data,cluster", password = "data,cluster")
+  public void modifyInternalRegionSuperUser() {
+    CommandResult result =
+        gfshConnection.executeCommand("put --key=key1 --value=value1 --region=PdxTypes");
+    assertThat(result.getStatus()).isEqualTo(Result.Status.ERROR);
+    assertThat(result.asString()).contains("Unauthorized");
   }
 
   @Test
@@ -174,16 +167,15 @@ public class GfshCommandsSecurityTestBase {
     gfshConnection.executeCommand("put --region=region1 --key=key3 --value=value3");
 
     // gfsh.executeCommand("get --region=region1 --key=key1");
-    gfshConnection.executeCommand("query --query=\"select * from /region1\"");
+    gfshConnection.executeCommand("query --query=\"select * from " + SEPARATOR + "region1\"");
   }
 
   @Test
   @ConnectionConfiguration(user = "data", password = "data")
   public void createDiskStore() throws Exception {
-    CommandResult result =
-        gfshConnection.executeCommand("create disk-store --name=disk1 --dir=disk1");
-
-    assertThat(result.getMessageFromContent()).contains("not authorized for CLUSTER:MANAGE:DISK");
+    gfshConnection.executeAndAssertThat("create disk-store --name=disk1 --dir=disk1")
+        .statusIsError()
+        .containsOutput("not authorized for CLUSTER:MANAGE:DISK");
   }
 
   @Test
@@ -197,19 +189,17 @@ public class GfshCommandsSecurityTestBase {
   @Test
   @ConnectionConfiguration(user = "dataManage", password = "dataManage")
   public void createPartitionedPersistentRegionWithoutClusterWriteDisk() throws Exception {
-    CommandResult result =
-        gfshConnection.executeCommand("create region --name=region2 --type=PARTITION_PERSISTENT");
-
-    assertThat(result.getMessageFromContent()).contains("not authorized for CLUSTER:WRITE:DISK");
+    gfshConnection.executeAndAssertThat("create region --name=region2 --type=PARTITION_PERSISTENT")
+        .statusIsError()
+        .containsOutput("not authorized for CLUSTER:WRITE:DISK");
   }
 
   @Test
   @ConnectionConfiguration(user = "clusterWriteDisk", password = "clusterWriteDisk")
   public void createPartitionedPersistentRegionWithoutDataManage() throws Exception {
-    CommandResult result =
-        gfshConnection.executeCommand("create region --name=region2 --type=PARTITION_PERSISTENT");
-
-    assertThat(result.getMessageFromContent()).contains("not authorized for DATA:MANAGE");
+    gfshConnection.executeAndAssertThat("create region --name=region2 --type=PARTITION_PERSISTENT")
+        .statusIsError()
+        .containsOutput("not authorized for DATA:MANAGE");
   }
 
 }

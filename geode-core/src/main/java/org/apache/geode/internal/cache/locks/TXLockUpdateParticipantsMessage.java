@@ -29,6 +29,8 @@ import org.apache.geode.distributed.internal.locks.DLockGrantor;
 import org.apache.geode.distributed.internal.locks.DLockService;
 import org.apache.geode.distributed.internal.locks.LockGrantorDestroyedException;
 import org.apache.geode.internal.InternalDataSerializer;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message to update the Grantor with the latest TXLock participants This class was added as part
@@ -37,8 +39,6 @@ import org.apache.geode.internal.InternalDataSerializer;
  * Lessor (the origin VM of the transaction) crashes/departs before or while sending the
  * TXCommitMessage but after making the reservation for the transaction.
  *
- * @see org.apache.geode.internal.cache.TXCommitMessage#send(TXLockId)
- * @see org.apache.geode.internal.cache.TXCommitMessage#updateLockMembers
  * @see org.apache.geode.distributed.internal.locks.DLockGrantor#getLockBatch(Object)
  * @see org.apache.geode.distributed.internal.locks.DLockGrantor#updateLockBatch(Object,
  *      org.apache.geode.distributed.internal.locks.DLockBatch)
@@ -117,21 +117,24 @@ public class TXLockUpdateParticipantsMessage extends PooledDistributionMessage
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.processorId);
     InternalDataSerializer.invokeToData(this.txLockId, out);
     DataSerializer.writeString(this.serviceName, out);
     InternalDataSerializer.writeSet(this.updatedParticipants, out);
   }
 
+  @Override
   public int getDSFID() {
     return TX_LOCK_UPDATE_PARTICIPANTS_MESSAGE;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.processorId = in.readInt();
     this.txLockId = TXLockIdImpl.createFromData(in);
     this.serviceName = DataSerializer.readString(in);
@@ -155,13 +158,15 @@ public class TXLockUpdateParticipantsMessage extends PooledDistributionMessage
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
     }
 
     @Override

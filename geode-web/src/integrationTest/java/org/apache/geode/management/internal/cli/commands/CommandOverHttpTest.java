@@ -15,9 +15,11 @@
 
 package org.apache.geode.management.internal.cli.commands;
 
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.nio.file.Paths;
 
 import org.junit.Before;
 import org.junit.ClassRule;
@@ -26,8 +28,8 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.TemporaryFolder;
 
-import org.apache.geode.management.cli.Result;
-import org.apache.geode.management.internal.cli.result.CommandResult;
+import org.apache.geode.cache.Region;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.test.compiler.ClassBuilder;
 import org.apache.geode.test.junit.categories.GfshTest;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -38,7 +40,7 @@ public class CommandOverHttpTest {
 
   @ClassRule
   public static ServerStarterRule server =
-      new ServerStarterRule().withWorkingDir().withLogFile().withJMXManager()
+      new ServerStarterRule().withLogFile().withJMXManager()
           .withHttpService()
           .withAutoStart();
 
@@ -55,16 +57,18 @@ public class CommandOverHttpTest {
 
   @Test
   public void testListClient() throws Exception {
-    CommandResult result = gfshRule.executeCommand("list clients");
-    assertThat(result.getStatus()).isEqualTo(Result.Status.ERROR);
-    assertThat(result.toString()).contains("No clients were retrieved for cache-servers");
+    gfshRule.executeAndAssertThat("list clients")
+        .statusIsSuccess()
+        .hasInfoSection().hasOutput()
+        .isEqualTo("No clients were retrieved for cache-servers.");
   }
 
   @Test
   public void testDescribeClient() throws Exception {
-    CommandResult result = gfshRule.executeCommand("describe client --clientID=xyz");
-    assertThat(result.getStatus()).isEqualTo(Result.Status.ERROR);
-    assertThat(result.getErrorMessage()).contains("Specified Client ID xyz not present");
+    gfshRule.executeAndAssertThat("describe client --clientID=xyz")
+        .statusIsError()
+        .hasInfoSection().hasOutput()
+        .contains("Specified Client ID xyz not present");
   }
 
   @Test
@@ -86,7 +90,18 @@ public class CommandOverHttpTest {
   public void exportConfig() throws Exception {
     String dir = temporaryFolder.getRoot().getAbsolutePath();
     gfshRule.executeAndAssertThat("export config --dir=" + dir).statusIsSuccess()
-        .containsOutput("Downloading Cache XML file: server-cache.xml")
-        .containsOutput("Downloading properties file: server-gf.properties");
+        .containsOutput("File saved to " + Paths.get(dir, "server-cache.xml").toString())
+        .containsOutput("File saved to " + Paths.get(dir, "server-gf.properties").toString());
+  }
+
+  @Test
+  public void commandEncodeDecodeProperly() throws Exception {
+    Region<Object, Object> testRegion =
+        server.getCache().createRegionFactory(RegionShortcut.REPLICATE).create("test");
+    // this command would not fail because of parameter url encoding/decoding
+    gfshRule.executeAndAssertThat("put --region=test --key='k 1' --value=#abdf%dgadf")
+        .statusIsSuccess();
+
+    assertThat(testRegion.get("k 1")).isEqualTo("#abdf%dgadf");
   }
 }

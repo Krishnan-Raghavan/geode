@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 
 import java.util.Collection;
@@ -25,11 +26,11 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.CacheException;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.query.cq.internal.CqServiceImpl;
+import org.apache.geode.cache.query.cq.internal.ServerCQImpl;
 import org.apache.geode.cache.query.data.Portfolio;
 import org.apache.geode.cache.query.internal.DefaultQueryService;
-import org.apache.geode.cache.query.internal.cq.CqServiceImpl;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
-import org.apache.geode.cache.query.internal.cq.ServerCQImpl;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.test.dunit.Assert;
@@ -52,6 +53,7 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
   @Override
   protected final void postSetUpCqResultSetUsingPoolDUnitTest() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = false;
       }
@@ -61,6 +63,7 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
   @Override
   public final void preTearDownCacheTestCase() throws Exception {
     Invoke.invokeInEveryVM(new SerializableRunnable("getSystem") {
+      @Override
       public void run() {
         CqServiceImpl.EXECUTE_QUERY_DURING_INIT = true;
       }
@@ -100,8 +103,10 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
 
     // initialize Region.
     server1.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -111,8 +116,10 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
 
     // Keep updating region (async invocation).
     server1.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         // Update (totalObjects - 1) entries.
         for (int i = 1; i < totalObjects; i++) {
           // Destroy entries.
@@ -140,11 +147,12 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
 
     // Verify CQ Cache results.
     server1.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqServiceImpl CqServiceImpl = null;
         try {
           CqServiceImpl =
-              (org.apache.geode.cache.query.internal.cq.CqServiceImpl) ((DefaultQueryService) getCache()
+              (org.apache.geode.cache.query.cq.internal.CqServiceImpl) ((DefaultQueryService) getCache()
                   .getQueryService()).getCqService();
         } catch (Exception ex) {
           LogWriterUtils.getLogWriter().info("Failed to get the internal CqServiceImpl.", ex);
@@ -152,7 +160,8 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {
@@ -199,6 +208,7 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
 
     // Verify CQ Cache results.
     server2.invoke(new CacheSerializableRunnable("Verify CQ Cache results") {
+      @Override
       public void run2() throws CacheException {
         CqServiceImpl CqServiceImpl = null;
         try {
@@ -210,7 +220,8 @@ public class CqResultSetUsingPoolOptimizedExecuteDUnitTest extends CqResultSetUs
         }
 
         // Wait till all the region update is performed.
-        Region region = getCache().getRegion("/root/" + cqDUnitTest.regions[0]);
+        Region region =
+            getCache().getRegion(SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         while (true) {
           if (region.get("" + totalObjects) == null) {
             try {

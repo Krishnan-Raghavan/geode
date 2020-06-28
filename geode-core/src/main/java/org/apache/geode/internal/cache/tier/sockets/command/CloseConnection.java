@@ -16,8 +16,8 @@ package org.apache.geode.internal.cache.tier.sockets.command;
 
 import java.io.IOException;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.DistributionStats;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.tier.Command;
 import org.apache.geode.internal.cache.tier.sockets.BaseCommand;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerStats;
@@ -25,9 +25,11 @@ import org.apache.geode.internal.cache.tier.sockets.Message;
 import org.apache.geode.internal.cache.tier.sockets.Part;
 import org.apache.geode.internal.cache.tier.sockets.ServerConnection;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.serialization.Version;
 
 public class CloseConnection extends BaseCommand {
 
+  @Immutable
   private static final CloseConnection singleton = new CloseConnection();
 
   public static Command getCommand() {
@@ -41,7 +43,7 @@ public class CloseConnection extends BaseCommand {
       final SecurityService securityService, long start) throws IOException {
     CacheServerStats stats = serverConnection.getCacheServerStats();
     long oldStart = start;
-    boolean respondToClient = serverConnection.getClientVersion().compareTo(Version.GFE_90) >= 0;
+    boolean respondToClient = serverConnection.getClientVersion().isNotOlderThan(Version.GFE_90);
     start = DistributionStats.getStatTime();
     stats.incReadCloseConnectionRequestTime(start - oldStart);
 

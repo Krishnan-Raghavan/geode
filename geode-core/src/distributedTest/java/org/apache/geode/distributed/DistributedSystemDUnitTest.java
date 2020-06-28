@@ -25,21 +25,24 @@ import static org.apache.geode.distributed.ConfigurationProperties.MCAST_ADDRESS
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_FLOW_CONTROL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.MEMBERSHIP_PORT_RANGE;
+import static org.apache.geode.distributed.ConfigurationProperties.REDUNDANCY_ZONE;
 import static org.apache.geode.distributed.ConfigurationProperties.START_LOCATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.TCP_PORT;
-import static org.apache.geode.distributed.internal.ClusterDistributionManager.NORMAL_DM_TYPE;
-import static org.apache.geode.distributed.internal.ClusterDistributionManager.SERIAL_EXECUTOR;
 import static org.apache.geode.distributed.internal.DistributionConfig.DEFAULT_ACK_WAIT_THRESHOLD;
+import static org.apache.geode.distributed.internal.OperationExecutors.SERIAL_EXECUTOR;
 import static org.apache.geode.internal.AvailablePort.MULTICAST;
 import static org.apache.geode.internal.AvailablePort.SOCKET;
 import static org.apache.geode.internal.AvailablePort.getRandomAvailablePort;
 import static org.apache.geode.internal.AvailablePortHelper.getRandomAvailableTCPPortRange;
-import static org.apache.geode.internal.net.SocketCreator.getLocalHost;
+import static org.apache.geode.internal.inet.LocalHostUtil.getLocalHost;
 import static org.apache.geode.test.dunit.DistributedTestUtils.getDUnitLocatorPort;
 import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -56,20 +59,24 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.CancelException;
+import org.apache.geode.DataSerializable;
 import org.apache.geode.GemFireConfigException;
+import org.apache.geode.SerializationException;
 import org.apache.geode.SystemConnectException;
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.execute.FunctionContext;
+import org.apache.geode.cache.execute.FunctionService;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
+import org.apache.geode.distributed.internal.Distribution;
+import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.MembershipListener;
 import org.apache.geode.distributed.internal.SerialDistributionMessage;
 import org.apache.geode.distributed.internal.SizeableRunnable;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.distributed.internal.membership.gms.MembershipManagerHelper;
-import org.apache.geode.distributed.internal.membership.gms.messenger.JGroupsMessenger;
-import org.apache.geode.distributed.internal.membership.gms.mgr.GMSMembershipManager;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
@@ -121,28 +128,29 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
 
     // construct a member ID that will represent a departed member
     InternalDistributedMember member =
-        new InternalDistributedMember("localhost", 12345, "", "", NORMAL_DM_TYPE, null, null);
+        new InternalDistributedMember("localhost", 12345);
 
     // schedule a message in order to create a queue for the fake member
     ClusterDistributionManager distributionManager =
         (ClusterDistributionManager) system.getDistributionManager();
     final FakeMessage message = new FakeMessage(null);
 
-    distributionManager.getExecutor(SERIAL_EXECUTOR, member).execute(new SizeableRunnable(100) {
+    distributionManager.getExecutors().getExecutor(SERIAL_EXECUTOR, member)
+        .execute(new SizeableRunnable(100) {
 
-      @Override
-      public void run() { // always throws NullPointerException
-        message.doAction(distributionManager, false);
-      }
+          @Override
+          public void run() { // always throws NullPointerException
+            message.doAction(distributionManager, false);
+          }
 
-      @Override
-      public String toString() {
-        return "Processing fake message";
-      }
-    });
+          @Override
+          public String toString() {
+            return "Processing fake message";
+          }
+        });
 
     Assert.assertTrue("expected the serial queue to be flushed",
-        distributionManager.getMembershipManager().waitForDeparture(member));
+        distributionManager.getDistribution().waitForDeparture(member));
     Assert.assertTrue(message.processed);
   }
 
@@ -237,8 +245,8 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
     InternalDistributedSystem system = getSystem(config);
 
     ClusterDistributionManager dm = (ClusterDistributionManager) system.getDistributionManager();
-    GMSMembershipManager mgr = (GMSMembershipManager) dm.getMembershipManager();
-    assertThat(mgr.getDirectChannelPort()).isEqualTo(this.tcpPort);
+    Distribution mgr = dm.getDistribution();
+    assertThat(mgr.getLocalMember().getDirectChannelPort()).isEqualTo(this.tcpPort);
   }
 
   /**
@@ -263,7 +271,7 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
   }
 
   @Test
-  public void testUDPPortRange() throws Exception {
+  public void testPortRange() throws Exception {
     Properties config = new Properties();
     config.put(LOCATORS, "localhost[" + getDUnitLocatorPort() + "]");
     config.setProperty(MEMBERSHIP_PORT_RANGE,
@@ -272,30 +280,6 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
     InternalDistributedSystem system = getSystem(config);
     ClusterDistributionManager dm = (ClusterDistributionManager) system.getDistributionManager();
     InternalDistributedMember member = dm.getDistributionManagerId();
-
-    verifyMembershipPortsInRange(member, this.lowerBoundOfPortRange, this.upperBoundOfPortRange);
-  }
-
-  @Test
-  public void testMembershipPortRangeWithExactThreeValues() throws Exception {
-    Properties config = new Properties();
-    config.setProperty(LOCATORS, "localhost[" + getDUnitLocatorPort() + "]");
-    config.setProperty(MEMBERSHIP_PORT_RANGE,
-        this.lowerBoundOfPortRange + "-" + this.upperBoundOfPortRange);
-
-    InternalDistributedSystem system = getSystem(config);
-    Cache cache = CacheFactory.create(system);
-    cache.addCacheServer();
-
-    ClusterDistributionManager dm = (ClusterDistributionManager) system.getDistributionManager();
-    InternalDistributedMember member = dm.getDistributionManagerId();
-    GMSMembershipManager gms =
-        (GMSMembershipManager) MembershipManagerHelper.getMembershipManager(system);
-    JGroupsMessenger messenger = (JGroupsMessenger) gms.getServices().getMessenger();
-    String jgConfig = messenger.getJGroupsStackConfig();
-
-    assertThat(jgConfig).as("expected to find port_range=\"2\" in " + jgConfig)
-        .contains("port_range=\"2\"");
 
     verifyMembershipPortsInRange(member, this.lowerBoundOfPortRange, this.upperBoundOfPortRange);
   }
@@ -318,6 +302,62 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
 
       assertThatThrownBy(() -> DistributedSystem.connect(config))
           .isInstanceOfAny(GemFireConfigException.class, SystemConnectException.class);
+    });
+  }
+
+  @Test
+  public void memberShouldWaitUntilAStartupResponseIsReceived() {
+
+    VM vm0 = VM.getVM(0);
+    VM vm1 = VM.getVM(1);
+
+    Properties properties = new Properties();
+    properties.setProperty(REDUNDANCY_ZONE, "testzone");
+
+    vm0.invoke(() -> {
+      getSystem(properties);
+    });
+
+    vm1.invoke(() -> {
+      InternalDistributedSystem system = getSystem(properties);
+
+      // Redundancy zone is part of the data that is sent with the startup response
+      // If we receive a startup response, we should see that vm0 is in the same
+      // redundancy zone as the current member.
+      assertThat(
+          system.getDistributionManager().getMembersInSameZone(system.getDistributedMember()))
+              .hasSize(2);
+    });
+  }
+
+  @Test(timeout = 600_000)
+  public void failedMessageReceivedBeforeStartupShouldNotDeadlock() {
+
+    VM vm0 = VM.getVM(0);
+    VM vm1 = VM.getVM(1);
+
+
+    // Install a membership listener which will send a message to
+    // any new member that joins. The message will fail to deserialize, triggering
+    // a failure reply
+    vm0.invoke(() -> {
+      InternalDistributedSystem system = getSystem();
+      DistributionManager dm = system.getDM();
+      dm.addMembershipListener(new MembershipListener() {
+        @Override
+        public void memberJoined(DistributionManager distributionManager,
+            InternalDistributedMember id) {
+          FunctionService.onMember(id).execute(new FailDeserializationFunction());
+        }
+      });
+    });
+
+    vm1.invoke(() -> {
+      IgnoredException.addIgnoredException(SerializationException.class);
+
+      // Join the the system. This will trigger the above membership listener. If
+      // the failed serialization causes a deadlock, this method will hang
+      getSystem();
     });
   }
 
@@ -354,8 +394,8 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
 
   private void verifyMembershipPortsInRange(final InternalDistributedMember member,
       final int lowerBound, final int upperBound) {
-    assertThat(member.getPort()).isGreaterThanOrEqualTo(lowerBound);
-    assertThat(member.getPort()).isLessThanOrEqualTo(upperBound);
+    assertThat(member.getMembershipPort()).isGreaterThanOrEqualTo(lowerBound);
+    assertThat(member.getMembershipPort()).isLessThanOrEqualTo(upperBound);
     assertThat(member.getDirectChannelPort()).isGreaterThanOrEqualTo(lowerBound);
     assertThat(member.getDirectChannelPort()).isLessThanOrEqualTo(upperBound);
   }
@@ -423,4 +463,27 @@ public class DistributedSystemDUnitTest extends JUnit4DistributedTestCase {
     }
   }
 
+  /**
+   * A function that cannot be deserialized, used for failure handling
+   */
+  public static class FailDeserializationFunction
+      implements org.apache.geode.cache.execute.Function,
+      DataSerializable {
+    @Override
+    public void execute(FunctionContext context) {
+
+    }
+
+
+    @Override
+    public void toData(DataOutput out) throws IOException {
+
+    }
+
+    @Override
+    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+      throw new ClassNotFoundException("Fake class not found");
+
+    }
+  }
 }

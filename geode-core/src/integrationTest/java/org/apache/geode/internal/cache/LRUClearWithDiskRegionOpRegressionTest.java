@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
@@ -25,7 +26,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.rules.TestName;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskStoreFactory;
@@ -62,18 +62,14 @@ public class LRUClearWithDiskRegionOpRegressionTest {
 
     cache = (InternalCache) new CacheFactory().set("locators", "").set("mcast-port", "0").create();
 
-    AttributesFactory<Integer, Integer> factory = new AttributesFactory();
+    InternalRegionFactory<Integer, Integer> factory = cache.createInternalRegionFactory();
 
     DiskStoreFactory diskStoreFactory = cache.createDiskStoreFactory();
     diskStoreFactory.setDiskDirsAndSizes(new File[] {dir}, new int[] {Integer.MAX_VALUE});
     diskStoreFactory.setAutoCompact(false);
 
-    DirectoryHolder.SET_DIRECTORY_SIZE_IN_BYTES_FOR_TESTING_PURPOSES = true;
-    try {
-      factory.setDiskStoreName(diskStoreFactory.create(regionName).getName());
-    } finally {
-      DirectoryHolder.SET_DIRECTORY_SIZE_IN_BYTES_FOR_TESTING_PURPOSES = false;
-    }
+    ((DiskStoreFactoryImpl) diskStoreFactory).setDiskDirSizesUnit(DiskDirSizesUnit.BYTES);
+    factory.setDiskStoreName(diskStoreFactory.create(regionName).getName());
 
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setDiskSynchronous(true);
@@ -81,17 +77,17 @@ public class LRUClearWithDiskRegionOpRegressionTest {
     factory.setEvictionAttributes(
         EvictionAttributes.createLRUEntryAttributes(1, EvictionAction.OVERFLOW_TO_DISK));
 
-    RegionAttributes<Integer, Integer> regionAttributes = factory.create();
+    RegionAttributes<Integer, Integer> regionAttributes = factory.getCreateAttributes();
 
     InternalRegionArguments args = new InternalRegionArguments().setDestroyLockFlag(true)
         .setRecreateFlag(false).setSnapshotInputStream(null).setImageTarget(null);
 
     DistributedRegion distributedRegion =
-        new DistributedRegion(regionName, regionAttributes, null, cache, args);
+        new DistributedRegion(regionName, regionAttributes, null, cache, args, disabledClock());
 
-    region = cache.createVMRegion(regionName, regionAttributes,
-        new InternalRegionArguments().setInternalMetaRegion(distributedRegion)
-            .setDestroyLockFlag(true).setSnapshotInputStream(null).setImageTarget(null));
+    factory.setInternalMetaRegion(distributedRegion)
+        .setDestroyLockFlag(true).setSnapshotInputStream(null).setImageTarget(null);
+    region = factory.create(regionName);
   }
 
   @After

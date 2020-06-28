@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.cq.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.apache.geode.test.dunit.Assert.assertFalse;
@@ -78,38 +79,44 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
   public final String[] cqs = new String[] {
       // 0 - Test for ">"
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID > 0",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " p where p.ID > 0",
 
       // 1 - Test for "=" and "and".
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.ID = 2 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.ID = 2 and p.status='active'",
 
       // 2 - Test for "<" and "and".
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active'",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active'",
 
       // FOLLOWING CQS ARE NOT TESTED WITH VALUES; THEY ARE USED TO TEST PARSING LOGIC WITHIN CQ.
       // 3
-      "SELECT * FROM /root/" + regions[0] + " ;",
+      "SELECT * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + " ;",
       // 4
-      "SELECT ALL * FROM /root/" + regions[0],
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0],
       // 5
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " TYPE Portfolio",
       // 6
-      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM /root/"
+      "import org.apache.geode.cache.\"query\".data.Portfolio; " + "SELECT ALL * FROM " + SEPARATOR
+          + "root" + SEPARATOR
           + regions[0] + " p TYPE Portfolio",
       // 7
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID < 5 and p.status='active';",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1]
+          + " p where p.ID < 5 and p.status='active';",
       // 8
-      "SELECT ALL * FROM /root/" + regions[0] + "  ;",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0] + "  ;",
       // 9
-      "SELECT ALL * FROM /root/" + regions[0] + " p where p.description = NULL",
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[0]
+          + " p where p.description = NULL",
 
       // 10
-      "SELECT ALL * FROM /root/" + regions[1] + " p where p.ID > 0",};
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + regions[1] + " p where p.ID > 0",};
 
   public final String[] cqsWithoutRoot = new String[] {
       // 0 - Test for ">"
-      "SELECT ALL * FROM /" + regions[0] + " p where p.ID > 0"};
+      "SELECT ALL * FROM " + SEPARATOR + regions[0] + " p where p.ID > 0"};
 
   private static int bridgeServerPort;
 
@@ -233,7 +240,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test for registering cqs on a bridge server with local max memory zero.
+   * test for registering cqs on a cache server with local max memory zero.
    */
   @Test
   public void testPartitionedCqOnAccessorBridgeServer() throws Exception {
@@ -243,7 +250,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM server2 = host.getVM(1);
     VM client = host.getVM(2);
 
-    // creating an accessor vm with Bridge Server installed.
+    // creating an accessor vm with cache server installed.
     createServer(server1, true);
 
     createServer(server2);
@@ -309,7 +316,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test for registering cqs on single Bridge server hosting all the data. This will generate all
+   * test for registering cqs on single cache server hosting all the data. This will generate all
    * the events locally and should always have the old value and should not sent the profile update
    * on wire.
    */
@@ -319,7 +326,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM server1 = host.getVM(0);
     VM client = host.getVM(2);
 
-    // creating an accessor vm with Bridge Server installed.
+    // creating an accessor vm with cache server installed.
     createServer(server1);
     final int port = server1.invoke(() -> PartitionedRegionCqQueryDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(server1.getHost());
@@ -378,7 +385,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test for registering cqs on single Bridge server hosting all the data. This will generate all
+   * test for registering cqs on single cache server hosting all the data. This will generate all
    * the events locally but the puts, updates and destroys originate at an accessor vm.
    */
   @Test
@@ -388,7 +395,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM server2 = host.getVM(1);
     VM client = host.getVM(2);
 
-    // creating an accessor vm with Bridge Server installed.
+    // creating an accessor vm with cache server installed.
     createServer(server1, true);
 
     assertLocalMaxMemory(server1);
@@ -455,7 +462,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test to check invalidates on bridge server hosting datastores as well.
+   * test to check invalidates on cache server hosting datastores as well.
    */
   @Test
   public void testPRCqWithInvalidatesOnBridgeServer() {
@@ -464,8 +471,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM server2 = host.getVM(1);
     VM client = host.getVM(2);
 
-    // creating Bridge Server with data store. clients will connect to this
-    // bridge server.
+    // creating cache server with data store. clients will connect to this
+    // cache server.
     createServer(server1);
 
     // create another server with data store.
@@ -529,7 +536,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test cqs with invalidates on bridge server not hosting datastores.
+   * test cqs with invalidates on cache server not hosting datastores.
    */
   @Test
   public void testPRCqWithInvalidatesOnAccessorBridgeServer() throws Exception {
@@ -538,8 +545,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM server2 = host.getVM(1);
     VM client = host.getVM(2);
 
-    // creating Bridge Server with data store. clients will connect to this
-    // bridge server.
+    // creating cache server with data store. clients will connect to this
+    // cache server.
     createServer(server1, true);
 
     // create another server with data store.
@@ -602,7 +609,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test cqs with create updates and destroys from client on bridge server hosting datastores.
+   * test cqs with create updates and destroys from client on cache server hosting datastores.
    */
   @Test
   public void testPRCqWithUpdatesFromClients() throws Exception {
@@ -612,8 +619,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM client = host.getVM(2);
     VM client2 = host.getVM(3);
 
-    // creating Bridge Server with data store. clients will connect to this
-    // bridge server.
+    // creating cache server with data store. clients will connect to this
+    // cache server.
     createServer(server1, false, 1);
 
     // create another server with data store.
@@ -680,7 +687,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * test cqs on multiple partitioned region hosted by bridge servers.
+   * test cqs on multiple partitioned region hosted by cache servers.
    */
   @Test
   public void testPRCqWithMultipleRegionsOnServer() throws Exception {
@@ -690,8 +697,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM client = host.getVM(2);
     VM client2 = host.getVM(3);
 
-    // creating Bridge Server with data store. clients will connect to this
-    // bridge server.
+    // creating cache server with data store. clients will connect to this
+    // cache server.
     createServer(server1, false, 1);
 
     // create another server with data store.
@@ -780,7 +787,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * tests multiple cqs on partitioned region on bridge servers with profile update for not
+   * tests multiple cqs on partitioned region on cache servers with profile update for not
    * requiring old values.
    */
   @Test
@@ -791,8 +798,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
     VM client = host.getVM(2);
     VM client2 = host.getVM(3);
 
-    // creating Bridge Server with data store. clients will connect to this
-    // bridge server.
+    // creating cache server with data store. clients will connect to this
+    // cache server.
     createServer(server1, false, 1);
 
     // create another server with data store.
@@ -919,8 +926,9 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // initialize Region.
     server1.invoke(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + regions[0]);
+        Region region = getCache().getRegion(SEPARATOR + "root" + SEPARATOR + regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -930,8 +938,9 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Keep updating region (async invocation).
     server1.invokeAsync(new CacheSerializableRunnable("Update Region") {
+      @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/root/" + regions[0]);
+        Region region = getCache().getRegion(SEPARATOR + "root" + SEPARATOR + regions[0]);
         for (int i = numObjects + 1; i <= totalObjects; i++) {
           Portfolio p = new Portfolio(i);
           region.put("" + i, p);
@@ -941,6 +950,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
     // Execute CQ while update is in progress.
     client.invoke(new CacheSerializableRunnable("Execute CQ") {
+      @Override
       public void run2() throws CacheException {
         QueryService cqService = getCache().getQueryService();
         // Get CqQuery object.
@@ -1039,7 +1049,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
       @Override
       public void run2() throws CacheException {
-        Region region = getCache().getRegion("/" + regions[0]);
+        Region region = getCache().getRegion(SEPARATOR + regions[0]);
         for (int i = 1; i <= numObjects; i++) {
           getCache().getLogger().fine("### DOING PUT with key: " + ("KEY-" + i));
           Portfolio p = new Portfolio(i);
@@ -1053,7 +1063,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         // Check for region destroyed event from server.
-        Region localRegion = getCache().getRegion("/" + regions[0]);
+        Region localRegion = getCache().getRegion(SEPARATOR + regions[0]);
         assertNotNull(localRegion);
 
         CqQueryTestListener cqListener = (CqQueryTestListener) getCache().getQueryService()
@@ -1069,7 +1079,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         // Check for region destroyed event from server.
-        Region localRegion = getCache().getRegion("/" + regions[0]);
+        Region localRegion = getCache().getRegion(SEPARATOR + regions[0]);
         assertNotNull(localRegion);
 
         localRegion.destroyRegion();
@@ -1081,7 +1091,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
       @Override
       public void run2() throws CacheException {
         // Check for region destroyed event from server.
-        Region localRegion = getCache().getRegion("/" + regions[0]);
+        Region localRegion = getCache().getRegion(SEPARATOR + regions[0]);
         // IF NULL - GOOD
         // ELSE - get listener and wait for destroyed.
         if (localRegion != null) {
@@ -1097,7 +1107,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
           assertNull(
               "Region is still available on client1 even after performing destroyRegion from client2 on server."
                   + "Client1 must have received destroyRegion message from server with CQ parts in it.",
-              getCache().getRegion("/" + regions[0]));
+              getCache().getRegion(SEPARATOR + regions[0]));
         }
       }
     });
@@ -1106,7 +1116,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * create bridge server with default attributes for partitioned region.
+   * create cache server with default attributes for partitioned region.
    */
   public void createServer(VM server) {
     createServer(server, 0, false, 0);
@@ -1115,8 +1125,8 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   /**
    * create accessor vm if the given accessor parameter variable is true.
    *
-   * @param server VM to create bridge server.
-   * @param accessor boolean if true creates an accessor bridge server.
+   * @param server VM to create cache server.
+   * @param accessor boolean if true creates an accessor cache server.
    */
   public void createServer(VM server, boolean accessor) {
     createServer(server, 0, accessor, 0);
@@ -1125,7 +1135,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   /**
    * create server with partitioned region with redundant copies.
    *
-   * @param server VM where to create the bridge server.
+   * @param server VM where to create the cache server.
    * @param accessor boolean if true create partitioned region with local max memory zero.
    * @param redundantCopies number of redundant copies for a partitioned region.
    */
@@ -1134,16 +1144,17 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Create a bridge server with partitioned region.
+   * Create a cache server with partitioned region.
    *
-   * @param server VM where to create the bridge server.
-   * @param port bridge server port.
+   * @param server VM where to create the cache server.
+   * @param port cache server port.
    * @param isAccessor if true the under lying partitioned region will not host data on this vm.
    * @param redundantCopies number of redundant copies for the primary bucket.
    */
   public void createServer(VM server, final int port, final boolean isAccessor,
       final int redundantCopies) {
     SerializableRunnable createServer = new CacheSerializableRunnable("Create Cache Server") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create Cache Server. ###");
         AttributesFactory attr = new AttributesFactory();
@@ -1174,16 +1185,17 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Create a bridge server with partitioned region.
+   * Create a cache server with partitioned region.
    *
-   * @param server VM where to create the bridge server.
-   * @param port bridge server port.
+   * @param server VM where to create the cache server.
+   * @param port cache server port.
    * @param isAccessor if true the under lying partitioned region will not host data on this vm.
    * @param redundantCopies number of redundant copies for the primary bucket.
    */
   public void createServerWithoutRootRegion(VM server, final int port, final boolean isAccessor,
       final int redundantCopies) {
     SerializableRunnable createServer = new CacheSerializableRunnable("Create Cache Server") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create Cache Server. ###");
         AttributesFactory attr = new AttributesFactory();
@@ -1219,7 +1231,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    *
    * @since GemFire 5.5
@@ -1243,6 +1255,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   public void createClient(VM client, final int[] serverPorts, final String serverHost,
       final String redundancyLevel) {
     SerializableRunnable createQService = new CacheSerializableRunnable("Create Client") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create Client. ###");
         LogWriterUtils.getLogWriter().info(
@@ -1279,6 +1292,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
   public void createCQ(VM vm, final String cqName, final String queryStr) {
     vm.invoke(new CacheSerializableRunnable("Create CQ :" + cqName) {
+      @Override
       public void run2() throws CacheException {
 
         LogWriterUtils.getLogWriter().info("### Create CQ. ###" + cqName);
@@ -1327,13 +1341,15 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   }
 
   private static int getCqCountFromRegionProfile() {
-    LocalRegion region1 = (LocalRegion) CacheFactory.getAnyInstance().getRegion("/root/regionA");
+    LocalRegion region1 = (LocalRegion) CacheFactory.getAnyInstance()
+        .getRegion(SEPARATOR + "root" + SEPARATOR + "regionA");
     return region1.getFilterProfile().getCqCount();
   }
 
   /* Create/Init values */
   public void createValues(VM vm, final String regionName, final int size) {
     vm.invoke(new CacheSerializableRunnable("Create values for region : " + regionName) {
+      @Override
       public void run2() throws CacheException {
         Region region1 = getRootRegion().getSubregion(regionName);
         for (int i = 1; i <= size; i++) {
@@ -1347,6 +1363,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
 
   private void assertLocalMaxMemory(VM vm) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         for (int i = 0; i < regions.length; i++) {
           Region region = getRootRegion().getSubregion(regions[i]);
@@ -1365,6 +1382,7 @@ public class PartitionedRegionCqQueryDUnitTest extends JUnit4CacheTestCase {
   public void createCacheClient(VM vm, final String[] serverHosts, final int[] serverPorts,
       final String redundancyLevel) {
     vm.invoke(new CacheSerializableRunnable("createCacheClient") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("Will connect to server at por: " + serverPorts[0]
             + " and at host : " + serverHosts[0]);

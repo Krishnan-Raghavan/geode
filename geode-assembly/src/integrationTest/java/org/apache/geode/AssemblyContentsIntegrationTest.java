@@ -14,7 +14,8 @@
  */
 package org.apache.geode;
 
-import static org.junit.Assert.assertTrue;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,74 +23,71 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.FileUtils;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.test.junit.categories.RestAPITest;
-import org.apache.geode.util.test.TestUtil;
+import org.apache.geode.test.junit.rules.RequiresGeodeHome;
 
-@Category({RestAPITest.class})
+@Category(RestAPITest.class)
 public class AssemblyContentsIntegrationTest {
 
   private static final String GEODE_HOME = System.getenv("GEODE_HOME");
-  private Set<String> expectedAssemblyContent;
+
+  private Collection<String> expectedAssemblyContent;
+
+  @Rule
+  public RequiresGeodeHome requiresGeodeHome = new RequiresGeodeHome();
 
   @Before
   public void loadExpectedAssemblyContent() throws IOException {
     String assemblyContent =
-        TestUtil.getResourcePath(AssemblyContentsIntegrationTest.class, "/assembly_content.txt");
+        createTempFileFromResource(AssemblyContentsIntegrationTest.class,
+            "/assembly_content.txt").getAbsolutePath();
 
-    expectedAssemblyContent = Files.lines(Paths.get(assemblyContent)).collect(Collectors.toSet());
+    expectedAssemblyContent =
+        Files.lines(Paths.get(assemblyContent)).collect(Collectors.toCollection(TreeSet::new));
   }
 
   @Test
   public void verifyAssemblyContents() throws IOException {
-    Set<String> currentAssemblyContent = getAssemblyContent();
-
+    Collection<String> currentAssemblyContent = getAssemblyContent();
     Files.write(Paths.get("assembly_content.txt"), currentAssemblyContent);
 
-    Set<String> newAssemblyContent = new TreeSet<>(currentAssemblyContent);
-    newAssemblyContent.removeAll(expectedAssemblyContent);
-    Set<String> missingAssemblyContent = new TreeSet<>(expectedAssemblyContent);
-    missingAssemblyContent.removeAll(currentAssemblyContent);
-
-    String message =
-        "The assembly contents have changed. Verify dependencies."
-            + "\nWhen fixed, copy geode-assembly/build/integrationTest/assembly_content.txt"
-            + "\nto src/integrationTest/resources/assembly_content.txt"
-            + "\nRemoved Content\n--------------\n"
-            + String.join("\n", missingAssemblyContent) + "\n\nAdded Content\n--------------\n"
-            + String.join("\n", newAssemblyContent) + "\n\n";
-
-    assertTrue(message, expectedAssemblyContent.equals(currentAssemblyContent));
+    assertThat(currentAssemblyContent)
+        .as("The assembly contents have changed. Verify dependencies and "
+            + "copy geode-assembly/build/integrationTest/assembly_content.txt to "
+            + "geode-assembly/src/integrationTest/resources/assembly_content.txt")
+        .containsExactlyElementsOf(expectedAssemblyContent);
   }
+
 
   /**
    * Find all of the jars bundled with the project. Key is the name of the jar, value is the path.
    */
-  private Set<String> getAssemblyContent() {
+  private Collection<String> getAssemblyContent() {
     File geodeHomeDirectory = new File(GEODE_HOME);
     Path geodeHomePath = Paths.get(GEODE_HOME);
 
-    assertTrue(
-        "Please set the GEODE_HOME environment variable to the product installation directory.",
-        geodeHomeDirectory.isDirectory());
+    assertThat(geodeHomeDirectory)
+        .as(
+            "Please set the GEODE_HOME environment variable to the product installation directory.")
+        .isDirectory();
 
-    Collection<File> contents = FileUtils.listFiles(geodeHomeDirectory, null, true);
-    Set<String> sortedContent = new TreeSet<>();
-    contents.forEach(content -> {
-      Path path = Paths.get(content.getPath());
-      // replacing '\' with '/' to test on windows properly
-      sortedContent.add(geodeHomePath.relativize(path).toString().replace('\\', '/'));
-    });
-
-    return sortedContent;
+    String versionRegex = "\\d+\\.\\d+\\.\\d+(-build\\.\\d+)?";
+    return FileUtils.listFiles(geodeHomeDirectory, null, true).stream()
+        .map(file -> geodeHomePath.relativize(Paths.get(file.getPath())).toString().replace('\\',
+            '/'))
+        .map(entry -> entry.contains("/geode-")
+            ? entry.replaceFirst(versionRegex, "0.0.0") : entry)
+        .map(entry -> entry.contains("Apache_Geode")
+            ? entry.replaceFirst(versionRegex, "0.0.0") : entry)
+        .collect(Collectors.toCollection(TreeSet::new));
   }
-
 }

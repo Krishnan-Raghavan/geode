@@ -33,9 +33,10 @@ import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.DistributedRegion;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.internal.cache.RemoteOperationException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * This message is used to implement clear. It is only used when a region is not a replica and has
@@ -72,7 +73,7 @@ public class RemoteClearMessage extends RemoteOperationMessageWithDirectReply {
 
     Set<?> failures = region.getDistributionManager().putOutgoing(this);
     if (failures != null && failures.size() > 0) {
-      throw new RemoteOperationException(LocalizedStrings.FAILED_SENDING_0.toLocalizedString(this));
+      throw new RemoteOperationException(String.format("Failed sending < %s >", this));
     }
 
     p.waitForRemoteResponse();
@@ -100,19 +101,22 @@ public class RemoteClearMessage extends RemoteOperationMessageWithDirectReply {
     super.appendFields(buff);
   }
 
+  @Override
   public int getDSFID() {
     return R_CLEAR_MSG;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     in.readByte(); // for backwards compatibility
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeByte(Operation.CLEAR.ordinal()); // for backwards compatibility
   }
 
@@ -162,13 +166,15 @@ public class RemoteClearMessage extends RemoteOperationMessageWithDirectReply {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
     }
 
     @Override

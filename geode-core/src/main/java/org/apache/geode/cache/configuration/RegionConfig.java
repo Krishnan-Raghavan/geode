@@ -1,23 +1,24 @@
 
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work for additional information regarding
+ * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 package org.apache.geode.cache.configuration;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,9 +29,11 @@ import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlType;
 
-import org.w3c.dom.Element;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import org.apache.geode.annotations.Experimental;
+import org.apache.geode.lang.Identifiable;
+import org.apache.geode.management.configuration.RegionType;
 
 
 /**
@@ -150,58 +153,41 @@ import org.apache.geode.annotations.Experimental;
 @XmlType(name = "region-type", namespace = "http://geode.apache.org/schema/cache",
     propOrder = {"regionAttributes", "indexes", "entries", "regionElements", "regions"})
 @Experimental
-public class RegionConfig implements CacheElement {
+public class RegionConfig implements Identifiable<String>, Serializable {
 
   @XmlElement(name = "region-attributes", namespace = "http://geode.apache.org/schema/cache")
-  protected List<RegionAttributesType> regionAttributes;
+  protected RegionAttributesType regionAttributes;
   @XmlElement(name = "index", namespace = "http://geode.apache.org/schema/cache")
-  protected List<RegionConfig.Index> indexes;
+  protected List<Index> indexes;
+
   @XmlElement(name = "entry", namespace = "http://geode.apache.org/schema/cache")
-  protected List<RegionConfig.Entry> entries;
+  protected List<Entry> entries;
+
   @XmlAnyElement(lax = true)
   protected List<CacheElement> regionElements;
+
   @XmlElement(name = "region", namespace = "http://geode.apache.org/schema/cache")
   protected List<RegionConfig> regions;
+
   @XmlAttribute(name = "name", required = true)
   protected String name;
+
   @XmlAttribute(name = "refid")
-  protected String refid;
+  protected String type;
 
   public RegionConfig() {}
 
   public RegionConfig(String name, String refid) {
     this.name = name;
-    this.refid = refid;
+    this.type = refid;
   }
 
-  /**
-   * Gets the value of the regionAttributes property.
-   *
-   * <p>
-   * This accessor method returns a reference to the live list,
-   * not a snapshot. Therefore any modification you make to the
-   * returned list will be present inside the JAXB object.
-   * This is why there is not a <CODE>set</CODE> method for the regionAttributes property.
-   *
-   * <p>
-   * For example, to add a new item, do as follows:
-   *
-   * <pre>
-   * getRegionAttributes().add(newItem);
-   * </pre>
-   *
-   *
-   * <p>
-   * Objects of the following type(s) are allowed in the list
-   * {@link RegionAttributesType }
-   *
-   *
-   */
-  public List<RegionAttributesType> getRegionAttributes() {
-    if (regionAttributes == null) {
-      regionAttributes = new ArrayList<RegionAttributesType>();
-    }
-    return this.regionAttributes;
+  public RegionAttributesType getRegionAttributes() {
+    return regionAttributes;
+  }
+
+  public void setRegionAttributes(RegionAttributesType regionAttributes) {
+    this.regionAttributes = regionAttributes;
   }
 
   /**
@@ -227,66 +213,29 @@ public class RegionConfig implements CacheElement {
    *
    *
    */
-  public List<RegionConfig.Index> getIndexes() {
+  public List<Index> getIndexes() {
     if (indexes == null) {
-      indexes = new ArrayList<RegionConfig.Index>();
+      indexes = new ArrayList<>();
     }
     return this.indexes;
   }
 
   /**
    * Gets the value of the entry property.
-   *
-   * <p>
-   * This accessor method returns a reference to the live list,
-   * not a snapshot. Therefore any modification you make to the
-   * returned list will be present inside the JAXB object.
-   * This is why there is not a <CODE>set</CODE> method for the entry property.
-   *
-   * <p>
-   * For example, to add a new item, do as follows:
-   *
-   * <pre>
-   * getEntries().add(newItem);
-   * </pre>
-   *
-   *
-   * <p>
-   * Objects of the following type(s) are allowed in the list
-   * {@link RegionConfig.Entry }
-   *
-   *
+   * Currently, users can not create regions with initial entries using management v2 api.
+   * this entry list will be ignored when creating the region
    */
-  public List<RegionConfig.Entry> getEntries() {
+  public List<Entry> getEntries() {
     if (entries == null) {
-      entries = new ArrayList<RegionConfig.Entry>();
+      entries = new ArrayList<>();
     }
     return this.entries;
   }
 
   /**
-   * Gets the value of the any property.
-   *
-   * <p>
-   * This accessor method returns a reference to the live list,
-   * not a snapshot. Therefore any modification you make to the
-   * returned list will be present inside the JAXB object.
-   * This is why there is not a <CODE>set</CODE> method for the any property.
-   *
-   * <p>
-   * For example, to add a new item, do as follows:
-   *
-   * <pre>
-   * getCustomRegionElements().add(newItem);
-   * </pre>
-   *
-   *
-   * <p>
-   * Objects of the following type(s) are allowed in the list
-   * {@link Element }
-   * {@link CacheElement }
-   *
-   *
+   * Gets the list of custom region elements
+   * Currently, users can not create regions with custom region elements using management v2 api.
+   * this cache element list will be ignored when creating the region
    */
   public List<CacheElement> getCustomRegionElements() {
     if (regionElements == null) {
@@ -296,31 +245,13 @@ public class RegionConfig implements CacheElement {
   }
 
   /**
-   * Gets the value of the region property.
-   *
-   * <p>
-   * This accessor method returns a reference to the live list,
-   * not a snapshot. Therefore any modification you make to the
-   * returned list will be present inside the JAXB object.
-   * This is why there is not a <CODE>set</CODE> method for the region property.
-   *
-   * <p>
-   * For example, to add a new item, do as follows:
-   *
-   * <pre>
-   * getRegions().add(newItem);
-   * </pre>
-   *
-   *
-   * <p>
-   * Objects of the following type(s) are allowed in the list
-   * {@link RegionConfig }
-   *
-   *
+   * Gets the list of the sub regions
+   * Currently, users can not create regions with sub regions using management v2 api.
+   * This sub region list will be ignored when creating the region.
    */
   public List<RegionConfig> getRegions() {
     if (regions == null) {
-      regions = new ArrayList<RegionConfig>();
+      regions = new ArrayList<>();
     }
     return this.regions;
   }
@@ -343,37 +274,49 @@ public class RegionConfig implements CacheElement {
    * {@link String }
    *
    */
-  public void setName(String value) {
-    this.name = value;
+  public void setName(String value) throws IllegalArgumentException {
+    if (value == null) {
+      return;
+    }
+
+    this.name = value.startsWith(SEPARATOR) ? value.substring(1) : value;
   }
 
   /**
-   * Gets the value of the refid property.
+   * Gets the value of the type property.
    *
    * possible object is
    * {@link String }
    *
    */
-  public String getRefid() {
-    return refid;
+  public String getType() {
+    return type;
   }
 
   /**
-   * Sets the value of the refid property.
+   * Sets the value of the type property.
    *
    * allowed object is
    * {@link String }
    *
    */
-  public void setRefid(String value) {
-    this.refid = value;
+  public void setType(RegionType regionType) {
+    if (regionType != null) {
+      setType(regionType.name());
+    }
+  }
+
+  public void setType(String regionType) {
+    if (regionType != null) {
+      this.type = regionType.toUpperCase();
+    }
   }
 
   @Override
+  @JsonIgnore
   public String getId() {
     return getName();
   }
-
 
   /**
    * <p>
@@ -421,7 +364,7 @@ public class RegionConfig implements CacheElement {
    */
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"key", "value"})
-  public static class Entry {
+  public static class Entry implements Serializable {
 
     @XmlElement(namespace = "http://geode.apache.org/schema/cache", required = true)
     protected ObjectType key;
@@ -541,7 +484,7 @@ public class RegionConfig implements CacheElement {
    *
    */
   @XmlAccessorType(XmlAccessType.FIELD)
-  public static class Index implements CacheElement {
+  public static class Index implements Identifiable<String> {
     @XmlAttribute(name = "name", required = true)
     protected String name;
     @XmlAttribute(name = "expression")
@@ -554,6 +497,17 @@ public class RegionConfig implements CacheElement {
     protected Boolean keyIndex;
     @XmlAttribute(name = "type")
     protected String type; // for non-key index type, range or hash
+
+    public Index() {}
+
+    public Index(Index index) {
+      this.name = index.name;
+      this.expression = index.expression;
+      this.fromClause = index.fromClause;
+      this.imports = index.imports;
+      this.keyIndex = index.keyIndex;
+      this.type = index.type;
+    }
 
     /**
      * Gets the value of the name property.
@@ -673,6 +627,12 @@ public class RegionConfig implements CacheElement {
      *
      */
     public String getType() {
+      // this should return a "key" value because some production code relies on this method
+      // returning a type string that would turn into IndexType enum object
+      if (keyIndex == Boolean.TRUE) {
+        return "key";
+      }
+
       if (type == null) {
         return "range";
       } else {
@@ -682,26 +642,27 @@ public class RegionConfig implements CacheElement {
 
     /**
      * Sets the value of the type property. Also sets the keyIndex property to true if the type
-     * being set is "key".
+     * being set is {@code "key"}.
      *
-     * allowed object is
-     * {@link String }
-     *
-     * @deprecated Index should only be a "key" or "range" type which is set using
-     *             {@link #setKeyIndex(Boolean)}
+     * @throws IllegalArgumentException if type is unknown
      */
-    public void setType(String value) {
-      if ("range".equalsIgnoreCase(value) || "hash".equalsIgnoreCase(value)
-          || "key".equalsIgnoreCase(value)) {
-        this.type = value.toLowerCase();
-      } else {
-        throw new IllegalArgumentException("Invalid index type " + value);
+    public void setType(String type) {
+      if ("range".equalsIgnoreCase(type) || "hash".equalsIgnoreCase(type)) {
+        this.type = type.toLowerCase();
+        setKeyIndex(false);
       }
-
-      setKeyIndex("key".equalsIgnoreCase(value));
+      // we need to avoid setting the "type" to key since by xsd definition, it should only contain
+      // "hash" and "range" value.
+      else if ("key".equalsIgnoreCase(type)) {
+        this.type = null;
+        setKeyIndex(true);
+      } else {
+        throw new IllegalArgumentException("Invalid index type " + type);
+      }
     }
 
     @Override
+    @JsonIgnore
     public String getId() {
       return getName();
     }

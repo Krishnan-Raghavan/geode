@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.geode.CancelException;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.TransactionInDoubtException;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
@@ -40,6 +41,7 @@ import org.apache.geode.internal.security.SecurityService;
  */
 public class CommitCommand extends BaseCommand {
 
+  @Immutable
   private static final CommitCommand singleton = new CommitCommand();
 
   public static Command getCommand() {
@@ -132,8 +134,8 @@ public class CommitCommand extends BaseCommand {
               "Waiting up to {}ms for departure of {} before throwing TransactionInDoubtException.",
               timeToWait, target);
           try {
-            serverConnection.getCache().getDistributionManager().getMembershipManager()
-                .waitForDeparture(target, timeToWait);
+            serverConnection.getCache().getDistributionManager().getDistribution()
+                .waitForDeparture((InternalDistributedMember) target, timeToWait);
           } catch (TimeoutException e) {
             // status will be logged below
           } catch (InterruptedException e) {

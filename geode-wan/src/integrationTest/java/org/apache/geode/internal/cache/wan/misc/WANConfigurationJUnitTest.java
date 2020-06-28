@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.wan.misc;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
@@ -28,14 +29,11 @@ import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
-import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.Region;
-import org.apache.geode.cache.RegionAttributes;
 import org.apache.geode.cache.RegionFactory;
-import org.apache.geode.cache.Scope;
+import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.asyncqueue.AsyncEventListener;
 import org.apache.geode.cache.wan.GatewayEventFilter;
 import org.apache.geode.cache.wan.GatewayReceiver;
@@ -53,7 +51,6 @@ import org.apache.geode.internal.cache.wan.GatewaySenderConfigurationException;
 import org.apache.geode.internal.cache.wan.GatewaySenderException;
 import org.apache.geode.internal.cache.wan.InternalGatewaySenderFactory;
 import org.apache.geode.internal.cache.wan.MyGatewaySenderEventListener;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.junit.categories.WanTest;
 
 @Category({WanTest.class})
@@ -67,9 +64,10 @@ public class WANConfigurationJUnitTest {
    *
    */
   @Test
-  public void test_GatewaySender_without_Locator() throws IOException {
+  public void test_GatewaySender_without_Locator() {
     try {
       cache = new CacheFactory().set(MCAST_PORT, "0").create();
+
       GatewaySenderFactory fact = cache.createGatewaySenderFactory();
       fact.setParallel(true);
       GatewaySender sender1 = fact.create("NYSender", 2);
@@ -77,12 +75,24 @@ public class WANConfigurationJUnitTest {
       fail("Expected IllegalStateException but not thrown");
     } catch (Exception e) {
       if ((e instanceof IllegalStateException && e.getMessage().startsWith(
-          LocalizedStrings.AbstractGatewaySender_LOCATOR_SHOULD_BE_CONFIGURED_BEFORE_STARTING_GATEWAY_SENDER
-              .toLocalizedString()))) {
+          "Locators must be configured before starting gateway-sender."))) {
       } else {
         fail("Expected IllegalStateException but received :" + e);
       }
     }
+  }
+
+  @Test
+  public void test_create_SerialGatewaySender_ThrowsException_when_GroupTransactionEvents_isTrue_and_DispatcherThreads_is_greaterThanOne() {
+    cache = new CacheFactory().set(MCAST_PORT, "0").create();
+    GatewaySenderFactory fact = cache.createGatewaySenderFactory();
+    fact.setParallel(false);
+    fact.setDispatcherThreads(2);
+    fact.setGroupTransactionEvents(true);
+    assertThatThrownBy(() -> fact.create("NYSender", 2))
+        .isInstanceOf(GatewaySenderException.class)
+        .hasMessageContaining(
+            "SerialGatewaySender NYSender cannot be created with group transaction events set to true when dispatcher threads is greater than 1");
   }
 
   /**
@@ -119,7 +129,7 @@ public class WANConfigurationJUnitTest {
       fact.setParallel(true);
       fact.setManualStart(true);
       GatewaySender sender1 = fact.create("NYSender", 2);
-      AttributesFactory factory = new AttributesFactory();
+      RegionFactory factory = cache.createRegionFactory();
       factory.addGatewaySenderId(sender1.getId());
       factory.addGatewaySenderId(sender1.getId());
       fail("Expected IllegalArgumentException but not thrown");
@@ -135,18 +145,16 @@ public class WANConfigurationJUnitTest {
   @Test
   public void test_GatewaySenderIdAndAsyncEventId() {
     cache = new CacheFactory().set(MCAST_PORT, "0").create();
-    AttributesFactory factory = new AttributesFactory();
+    RegionFactory factory = cache.createRegionFactory();
     factory.addGatewaySenderId("ln");
     factory.addGatewaySenderId("ny");
     factory.addAsyncEventQueueId("Async_LN");
-    RegionAttributes attrs = factory.create();
 
     Set<String> senderIds = new HashSet<String>();
     senderIds.add("ln");
     senderIds.add("ny");
-    Set<String> attrsSenderIds = attrs.getGatewaySenderIds();
-    assertEquals(senderIds, attrsSenderIds);
-    Region r = cache.createRegion("Customer", attrs);
+
+    Region r = factory.create("Customer");
     assertEquals(senderIds, ((LocalRegion) r).getGatewaySenderIds());
   }
 
@@ -162,15 +170,14 @@ public class WANConfigurationJUnitTest {
     fact.setParallel(true);
     fact.setManualStart(true);
     GatewaySender sender1 = fact.create("NYSender", 2);
-    AttributesFactory factory = new AttributesFactory();
-    factory.addGatewaySenderId(sender1.getId());
-    factory.setScope(Scope.DISTRIBUTED_ACK);
-    factory.setDataPolicy(DataPolicy.REPLICATE);
-    RegionFactory regionFactory = cache.createRegionFactory(factory.create());
+
+    RegionFactory regionFactory = cache.createRegionFactory(RegionShortcut.REPLICATE);
+    regionFactory.addGatewaySenderId(sender1.getId());
 
     assertThatThrownBy(() -> regionFactory.create("test_GatewaySender_Parallel_DistributedRegion"))
         .isInstanceOf(GatewaySenderConfigurationException.class).hasMessage(
-            "Parallel gateway sender NYSender can not be used with replicated region /test_GatewaySender_Parallel_DistributedRegion");
+            "Parallel Gateway Sender NYSender can not be used with replicated region " + SEPARATOR
+                + "test_GatewaySender_Parallel_DistributedRegion");
   }
 
   @Test
@@ -293,14 +300,12 @@ public class WANConfigurationJUnitTest {
     fact.addGatewayTransportFilter(myStreamFilter1);
     GatewayTransportFilter myStreamFilter2 = new MyGatewayTransportFilter2();
     fact.addGatewayTransportFilter(myStreamFilter2);
+    boolean groupTransactionEvents = false;
+    fact.setGroupTransactionEvents(groupTransactionEvents);
     GatewaySender sender1 = fact.create("TKSender", 2);
-
-
-    AttributesFactory factory = new AttributesFactory();
+    RegionFactory factory = cache.createRegionFactory(RegionShortcut.PARTITION);
     factory.addGatewaySenderId(sender1.getId());
-    factory.setDataPolicy(DataPolicy.PARTITION);
-    Region region =
-        cache.createRegionFactory(factory.create()).create("test_ValidateGatewaySenderAttributes");
+    Region region = factory.create("test_ValidateGatewaySenderAttributes");
     Set<GatewaySender> senders = cache.getGatewaySenders();
     assertEquals(senders.size(), 1);
     GatewaySender gatewaySender = senders.iterator().next();
@@ -317,7 +322,7 @@ public class WANConfigurationJUnitTest {
         gatewaySender.getGatewayEventFilters().size());
     assertEquals(sender1.getGatewayTransportFilters().size(),
         gatewaySender.getGatewayTransportFilters().size());
-
+    assertEquals(sender1.mustGroupTransactionEvents(), gatewaySender.mustGroupTransactionEvents());
   }
 
   /**
@@ -344,12 +349,10 @@ public class WANConfigurationJUnitTest {
     fact.addGatewayTransportFilter(myStreamFilter2);
     GatewaySender sender1 = fact.create("TKSender", 2);
 
-
-    AttributesFactory factory = new AttributesFactory();
+    RegionFactory factory = cache.createRegionFactory(RegionShortcut.PARTITION);
     factory.addGatewaySenderId(sender1.getId());
-    factory.setDataPolicy(DataPolicy.PARTITION);
-    Region region =
-        cache.createRegionFactory(factory.create()).create("test_ValidateGatewaySenderAttributes");
+
+    Region region = factory.create("test_ValidateGatewaySenderAttributes");
     Set<GatewaySender> senders = cache.getGatewaySenders();
     assertEquals(1, senders.size());
     GatewaySender gatewaySender = senders.iterator().next();
@@ -366,7 +369,6 @@ public class WANConfigurationJUnitTest {
         gatewaySender.getGatewayEventFilters().size());
     assertEquals(sender1.getGatewayTransportFilters().size(),
         gatewaySender.getGatewayTransportFilters().size());
-
   }
 
   @Test

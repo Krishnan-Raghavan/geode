@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.cache.LocalRegion.InitializationLevel.BEFORE_INITIAL_IMAGE;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -35,6 +37,7 @@ import org.apache.geode.DataSerializer;
 import org.apache.geode.GemFireException;
 import org.apache.geode.InternalGemFireException;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.CacheEvent;
 import org.apache.geode.cache.CacheLoader;
 import org.apache.geode.cache.CacheLoaderException;
@@ -52,7 +55,6 @@ import org.apache.geode.cache.TimeoutException;
 import org.apache.geode.cache.util.ObjectSizer;
 import org.apache.geode.distributed.DistributedSystemDisconnectedException;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.HighPriorityDistributionMessage;
 import org.apache.geode.distributed.internal.MembershipListener;
@@ -63,15 +65,17 @@ import org.apache.geode.distributed.internal.SerialDistributionMessage;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.InternalDataSerializer;
+import org.apache.geode.internal.cache.LocalRegion.InitializationLevel;
 import org.apache.geode.internal.cache.versions.DiskVersionTag;
 import org.apache.geode.internal.cache.versions.VersionStamp;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.offheap.Releasable;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Implementation for distributed search, load and write operations in the GemFire system. Provides
@@ -90,7 +94,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       Integer.getInteger("DistributionManager.OptimizedUpdateByteLimit", 2000);
 
   static final long RETRY_TIME =
-      Long.getLong(DistributionConfig.GEMFIRE_PREFIX + "search-retry-interval", 2000);
+      Long.getLong(GeodeGlossary.GEMFIRE_PREFIX + "search-retry-interval", 2000);
 
   private volatile InternalDistributedMember selectedNode;
   private boolean selectedNodeDead = false;
@@ -113,6 +117,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
   private volatile boolean authorative = false;
   /** remoteLoadInProgress is volatile to make sure response threads see the current value */
   private volatile boolean remoteLoadInProgress = false;
+  @MakeNotStatic
   private static final ProcessorKeeper21 processorKeeper = new ProcessorKeeper21(false);
   // private static Set availableAcceptHelperSet = new HashSet();
   /** The members that haven't replied yet */
@@ -231,16 +236,20 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
   }
 
+  @Override
   public void memberJoined(DistributionManager distributionManager, InternalDistributedMember id) {
     // Ignore - if they just joined, they don't have what we want
   }
 
+  @Override
   public void memberSuspect(DistributionManager distributionManager, InternalDistributedMember id,
       InternalDistributedMember whoSuspected, String reason) {}
 
+  @Override
   public void quorumLost(DistributionManager distributionManager,
       Set<InternalDistributedMember> failures, List<InternalDistributedMember> remaining) {}
 
+  @Override
   public void memberDeparted(DistributionManager distributionManager,
       final InternalDistributedMember id, final boolean crashed) {
 
@@ -627,8 +636,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
             locked = this.lock.tryLock(region.getCache().getLockTimeout(), TimeUnit.SECONDS);
             if (!locked) {
               throw new TimeoutException(
-                  LocalizedStrings.SearchLoadAndWriteProcessor_TIMED_OUT_LOCKING_0_BEFORE_LOAD
-                      .toLocalizedString(key));
+                  String.format("Timed out locking %s before load",
+                      key));
             }
             break;
           } catch (InterruptedException ignore) {
@@ -693,7 +702,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       ArrayList list = new ArrayList(loadCandidatesSet);
       Collections.shuffle(list);
       InternalDistributedMember[] loadCandidates =
-          (InternalDistributedMember[]) list.toArray(new InternalDistributedMember[list.size()]);
+          (InternalDistributedMember[]) list.toArray(new InternalDistributedMember[0]);
       initRemainingTimeout();
 
       RegionAttributes attrs = region.getAttributes();
@@ -746,8 +755,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
               cause = this.remoteException;
             }
             throw new CacheLoaderException(
-                LocalizedStrings.SearchLoadAndWriteProcessor_WHILE_INVOKING_A_REMOTE_NETLOAD_0
-                    .toLocalizedString(cause),
+                String.format("While invoking a remote netLoad: %s",
+                    cause),
                 cause);
           }
 
@@ -913,7 +922,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     ArrayList list = new ArrayList(writeCandidateSet);
     Collections.shuffle(list);
     InternalDistributedMember[] writeCandidates =
-        (InternalDistributedMember[]) list.toArray(new InternalDistributedMember[list.size()]);
+        (InternalDistributedMember[]) list.toArray(new InternalDistributedMember[0]);
     initRemainingTimeout();
     int index = 0;
     do {
@@ -949,8 +958,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
           cause = this.remoteException;
         }
         throw new CacheWriterException(
-            LocalizedStrings.SearchLoadAndWriteProcessor_WHILE_INVOKING_A_REMOTE_NETWRITE_0
-                .toLocalizedString(cause),
+            String.format("While invoking a remote netWrite: %s",
+                cause),
             cause);
       }
     } while (index < writeCandidates.length);
@@ -1019,7 +1028,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
           // send a message to this responder asking for the value
           // do this on the waiting pool in case the send blocks
           try {
-            dm.getWaitingThreadPool().execute(new Runnable() {
+            dm.getExecutors().getWaitingThreadPool().execute(new Runnable() {
+              @Override
               public void run() {
                 sendValueRequest(sender);
               }
@@ -1218,8 +1228,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
           }
           if (waitTimeMs <= 0) {
             throw new TimeoutException(
-                LocalizedStrings.SearchLoadAndWriteProcessor_TIMED_OUT_WHILE_DOING_NETSEARCHNETLOADNETWRITE_PROCESSORID_0_KEY_IS_1
-                    .toLocalizedString(new Object[] {this.processorId, this.key}));
+                String.format(
+                    "Timed out while doing netsearch/netload/netwrite processorId= %s Key is %s",
+                    new Object[] {this.processorId, this.key}));
           }
 
           boolean interrupted = Thread.interrupted();
@@ -1256,8 +1267,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
                 sb.append(" lastNotifySpot=").append(lastNS);
               }
               throw new TimeoutException(
-                  LocalizedStrings.SearchLoadAndWriteProcessor_TIMEOUT_DURING_NETSEARCHNETLOADNETWRITE_DETAILS_0
-                      .toLocalizedString(sb));
+                  String.format("Timeout during netsearch/netload/netwrite. Details: %s",
+                      sb));
             }
             return;
           } catch (InterruptedException ignore) {
@@ -1420,13 +1431,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
 
     }
 
+    @Override
     public int getDSFID() {
       return QUERY_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
 
       short flags = 0;
       if (this.processorId != 0)
@@ -1454,8 +1467,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       short flags = in.readShort();
       if ((flags & HAS_PROCESSOR_ID) != 0) {
         this.processorId = in.readInt();
@@ -1497,7 +1511,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
         return;
       }
 
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+      final InitializationLevel oldLevel =
+          LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
       try {
         // check to see if we would have to wait on initialization latch (if global)
         // if so abort and reply with null
@@ -1678,13 +1693,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       return true;
     }
 
+    @Override
     public int getDSFID() {
       return RESPONSE_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeObject(this.key, out);
       out.writeInt(this.processorId);
       DataSerializer.writeObject(this.result, out);
@@ -1696,8 +1713,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.key = DataSerializer.readObject(in);
       this.processorId = in.readInt();
       this.result = DataSerializer.readObject(in);
@@ -1777,13 +1795,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       doGet(dm);
     }
 
+    @Override
     public int getDSFID() {
       return NET_SEARCH_REQUEST_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
 
       short flags = 0;
       if (this.processorId != 0)
@@ -1809,8 +1829,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       short flags = in.readShort();
       if ((flags & HAS_PROCESSOR_ID) != 0) {
         this.processorId = in.readInt();
@@ -1845,7 +1866,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       boolean authoritative = false;
       VersionTag versionTag = null;
 
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+      final InitializationLevel oldLevel =
+          LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
       try {
         LocalRegion region = (LocalRegion) dm.getExistingCache().getRegion(this.regionName);
         if (region != null) {
@@ -1927,8 +1949,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
         // error condition, so you also need to check to see if the JVM
         // is still usable:
         SystemFailure.checkFailure();
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.SearchLoadAndWriteProcessor_UNEXPECTED_EXCEPTION), t);
+        logger.warn("Unexpected exception creating net search reply", t);
         replyWithNull(dm);
       } finally {
         LocalRegion.setThreadInitLevelRequirement(oldLevel);
@@ -2035,14 +2056,16 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
           this.requestorTimedOut, this.authoritative, this.versionTag, getSender());
     }
 
+    @Override
     public int getDSFID() {
       return NET_SEARCH_REPLY_MESSAGE;
     }
 
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       if (this.valueObj != null) {
         DataSerializer.writeObjectAsByteArray(this.valueObj, out);
@@ -2068,8 +2091,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.value = DataSerializer.readByteArray(in);
       if (this.value != null) {
@@ -2144,8 +2168,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
         processor.distributionManager.putOutgoing(msg);
       } catch (InternalGemFireException e) {
         throw new IllegalArgumentException(
-            LocalizedStrings.SearchLoadAndWriteProcessor_MESSAGE_NOT_SERIALIZABLE
-                .toLocalizedString());
+            "Message not serializable");
       }
     }
 
@@ -2167,13 +2190,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       doLoad(dm);
     }
 
+    @Override
     public int getDSFID() {
       return NET_LOAD_REQUEST_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       out.writeUTF(this.regionName);
       DataSerializer.writeObject(this.key, out);
@@ -2185,8 +2210,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.regionName = in.readUTF();
       this.key = DataSerializer.readObject(in);
@@ -2204,7 +2230,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
 
     private void doLoad(ClusterDistributionManager dm) {
       long startTime = dm.cacheTimeMillis();
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+      final InitializationLevel oldLevel =
+          LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
       try {
         InternalCache gfc = dm.getExistingCache();
         LocalRegion region = (LocalRegion) gfc.getRegion(this.regionName);
@@ -2231,16 +2258,13 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
               stats.endLoad(start);
             }
           } else {
-            replyWithException(new TryAgainException(
-                LocalizedStrings.SearchLoadAndWriteProcessor_NO_LOADER_DEFINED_0
-                    .toLocalizedString()),
+            replyWithException(new TryAgainException("No loader defined"),
                 dm);
           }
 
         } else {
           replyWithException(new TryAgainException(
-              LocalizedStrings.SearchLoadAndWriteProcessor_TIMEOUT_EXPIRED_OR_REGION_NOT_READY_0
-                  .toLocalizedString()),
+              "Timeout expired or region not ready"),
               dm);
         }
 
@@ -2263,8 +2287,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
         // is still usable:
         SystemFailure.checkFailure();
         replyWithException(new InternalGemFireException(
-            LocalizedStrings.SearchLoadAndWriteProcessor_ERROR_PROCESSING_REQUEST
-                .toLocalizedString(),
+            "Error processing request",
             t), dm);
       } finally {
         LocalRegion.setThreadInitLevelRequirement(oldLevel);
@@ -2341,13 +2364,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
           this.isSerialized, this.requestorTimedOut);
     }
 
+    @Override
     public int getDSFID() {
       return NET_LOAD_REPLY_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       boolean isSerialized = this.isSerialized;
       if (result instanceof byte[]) {
@@ -2364,8 +2389,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.result = DataSerializer.readByteArray(in);
       this.aCallbackArgument = DataSerializer.readObject(in);
@@ -2429,13 +2455,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       Assert.assertTrue(processor.region.getScope().isDistributed());
     }
 
+    @Override
     public int getDSFID() {
       return NET_WRITE_REQUEST_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       out.writeUTF(this.regionName);
       out.writeInt(this.timeoutMs);
@@ -2445,8 +2473,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.regionName = in.readUTF();
       this.timeoutMs = in.readInt();
@@ -2464,7 +2493,8 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     @Override
     protected void process(ClusterDistributionManager dm) {
       long startTime = dm.cacheTimeMillis();
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.BEFORE_INITIAL_IMAGE);
+      final InitializationLevel oldLevel =
+          LocalRegion.setThreadInitLevelRequirement(BEFORE_INITIAL_IMAGE);
       try {
         InternalCache gfc = dm.getExistingCache();
         LocalRegion region = (LocalRegion) gfc.getRegion(this.regionName);
@@ -2538,17 +2568,14 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
             NetWriteReplyMessage.sendMessage(NetWriteRequestMessage.this.getSender(), processorId,
                 dm, false,
                 new TryAgainException(
-                    LocalizedStrings.SearchLoadAndWriteProcessor_NO_CACHEWRITER_DEFINED_0
-                        .toLocalizedString()),
+                    "No cachewriter defined"),
                 true);
           }
 
         } else {
           NetWriteReplyMessage.sendMessage(NetWriteRequestMessage.this.getSender(), processorId, dm,
               false,
-              new TryAgainException(
-                  LocalizedStrings.SearchLoadAndWriteProcessor_TIMEOUT_EXPIRED_OR_REGION_NOT_READY_0
-                      .toLocalizedString()),
+              new TryAgainException("Timeout expired or region not ready"),
               true);
 
         }
@@ -2579,8 +2606,7 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
         NetWriteReplyMessage.sendMessage(NetWriteRequestMessage.this.getSender(), processorId, dm,
             false,
             new InternalGemFireException(
-                LocalizedStrings.SearchLoadAndWriteProcessor_ERROR_PROCESSING_REQUEST
-                    .toLocalizedString(),
+                "Error processing request",
                 t),
             true);
       } finally {
@@ -2646,13 +2672,15 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
       processor.incomingNetWriteReply(this.netWriteSucceeded, this.e, this.cacheWriterException);
     }
 
+    @Override
     public int getDSFID() {
       return NET_WRITE_REPLY_MESSAGE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       out.writeBoolean(this.netWriteSucceeded);
       DataSerializer.writeObject(this.e, out);
@@ -2660,8 +2688,9 @@ public class SearchLoadAndWriteProcessor implements MembershipListener {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.netWriteSucceeded = in.readBoolean();
       this.e = (Exception) DataSerializer.readObject(in);

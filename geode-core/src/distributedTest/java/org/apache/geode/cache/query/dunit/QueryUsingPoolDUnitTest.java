@@ -14,7 +14,9 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -29,7 +31,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -54,7 +55,7 @@ import org.apache.geode.cache.query.types.ObjectType;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache30.CacheSerializableRunnable;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
@@ -76,7 +77,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   private static final Logger logger = LogService.getLogger();
 
   /**
-   * The port on which the bridge server was started in this VM
+   * The port on which the cache server was started in this VM
    */
   private static int bridgeServerPort;
 
@@ -91,7 +92,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   public final void postSetUp() throws Exception {
     this.rootRegionName = "root";
     this.regionName = this.getName();
-    this.regName = "/" + this.rootRegionName + "/" + this.regionName;
+    this.regName = SEPARATOR + this.rootRegionName + SEPARATOR + this.regionName;
 
     this.queryString =
         new String[] {"SELECT itr.value FROM " + this.regName + ".entries itr where itr.key = $1", // 0
@@ -105,6 +106,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     disconnectAllFromDS();
     IgnoredException.addIgnoredException("Connection reset");
     IgnoredException.addIgnoredException("Socket input is shutdown");
+    IgnoredException.addIgnoredException("Connection refused");
   }
 
   @Override
@@ -138,8 +140,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   public void validateCompiledQuery(final long compiledQueryCount) {
-    Awaitility.await().pollInterval(100, TimeUnit.MILLISECONDS)
-        .pollDelay(100, TimeUnit.MILLISECONDS).timeout(60, TimeUnit.SECONDS)
+    await().timeout(60, TimeUnit.SECONDS)
         .until(() -> CacheClientNotifier.getInstance().getStats()
             .getCompiledQueryCount() == compiledQueryCount);
   }
@@ -159,7 +160,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -167,7 +168,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     });
 
     // Initialize server region
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       Region region = getRootRegion().getSubregion(name);
       for (int i = 0; i < numberOfEntries; i++) {
         region.put("key-" + i, new TestObject(i, "ibm"));
@@ -177,7 +178,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int port =
         vm0.invoke("GetCacheServerPort", () -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
-    final String regionName = "/" + rootRegionName + "/" + name;
+    final String regionName = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName = "testRemoteImportQueries";
@@ -290,14 +291,14 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    final int port = vm0.invoke("Create Bridge Server", () -> {
+    final int port = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(name, numberOfEntries);
       return getCacheServerPort();
     });
 
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName = "/" + rootRegionName + "/" + name;
+    final String regionName = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName = "testRemoteStructQueries";
@@ -426,7 +427,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -434,7 +435,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     });
 
     // Initialize server region
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       Region region = getRootRegion().getSubregion(name);
       for (int i = 0; i < numberOfEntries; i++) {
         region.put("key-" + i, new TestObject(i, "ibm"));
@@ -445,7 +446,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int port = vm0.invoke(() -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName = "/" + rootRegionName + "/" + name;
+    final String regionName = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName = "testRemoteFullRegionQueries";
@@ -615,10 +616,10 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         50, // 5
     };
 
-    assertNotNull(this.regionName);// KIRK
+    assertNotNull(this.regionName);
 
     // Start server
-    final int port = vm0.invoke("Create Bridge Server", () -> {
+    final int port = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(regionName, numberOfEntries);
       return getCacheServerPort();
     });
@@ -632,6 +633,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Execute client queries
     vm1.invoke(new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         SelectResults results = null;
         QueryService qService = null;
@@ -731,13 +733,13 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     };
 
     // Start server1
-    final int port0 = vm0.invoke("Create Bridge Server", () -> {
+    final int port0 = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(regionName, numberOfEntries);
       return getCacheServerPort();
     });
 
     // Start server2
-    final int port1 = vm1.invoke("Create Bridge Server", () -> {
+    final int port1 = vm1.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(regionName, numberOfEntries);
       return getCacheServerPort();
     });
@@ -753,6 +755,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Execute client queries
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         SelectResults results = null;
         QueryService qService = null;
@@ -848,7 +851,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     };
 
     // Start server
-    final int port = vm0.invoke("Create Bridge Server", () -> {
+    final int port = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(name, numberOfEntries);
       return getCacheServerPort();
     });
@@ -909,7 +912,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     };
 
     // Start server
-    final int port = vm0.invoke("Create Bridge Server", () -> {
+    final int port = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(name, numberOfEntries);
       QueryService queryService = getCache().getQueryService();
       queryService.newQuery("Select * from " + regName);
@@ -958,11 +961,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     vm2.invoke("closeClient", () -> closeClient());
 
     // Validate maintained compiled queries.
-    vm0.invoke("validate compiled query", () -> {
-      long compiledQueryCount =
-          CacheClientNotifier.getInstance().getStats().getCompiledQueryCount();
-      assertEquals(0, compiledQueryCount);
-    });
+    vm0.invoke("validate Compiled query", () -> validateCompiledQuery(0));
 
     // Stop server
     vm0.invoke("Stop CacheServer", () -> stopBridgeServer(getCache()));
@@ -991,7 +990,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     };
 
     // Start server
-    final int port = vm0.invoke("Create Bridge Server", () -> {
+    final int port = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(name, numberOfEntries);
       QueryService queryService = getCache().getQueryService();
       queryService.newQuery("Select * from " + regName);
@@ -1093,7 +1092,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         };
 
     // Start server1
-    final int port0 = vm0.invoke("Create Bridge Server", () -> {
+    final int port0 = vm0.invoke("Create cache server", () -> {
       setupBridgeServerAndCreateData(regionName, numberOfEntries);
       return getCacheServerPort();
     });
@@ -1111,6 +1110,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Execute client query multiple times and validate results.
     SerializableRunnable executeSameQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService qService = null;
         SelectResults[][] rs = new SelectResults[1][2];
@@ -1150,6 +1150,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
     // Execute client queries and validate results.
     SerializableRunnable executeQueries = new CacheSerializableRunnable("Execute queries") {
+      @Override
       public void run2() throws CacheException {
         QueryService qService = null;
         SelectResults[][] rs = new SelectResults[1][2];
@@ -1204,7 +1205,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -1213,7 +1214,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     });
 
     // Initialize server region
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       Region region1 = getRootRegion().getSubregion(name + "1");
       for (int i = 0; i < numberOfEntries; i++) {
         region1.put("key-" + i, new TestObject(i, "ibm"));
@@ -1228,8 +1229,8 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int port =
         vm0.invoke("getCacheServerPort", () -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
-    final String regionName1 = "/" + rootRegionName + "/" + name + "1";
-    final String regionName2 = "/" + rootRegionName + "/" + name + "2";
+    final String regionName1 = SEPARATOR + rootRegionName + SEPARATOR + name + "1";
+    final String regionName2 = SEPARATOR + rootRegionName + SEPARATOR + name + "2";
 
     // Create client pool.
     final String poolName = "testRemoteJoinRegionQueries";
@@ -1292,7 +1293,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -1300,7 +1301,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     });
 
     // Initialize server region
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       Region region = getRootRegion().getSubregion(name);
       for (int i = 0; i < numberOfEntries; i++) {
         region.put("key-" + i, new TestObject(i, "ibm"));
@@ -1310,7 +1311,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int port = vm0.invoke("getCacheServerPort", () -> getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName = "/" + rootRegionName + "/" + name;
+    final String regionName = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName1 = "testRemoteBridgeClientQueries1";
@@ -1388,13 +1389,14 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
       final Region region1 = createRegion(name, factory.createRegionAttributes());
       final Region region2 = createRegion(name + "_2", factory.createRegionAttributes());
       QueryObserverHolder.setInstance(new QueryObserverAdapter() {
+        @Override
         public void afterQueryEvaluation(Object result) {
           // Destroy the region in the test
           region1.close();
@@ -1411,8 +1413,8 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         vm0.invoke("getCachedServerPort", () -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName1 = "/" + rootRegionName + "/" + name;
-    final String regionName2 = "/" + rootRegionName + "/" + name + "_2";
+    final String regionName1 = SEPARATOR + rootRegionName + SEPARATOR + name;
+    final String regionName2 = SEPARATOR + rootRegionName + SEPARATOR + name + "_2";
 
     // Create client pool.
     final String poolName = "testBug36969";
@@ -1460,7 +1462,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -1483,7 +1485,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         vm0.invoke("getCacheServerPort", () -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName = "/" + rootRegionName + "/" + name;
+    final String regionName = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName = "testRemoteFullRegionQueries";
@@ -1594,7 +1596,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
     final int numberOfEntries = 100;
 
     // Start server
-    vm0.invoke("Create Bridge Server", () -> {
+    vm0.invoke("Create cache server", () -> {
       createAndStartBridgeServer();
       AttributesFactory factory = new AttributesFactory();
       factory.setScope(Scope.LOCAL);
@@ -1610,7 +1612,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
         vm0.invoke("getCacheServerPort", () -> QueryUsingPoolDUnitTest.getCacheServerPort());
     final String host0 = NetworkUtils.getServerHostName(vm0.getHost());
 
-    final String regionName1 = "/" + rootRegionName + "/" + name;
+    final String regionName1 = SEPARATOR + rootRegionName + SEPARATOR + name;
 
     // Create client pool.
     final String poolName = "testUnSupportedOps";
@@ -1806,7 +1808,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    */
   protected int startBridgeServer(int port, boolean notifyBySubscription) throws IOException {
@@ -1820,7 +1822,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Stops the bridge server that serves up the given cache.
+   * Stops the cache server that serves up the given cache.
    */
   protected void stopBridgeServer(Cache cache) {
     CacheServer bridge = (CacheServer) cache.getCacheServers().iterator().next();
@@ -1845,6 +1847,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   private static class IdComparator implements Comparator {
 
+    @Override
     public int compare(Object obj1, Object obj2) {
       int obj1Id = ((TestObject) obj1).getId();
       int obj2Id = ((TestObject) obj2).getId();
@@ -1860,6 +1863,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   private static class IdValueComparator implements Comparator {
 
+    @Override
     public int compare(Object obj1, Object obj2) {
       int obj1Id = ((Integer) obj1).intValue();
       int obj2Id = ((Integer) obj2).intValue();
@@ -1875,6 +1879,7 @@ public class QueryUsingPoolDUnitTest extends JUnit4CacheTestCase {
 
   private static class StructIdComparator implements Comparator {
 
+    @Override
     public int compare(Object obj1, Object obj2) {
       int obj1Id = ((Integer) ((Struct) obj1).get("id")).intValue();
       int obj2Id = ((Integer) ((Struct) obj2).get("id")).intValue();

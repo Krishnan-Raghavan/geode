@@ -23,11 +23,14 @@ import java.io.ObjectOutput;
 
 import org.apache.geode.DataSerializer;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.tier.InterestType;
 import org.apache.geode.internal.cache.tier.MessageType;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 
 /**
  * Class <code>ClientInterestMessageImpl</code> represents an update to the a client's interest
@@ -130,10 +133,11 @@ public class ClientInterestMessageImpl implements ClientMessage {
    */
   public ClientInterestMessageImpl() {}
 
+  @Override
   public Message getMessage(CacheClientProxy proxy, boolean notify) throws IOException {
     Version clientVersion = proxy.getVersion();
     Message message = null;
-    if (clientVersion.compareTo(Version.GFE_57) >= 0) {
+    if (clientVersion.isNotOlderThan(Version.GFE_57)) {
       message = getGFEMessage();
     } else {
       throw new IOException(
@@ -161,7 +165,7 @@ public class ClientInterestMessageImpl implements ClientMessage {
     }
 
     // Add the region name
-    message.addStringPart(this.regionName);
+    message.addStringPart(this.regionName, true);
 
     // Add the key
     message.addStringOrObjPart(this.keyOfInterest);
@@ -186,26 +190,30 @@ public class ClientInterestMessageImpl implements ClientMessage {
     return message;
   }
 
+  @Override
   public boolean shouldBeConflated() {
     return false;
   }
 
+  @Override
   public int getDSFID() {
     return DataSerializableFixedID.CLIENT_INTEREST_MESSAGE;
   }
 
   public void writeExternal(ObjectOutput out) throws IOException {
-    toData(out);
+    toData(out, InternalDataSerializer.createSerializationContext(out));
   }
 
   public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-    fromData(in);
+    fromData(in, InternalDataSerializer.createDeserializationContext(in));
   }
 
-  public void toData(DataOutput out) throws IOException {
-    DataSerializer.writeObject(this.eventId, out);
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    context.getSerializer().writeObject(this.eventId, out);
     DataSerializer.writeString(this.regionName, out);
-    DataSerializer.writeObject(this.keyOfInterest, out);
+    context.getSerializer().writeObject(this.keyOfInterest, out);
     DataSerializer.writePrimitiveBoolean(this.isDurable, out);
     DataSerializer.writePrimitiveBoolean(this.forUpdatesAsInvalidates, out);
     DataSerializer.writePrimitiveInt(this.interestType, out);
@@ -213,10 +221,12 @@ public class ClientInterestMessageImpl implements ClientMessage {
     DataSerializer.writePrimitiveByte(this.action, out);
   }
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    this.eventId = (EventID) DataSerializer.readObject(in);
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    this.eventId = (EventID) context.getDeserializer().readObject(in);
     this.regionName = DataSerializer.readString(in);
-    this.keyOfInterest = DataSerializer.readObject(in);
+    this.keyOfInterest = context.getDeserializer().readObject(in);
     this.isDurable = DataSerializer.readPrimitiveBoolean(in);
     this.forUpdatesAsInvalidates = DataSerializer.readPrimitiveBoolean(in);
     this.interestType = DataSerializer.readPrimitiveInt(in);
@@ -224,6 +234,7 @@ public class ClientInterestMessageImpl implements ClientMessage {
     this.action = DataSerializer.readPrimitiveByte(in);
   }
 
+  @Override
   public EventID getEventId() {
     return this.eventId;
   }
@@ -260,22 +271,26 @@ public class ClientInterestMessageImpl implements ClientMessage {
     return this.action == REGISTER;
   }
 
+  @Override
   public String getRegionToConflate() {
     return null;
   }
 
+  @Override
   public Object getKeyToConflate() {
     // This method can be called by HARegionQueue.
     // Use this to identify the message type.
     return "interest";
   }
 
+  @Override
   public Object getValueToConflate() {
     // This method can be called by HARegionQueue
     // Use this to identify the message type.
     return "interest";
   }
 
+  @Override
   public void setLatestValue(Object value) {}
 
   public String toString() {

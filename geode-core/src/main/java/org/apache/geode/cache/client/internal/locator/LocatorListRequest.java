@@ -14,7 +14,7 @@
  */
 package org.apache.geode.cache.client.internal.locator;
 
-import org.apache.geode.internal.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
 
 
 public class LocatorListRequest extends ServerLocationRequest {
@@ -24,6 +24,7 @@ public class LocatorListRequest extends ServerLocationRequest {
     return "LocatorListRequest{group=" + getServerGroup() + "}";
   }
 
+  @Override
   public int getDSFID() {
     return DataSerializableFixedID.LOCATOR_LIST_REQUEST;
   }

@@ -22,15 +22,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.geode.DataSerializable;
 import org.apache.geode.DataSerializer;
-import org.apache.geode.internal.net.SocketCreator;
+import org.apache.geode.internal.inet.LocalHostUtil;
 
 /**
- * Represents the location of a bridge server. This class is preferable to InetSocketAddress because
+ * Represents the location of a cache server. This class is preferable to InetSocketAddress because
  * it doesn't do any name resolution.
  *
  *
  */
-public class ServerLocation implements DataSerializable, Comparable {
+public class ServerLocation implements DataSerializable, Comparable<ServerLocation> {
   private static final long serialVersionUID = -5850116974987640560L;
 
   private String hostName;
@@ -74,11 +74,13 @@ public class ServerLocation implements DataSerializable, Comparable {
     return port;
   }
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     hostName = DataSerializer.readString(in);
     port = in.readInt();
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     DataSerializer.writeString(hostName, out);
     out.writeInt(port);
@@ -110,7 +112,7 @@ public class ServerLocation implements DataSerializable, Comparable {
     } else if (!hostName.equals(other.hostName)) {
       String canonicalHostName;
       try {
-        canonicalHostName = SocketCreator.getLocalHost().getCanonicalHostName();
+        canonicalHostName = LocalHostUtil.getCanonicalLocalHostName();
       } catch (UnknownHostException e) {
         throw new IllegalStateException("getLocalHost failed with " + e);
       }
@@ -136,8 +138,8 @@ public class ServerLocation implements DataSerializable, Comparable {
     return hostName + ":" + port;
   }
 
-  public int compareTo(Object o) {
-    ServerLocation other = (ServerLocation) o;
+  @Override
+  public int compareTo(ServerLocation other) {
     int difference = hostName.compareTo(other.hostName);
     if (difference != 0) {
       return difference;

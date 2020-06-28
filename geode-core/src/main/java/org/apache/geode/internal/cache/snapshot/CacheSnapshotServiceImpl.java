@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.snapshot;
 
+import static org.apache.geode.cache.Region.SEPARATOR_CHAR;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -26,7 +28,6 @@ import org.apache.geode.cache.snapshot.SnapshotOptions;
 import org.apache.geode.cache.snapshot.SnapshotOptions.SnapshotFormat;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.snapshot.GFSnapshot.GFSnapshotImporter;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * Provides an implementation for cache snapshots. Most of the implementation delegates to
@@ -68,7 +69,7 @@ public class CacheSnapshotServiceImpl implements CacheSnapshotService {
       boolean created = dir.mkdirs();
       if (!created) {
         throw new IOException(
-            LocalizedStrings.Snapshot_UNABLE_TO_CREATE_DIR_0.toLocalizedString(dir));
+            String.format("Unable to create snapshot directory %s", dir));
       }
     }
   }
@@ -90,7 +91,7 @@ public class CacheSnapshotServiceImpl implements CacheSnapshotService {
       throw new IOException("Unable to access " + dir.getCanonicalPath());
     } else if (snapshotFiles.length == 0) {
       throw new FileNotFoundException(
-          LocalizedStrings.Snapshot_NO_SNAPSHOT_FILES_FOUND_0.toLocalizedString(dir));
+          String.format("No snapshot files found in %s", dir));
     }
 
     return snapshotFiles;
@@ -106,14 +107,15 @@ public class CacheSnapshotServiceImpl implements CacheSnapshotService {
         byte version = in.getVersion();
         if (version == GFSnapshot.SNAP_VER_1) {
           throw new IOException(
-              LocalizedStrings.Snapshot_UNSUPPORTED_SNAPSHOT_VERSION_0.toLocalizedString(version));
+              String.format("Unsupported snapshot version: %s", version));
         }
 
         String regionName = in.getRegionName();
         Region<Object, Object> region = cache.getRegion(regionName);
         if (region == null) {
-          throw new RegionNotFoundException(LocalizedStrings.Snapshot_COULD_NOT_FIND_REGION_0_1
-              .toLocalizedString(regionName, file));
+          throw new RegionNotFoundException(String.format(
+              "Could not find region %s. Ensure that the region is created prior to importing the snapshot file %s.",
+              regionName, file));
         }
 
         RegionSnapshotService<Object, Object> rs = region.getSnapshotService();
@@ -128,7 +130,7 @@ public class CacheSnapshotServiceImpl implements CacheSnapshotService {
   private void saveRegion(Region<?, ?> region, File dir, SnapshotFormat format,
       SnapshotOptions options) throws IOException {
     RegionSnapshotService<?, ?> regionSnapshotService = region.getSnapshotService();
-    String name = "snapshot" + region.getFullPath().replace('/', '-')
+    String name = "snapshot" + region.getFullPath().replace(SEPARATOR_CHAR, '-')
         + RegionSnapshotService.SNAPSHOT_FILE_EXTENSION;
     File f = new File(dir, name);
     regionSnapshotService.save(f, format, options);

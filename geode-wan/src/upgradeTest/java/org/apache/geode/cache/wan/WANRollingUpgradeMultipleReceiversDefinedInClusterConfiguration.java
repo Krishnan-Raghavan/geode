@@ -12,8 +12,10 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
+
 package org.apache.geode.cache.wan;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.PrintWriter;
@@ -23,10 +25,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.runners.Parameterized;
 import org.w3c.dom.Document;
@@ -47,7 +47,8 @@ import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.version.TestVersion;
+import org.apache.geode.test.version.VersionManager;
 
 public class WANRollingUpgradeMultipleReceiversDefinedInClusterConfiguration
     extends WANRollingUpgradeDUnitTest {
@@ -86,8 +87,7 @@ public class WANRollingUpgradeMultipleReceiversDefinedInClusterConfiguration
     });
 
     System.out.println("running against these versions and attributes: "
-        + result.stream().map(entry -> Arrays.toString(entry)).collect(
-            Collectors.joining(", ")));
+        + result.stream().map(Arrays::toString).collect(Collectors.joining(", ")));
     return result;
   }
 
@@ -96,7 +96,7 @@ public class WANRollingUpgradeMultipleReceiversDefinedInClusterConfiguration
     // saved in cluster configuration and multiple receivers are not supported starting in 140.
     // Note: This comparison works because '130' < '140'.
     List<String> result = VersionManager.getInstance().getVersionsWithoutCurrent();
-    result.removeIf(version -> (version.compareTo(VersionManager.GEODE_140) >= 0));
+    result.removeIf(version -> (TestVersion.compare(version, "1.4.0") >= 0));
     if (result.size() < 1) {
       throw new RuntimeException("No older versions of Geode were found to test against");
     }
@@ -140,41 +140,41 @@ public class WANRollingUpgradeMultipleReceiversDefinedInClusterConfiguration
   }
 
   @Test
-  public void testMultipleReceiversRemovedDuringRoll() throws Exception {
+  public void testMultipleReceiversRemovedDuringRoll() {
     // Get old locator properties
     VM locator = Host.getHost(0).getVM(oldVersion, 0);
     String hostName = NetworkUtils.getServerHostName();
     final int locatorPort = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    DistributedTestUtils.deleteLocatorStateFile(locatorPort);
     final String locators = hostName + "[" + locatorPort + "]";
-
     // Start old locator
-    locator.invoke(() -> startLocator(locatorPort, 0,
-        locators, null, true));
+    locator.invoke(() -> {
+      DistributedTestUtils.deleteLocatorStateFile(locatorPort);
+      startLocator(locatorPort, 0,
+          locators, null, true);
+    });
 
     // Wait for configuration configuration to be ready.
     locator.invoke(
-        () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+        () -> await()
             .untilAsserted(() -> assertThat(
                 InternalLocator.getLocator().isSharedConfigurationRunning()).isTrue()));
 
     // Add cluster configuration elements containing multiple receivers
-    locator.invoke(
-        () -> addMultipleGatewayReceiverElementsToClusterConfiguration());
+    locator.invoke(this::addMultipleGatewayReceiverElementsToClusterConfiguration);
 
     // Roll old locator to current
     rollLocatorToCurrent(locator, locatorPort, 0, locators,
         null, true);
 
     // Verify cluster configuration contains expected number of receivers
-    locator.invoke(() -> verifyGatewayReceiverClusterConfigurationElements());
+    locator.invoke(this::verifyGatewayReceiverClusterConfigurationElements);
 
     // Start member in current version with cluster configuration enabled
     VM server = Host.getHost(0).getVM(VersionManager.CURRENT_VERSION, 1);
     server.invoke(() -> createCache(locators, true, true));
 
     // Verify member has expected number of receivers
-    server.invoke(() -> verifyGatewayReceivers());
+    server.invoke(this::verifyGatewayReceivers);
   }
 
   private void addMultipleGatewayReceiverElementsToClusterConfiguration()
@@ -244,11 +244,7 @@ public class WANRollingUpgradeMultipleReceiversDefinedInClusterConfiguration
     }
 
     public String toString() {
-      return new StringBuilder()
-          .append(this.name)
-          .append("=")
-          .append(this.value)
-          .toString();
+      return name + "=" + value;
     }
   }
 }

@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.apache.geode.distributed.ServerLauncher.Command;
 
+@SuppressWarnings("unused")
 public class ServerCommand {
 
   private String javaPath;
@@ -35,12 +36,12 @@ public class ServerCommand {
   }
 
   public ServerCommand(final UsesServerCommand user) {
-    this.javaPath = user.getJavaPath();
-    this.jvmArguments = user.getJvmArguments();
-    this.classPath = user.getClassPath();
-    this.name = user.getName();
-    this.disableDefaultServer = user.getDisableDefaultServer();
-    this.command = Command.START;
+    javaPath = user.getJavaPath();
+    jvmArguments = user.getJvmArguments();
+    classPath = user.getClassPath();
+    name = user.getName();
+    disableDefaultServer = user.getDisableDefaultServer();
+    command = Command.START;
   }
 
   public ServerCommand withJavaPath(final String javaPath) {
@@ -54,7 +55,7 @@ public class ServerCommand {
   }
 
   public ServerCommand addJvmArgument(final String arg) {
-    this.jvmArguments.add(arg);
+    jvmArguments.add(arg);
     return this;
   }
 
@@ -78,7 +79,7 @@ public class ServerCommand {
   }
 
   public ServerCommand disableDefaultServer(final boolean value) {
-    this.disableDefaultServer = value;
+    disableDefaultServer = value;
     return this;
   }
 
@@ -87,7 +88,7 @@ public class ServerCommand {
   }
 
   public ServerCommand force(final boolean value) {
-    this.force = value;
+    force = value;
     return this;
   }
 

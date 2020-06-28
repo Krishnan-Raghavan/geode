@@ -15,29 +15,49 @@
  * limitations under the License.
  */
 
-dependencies {
-  compileOnly project(':geode-core')
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
 
-  compile ('com.github.stefanbirkner:system-rules:' + project.'system-rules.version') {
-    exclude module: 'junit-dep'
-  }
-  compile 'com.jayway.jsonpath:json-path:' + project.'json-path.version'
-  compile 'org.assertj:assertj-core:' + project.'assertj-core.version'
-  compile 'commons-io:commons-io:' + project.'commons-io.version'
-  compile 'commons-lang:commons-lang:' + project.'commons-lang.version'
-  compile 'com.google.guava:guava:' + project.'guava.version'
-  compile 'org.mockito:mockito-core:' + project.'mockito-core.version'
-  compile 'org.awaitility:awaitility:' + project.'awaitility.version'
-  compile 'org.apache.logging.log4j:log4j-api:' + project.'log4j.version'
-  compile 'org.apache.logging.log4j:log4j-core:' + project.'log4j.version'
-  compile('junit:junit:' + project.'junit.version') {
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+
+
+dependencies {
+  compile(platform(project(':boms:geode-all-bom')))
+
+  compileOnly(project(':geode-core'))
+  compileOnly(project(':geode-logging'))
+  compileOnly(project(':geode-serialization'))
+  compileOnly(project(':geode-unsafe'))
+  compileOnly(project(':geode-gfsh'))
+
+  api('junit:junit') {
     exclude module: 'hamcrest-core'
   }
-  compile 'org.hamcrest:hamcrest-all:' + project.'hamcrest-all.version'
+  api('org.assertj:assertj-core')
+  api('org.mockito:mockito-core')
 
-  compile 'org.bouncycastle:bcpkix-jdk15on:' + project.'bounty-castle.version'
 
-  runtimeOnly project(":geode-old-versions")
+  api('com.fasterxml.jackson.core:jackson-annotations')
+  api('com.fasterxml.jackson.core:jackson-databind')
+  api('com.github.stefanbirkner:system-rules') {
+    exclude module: 'junit-dep'
+  }
+  api('com.google.guava:guava')
+  api('com.jayway.jsonpath:json-path')
+  api('commons-io:commons-io')
+  
+  api('org.apache.commons:commons-lang3')
+  api('org.apache.logging.log4j:log4j-api')
+  
+  api('org.awaitility:awaitility')
+  api('org.bouncycastle:bcpkix-jdk15on')
+  api('org.hamcrest:hamcrest-all')
+  api('io.micrometer:micrometer-core')
+  
+  api('org.skyscreamer:jsonassert')
+
+  testImplementation('pl.pragmatists:JUnitParams')
+
+  testRuntime(project(path: ':geode-old-versions', configuration: 'testOutput'))
 }
 
 test {

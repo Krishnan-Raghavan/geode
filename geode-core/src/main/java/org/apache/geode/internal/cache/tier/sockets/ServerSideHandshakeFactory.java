@@ -22,19 +22,22 @@ import java.net.SocketAddress;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.cache.IncompatibleVersionException;
 import org.apache.geode.cache.UnsupportedVersionException;
 import org.apache.geode.cache.VersionException;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.tier.CommunicationMode;
 import org.apache.geode.internal.cache.tier.ServerSideHandshake;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.serialization.UnsupportedSerializationVersionException;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 class ServerSideHandshakeFactory {
   private static final Logger logger = LogService.getLogger();
+
+  @Immutable
   static final Version currentServerVersion = Version.CURRENT;
 
   ServerSideHandshake readHandshake(Socket socket, int timeout, CommunicationMode communicationMode,
@@ -46,7 +49,7 @@ class ServerSideHandshakeFactory {
       logger.debug("Client version: {}", clientVersion);
     }
 
-    if (clientVersion.compareTo(Version.GFE_57) < 0) {
+    if (clientVersion.isOlderThan(Version.GFE_57)) {
       throw new UnsupportedVersionException("Unsupported version " + clientVersion
           + "Server's current version " + currentServerVersion);
     }
@@ -65,13 +68,15 @@ class ServerSideHandshakeFactory {
       short clientVersionOrdinal = Version.readOrdinalFromInputStream(is);
       if (clientVersionOrdinal == -1) {
         throw new EOFException(
-            LocalizedStrings.ServerHandShakeProcessor_HANDSHAKEREADER_EOF_REACHED_BEFORE_CLIENT_VERSION_COULD_BE_READ
-                .toLocalizedString());
+            "HandShakeReader: EOF reached before client version could be read");
       }
       Version clientVersion = null;
       try {
-        clientVersion = Version.fromOrdinal(clientVersionOrdinal, true);
-      } catch (UnsupportedVersionException uve) {
+        clientVersion = Version.fromOrdinal(clientVersionOrdinal);
+        if (CommandInitializer.getCommands(clientVersion) == null) {
+          throw new UnsupportedVersionException("Client version {} is not supported");
+        }
+      } catch (UnsupportedSerializationVersionException uve) {
         // Allows higher version of wan site to connect to server
         if (isWan) {
           return currentServerVersion;

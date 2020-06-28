@@ -17,8 +17,10 @@ package org.apache.geode.test.junit.rules;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Random;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.ArrayUtils;
 
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.SerializableCallableIF;
@@ -27,8 +29,32 @@ import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 
 public abstract class VMProvider {
+
   public static void invokeInEveryMember(SerializableRunnableIF runnableIF, VMProvider... members) {
+    if (ArrayUtils.isEmpty(members)) {
+      throw new IllegalArgumentException("Array of members must not be null nor empty.");
+    }
+
     Arrays.stream(members).forEach(member -> member.invoke(runnableIF));
+  }
+
+  public static void invokeInRandomMember(SerializableRunnableIF runnableIF,
+      VMProvider... members) {
+    if (ArrayUtils.isEmpty(members)) {
+      throw new IllegalArgumentException("Array of members must not be null nor empty.");
+    }
+
+    int randomMemberIndex = new Random().nextInt(members.length);
+    members[randomMemberIndex].invoke(runnableIF);
+  }
+
+  public static void invokeInEveryMember(String name, SerializableRunnableIF runnableIF,
+      VMProvider... members) {
+    if (ArrayUtils.isEmpty(members)) {
+      throw new IllegalArgumentException("Array of members must not be null nor empty.");
+    }
+
+    Arrays.stream(members).forEach(member -> member.invoke(name, runnableIF));
   }
 
   public abstract VM getVM();
@@ -38,32 +64,30 @@ public abstract class VMProvider {
   }
 
   public void stop(boolean cleanWorkingDir) {
-    getVM().invoke(() -> {
+    getVM().invoke("stop cluster elements", () -> {
+      // this did not clean up the files
       ClusterStartupRule.stopElementInsideVM();
       MemberStarterRule.disconnectDSIfAny();
     });
 
+    // clean up all the files under the working dir if asked to do so
     if (cleanWorkingDir) {
       Arrays.stream(getWorkingDir().listFiles()).forEach(FileUtils::deleteQuietly);
     }
   }
 
   public boolean isClient() {
-    return getVM().invoke(() -> {
-      return ClusterStartupRule.clientCacheRule != null;
-    });
+    return getVM().invoke("isClient", () -> ClusterStartupRule.clientCacheRule != null);
   }
 
   public boolean isLocator() {
-    return getVM().invoke(() -> {
-      return ClusterStartupRule.getLocator() != null;
-    });
+    return getVM().invoke("isLocator", () -> ClusterStartupRule.getLocator() != null);
   }
 
+  // a server can be started without a cache server, so as long as this member has no locator,
+  // it's deemed as a server
   public boolean isServer() {
-    return getVM().invoke(() -> {
-      return ClusterStartupRule.getServer() != null;
-    });
+    return getVM().invoke("isServer", () -> ClusterStartupRule.getLocator() == null);
   }
 
   public void invoke(final SerializableRunnableIF runnable) {

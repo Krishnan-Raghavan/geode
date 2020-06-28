@@ -16,6 +16,7 @@
  */
 package org.apache.geode.test.junit.rules;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -24,7 +25,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,8 +32,8 @@ import java.util.function.Consumer;
 
 import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
-import org.awaitility.Awaitility;
 import org.junit.Before;
+import org.junit.ComparisonFailure;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -42,6 +42,7 @@ import org.junit.runners.model.MultipleFailureException;
 @RunWith(JUnitParamsRunner.class)
 public class ConcurrencyRuleTest {
   private final AtomicBoolean invoked = new AtomicBoolean();
+  private final AtomicBoolean retVal = new AtomicBoolean();
   private final AtomicInteger iterations = new AtomicInteger(0);
 
   private final int stopIteration = 2;
@@ -53,6 +54,11 @@ public class ConcurrencyRuleTest {
   {
     expectedExceptionWithCause.initCause(new NullPointerException());
   }
+
+  private final Callable<Boolean> callWithEventuallyCorrectRetVal = () -> {
+    invoked.set(true);
+    return retVal.get();
+  };
 
   private final Callable<Integer> callWithRetVal = () -> {
     invoked.set(Boolean.TRUE);
@@ -382,17 +388,18 @@ public class ConcurrencyRuleTest {
 
   @Test
   @Parameters({"EXECUTE_IN_SERIES", "EXECUTE_IN_PARALLEL"})
-  public void repeatForDuration(Execution execution) {
-    Duration duration = Duration.ofMillis(200);
-    this.iterations.set(0);
+  public void repeatUntilValue_throwsIfValueIsNeverTrue(Execution execution) {
+    boolean expectedVal = true;
 
-    concurrencyRule.add(callWithRetValAndRepeatCount).repeatForDuration(duration);
-    Awaitility.await("Execution did not respect given duration").atMost(2, TimeUnit.MINUTES)
-        .until(() -> {
-          execution.execute(concurrencyRule);
-          return true;
-        });
-    assertThat(iterations.get()).isGreaterThan(1);
+    retVal.set(false);
+
+    concurrencyRule.add(callWithEventuallyCorrectRetVal)
+        .repeatUntilValue(expectedVal)
+        .repeatForDuration(Duration.ofSeconds(2));
+
+    assertThatThrownBy(() -> execution.execute(concurrencyRule))
+        .isInstanceOf(ComparisonFailure.class);
+    assertThat(invoked.get()).isTrue();
   }
 
   @Test
@@ -402,13 +409,13 @@ public class ConcurrencyRuleTest {
     final AtomicBoolean lock2 = new AtomicBoolean();
 
     concurrencyRule.add(() -> {
-      Awaitility.await().until(() -> lock2.equals(Boolean.TRUE));
+      await().until(() -> lock2.equals(Boolean.TRUE));
       lock1.set(true);
       return null;
     });
 
     concurrencyRule.add(() -> {
-      Awaitility.await().until(() -> lock1.equals(Boolean.TRUE));
+      await().until(() -> lock1.equals(Boolean.TRUE));
       lock2.set(true);
       return null;
     });
@@ -529,7 +536,7 @@ public class ConcurrencyRuleTest {
     concurrencyRule.setTimeout(Duration.ofSeconds(1));
     concurrencyRule.add(c1);
     concurrencyRule.add(c1);
-    Awaitility.await("timeout is respected").atMost(3, TimeUnit.SECONDS).until(() -> {
+    await("timeout is respected").until(() -> {
       Throwable thrown = catchThrowable(() -> execution.execute(concurrencyRule));
       assertThat(((MultipleFailureException) thrown.getCause()).getFailures()).hasSize(2)
           .hasOnlyElementsOfType(TimeoutException.class);

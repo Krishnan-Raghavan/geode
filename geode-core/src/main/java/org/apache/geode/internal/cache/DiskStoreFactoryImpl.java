@@ -14,10 +14,18 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.cache.DiskStoreAttributes.checkMinAndMaxOplogSize;
+import static org.apache.geode.internal.cache.DiskStoreAttributes.checkMinOplogSize;
+import static org.apache.geode.internal.cache.DiskStoreAttributes.checkQueueSize;
+import static org.apache.geode.internal.cache.DiskStoreAttributes.checkTimeInterval;
+import static org.apache.geode.internal.cache.DiskStoreAttributes.checkWriteBufferSize;
+import static org.apache.geode.internal.cache.DiskStoreAttributes.verifyNonNegativeDirSize;
+
 import java.io.File;
 import java.util.Arrays;
 
 import org.apache.geode.GemFireIOException;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.distributed.internal.ResourceEvent;
@@ -25,7 +33,6 @@ import org.apache.geode.internal.cache.backup.BackupService;
 import org.apache.geode.internal.cache.xmlcache.CacheCreation;
 import org.apache.geode.internal.cache.xmlcache.CacheXml;
 import org.apache.geode.internal.cache.xmlcache.DiskStoreAttributesCreation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.pdx.internal.TypeRegistry;
 
 /**
@@ -76,38 +83,43 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
     return result;
   }
 
+  @VisibleForTesting
+  public DiskStoreFactory setDiskDirSizesUnit(DiskDirSizesUnit unit) {
+    this.attrs.setDiskDirSizesUnit(unit);
+    return this;
+  }
+
+  @Override
   public DiskStoreFactory setAutoCompact(boolean autoCompact) {
     this.attrs.autoCompact = autoCompact;
     return this;
   }
 
+  @Override
   public DiskStoreFactory setAllowForceCompaction(boolean allowForceCompaction) {
     this.attrs.allowForceCompaction = allowForceCompaction;
     return this;
   }
 
+  @Override
   public DiskStoreFactory setCompactionThreshold(int compactionThreshold) {
     if (compactionThreshold < 0) {
       throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesImpl_0_HAS_TO_BE_POSITIVE_NUMBER_AND_THE_VALUE_GIVEN_1_IS_NOT_ACCEPTABLE
-              .toLocalizedString(
-                  new Object[] {CacheXml.COMPACTION_THRESHOLD, compactionThreshold}));
+          String.format("%s has to be positive number and the value given %s is not acceptable",
+              CacheXml.COMPACTION_THRESHOLD, compactionThreshold));
     } else if (compactionThreshold > 100) {
       throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesImpl_0_HAS_TO_BE_LESS_THAN_2_BUT_WAS_1
-              .toLocalizedString(
-                  new Object[] {CacheXml.COMPACTION_THRESHOLD, compactionThreshold, 100}));
+          String.format(
+              "%s has to be a number that does not exceed %s so the value given %s is not acceptable",
+              CacheXml.COMPACTION_THRESHOLD, compactionThreshold, 100));
     }
     this.attrs.compactionThreshold = compactionThreshold;
     return this;
   }
 
+  @Override
   public DiskStoreFactory setTimeInterval(long timeInterval) {
-    if (timeInterval < 0) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesFactory_TIME_INTERVAL_SPECIFIED_HAS_TO_BE_A_NONNEGATIVE_NUMBER_AND_THE_VALUE_GIVEN_0_IS_NOT_ACCEPTABLE
-              .toLocalizedString(timeInterval));
-    }
+    checkTimeInterval(timeInterval);
     this.attrs.timeInterval = timeInterval;
     return this;
   }
@@ -126,12 +138,12 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
     }
   }
 
+  @Override
   public DiskStore create(String name) {
     this.attrs.name = name;
-    // As a simple fix for 41290, only allow one DiskStore to be created
-    // at a time per cache by syncing on the cache.
     DiskStore result;
-    synchronized (this.cache) {
+    try {
+      this.cache.lockDiskStore(name);
       result = findExisting(name);
       if (result == null) {
         if (this.cache instanceof GemFireCacheImpl) {
@@ -152,6 +164,8 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
           creation.addDiskStore(result);
         }
       }
+    } finally {
+      this.cache.unlockDiskStore(name);
     }
 
     // Don't allow this disk store to be created
@@ -183,7 +197,7 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
   }
 
   private DiskStore findExisting(String name) {
-    DiskStore existing = null;
+    DiskStore existing;
     if (this.cache instanceof GemFireCacheImpl) {
       existing = this.cache.findDiskStore(name);
       if (existing != null) {
@@ -194,14 +208,16 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
         }
       }
     }
-    return existing;
+    return null;
   }
 
+  @Override
   public DiskStoreFactory setDiskDirsAndSizes(File[] diskDirs, int[] diskDirSizes) {
     if (diskDirSizes.length != diskDirs.length) {
       throw new IllegalArgumentException(
-          LocalizedStrings.AttributesFactory_NUMBER_OF_DISKSIZES_IS_0_WHICH_IS_NOT_EQUAL_TO_NUMBER_OF_DISK_DIRS_WHICH_IS_1
-              .toLocalizedString(new Object[] {diskDirSizes.length, diskDirs.length}));
+          String.format(
+              "Number of diskSizes is %s which is not equal to number of disk Dirs which is %s",
+              diskDirSizes.length, diskDirs.length));
     }
     verifyNonNegativeDirSize(diskDirSizes);
     checkIfDirectoriesExist(diskDirs);
@@ -217,31 +233,20 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
    * Checks if directories exist, if they don't then create those directories
    */
   public static void checkIfDirectoriesExist(File[] diskDirs) {
-    for (int i = 0; i < diskDirs.length; i++) {
-      if (!diskDirs[i].isDirectory()) {
-        if (!diskDirs[i].mkdirs()) {
+    for (File diskDir : diskDirs) {
+      if (!diskDir.isDirectory()) {
+        if (!diskDir.mkdirs()) {
           throw new GemFireIOException(
-              LocalizedStrings.AttributesFactory_UNABLE_TO_CREATE_DISK_STORE_DIRECTORY_0
-                  .toLocalizedString(diskDirs[i]));
+              String.format("Unable to create directory : %s",
+                  diskDir));
         }
       }
     }
   }
 
 
-  /**
-   * Verify all directory sizes are positive
-   */
-  public static void verifyNonNegativeDirSize(int[] sizes) {
-    for (int i = 0; i < sizes.length; i++) {
-      if (sizes[i] < 0) {
-        throw new IllegalArgumentException(
-            LocalizedStrings.AttributesFactory_DIR_SIZE_CANNOT_BE_NEGATIVE_0
-                .toLocalizedString(sizes[i]));
-      }
-    }
-  }
 
+  @Override
   public DiskStoreFactory setDiskDirs(File[] diskDirs) {
     checkIfDirectoriesExist(diskDirs);
     int[] diskSizes = new int[diskDirs.length];
@@ -249,17 +254,9 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
     return setDiskDirsAndSizes(diskDirs, diskSizes);
   }
 
+  @Override
   public DiskStoreFactory setMaxOplogSize(long maxOplogSize) {
-    long MAX = Long.MAX_VALUE / (1024 * 1024);
-    if (maxOplogSize > MAX) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesImpl_0_HAS_TO_BE_LESS_THAN_2_BUT_WAS_1
-              .toLocalizedString(new Object[] {"max oplog size", maxOplogSize, MAX}));
-    } else if (maxOplogSize < 0) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesFactory_MAXIMUM_OPLOG_SIZE_SPECIFIED_HAS_TO_BE_A_NONNEGATIVE_NUMBER_AND_THE_VALUE_GIVEN_0_IS_NOT_ACCEPTABLE
-              .toLocalizedString(maxOplogSize));
-    }
+    checkMinAndMaxOplogSize(maxOplogSize);
     this.attrs.maxOplogSizeInBytes = maxOplogSize * (1024 * 1024);
     return this;
   }
@@ -268,37 +265,26 @@ public class DiskStoreFactoryImpl implements DiskStoreFactory {
    * Used by unit tests
    */
   public DiskStoreFactory setMaxOplogSizeInBytes(long maxOplogSizeInBytes) {
-    if (maxOplogSizeInBytes < 0) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesFactory_MAXIMUM_OPLOG_SIZE_SPECIFIED_HAS_TO_BE_A_NONNEGATIVE_NUMBER_AND_THE_VALUE_GIVEN_0_IS_NOT_ACCEPTABLE
-              .toLocalizedString(maxOplogSizeInBytes));
-    }
+    checkMinOplogSize(maxOplogSizeInBytes);
     this.attrs.maxOplogSizeInBytes = maxOplogSizeInBytes;
     return this;
   }
 
+  @Override
   public DiskStoreFactory setQueueSize(int queueSize) {
-    if (queueSize < 0) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesFactory_QUEUE_SIZE_SPECIFIED_HAS_TO_BE_A_NONNEGATIVE_NUMBER_AND_THE_VALUE_GIVEN_0_IS_NOT_ACCEPTABLE
-              .toLocalizedString(queueSize));
-    }
+    checkQueueSize(queueSize);
     this.attrs.queueSize = queueSize;
     return this;
   }
 
+  @Override
   public DiskStoreFactory setWriteBufferSize(int writeBufferSize) {
-    if (writeBufferSize < 0) {
-      // TODO add a message for WriteBufferSize
-      throw new IllegalArgumentException(
-          LocalizedStrings.DiskWriteAttributesFactory_QUEUE_SIZE_SPECIFIED_HAS_TO_BE_A_NONNEGATIVE_NUMBER_AND_THE_VALUE_GIVEN_0_IS_NOT_ACCEPTABLE
-              .toLocalizedString(writeBufferSize));
-    }
+    checkWriteBufferSize(writeBufferSize);
     this.attrs.writeBufferSize = writeBufferSize;
     return this;
   }
 
-  // used by hyda
+  // used by hydra
   public DiskStoreAttributes getDiskStoreAttributes() {
     return this.attrs;
   }

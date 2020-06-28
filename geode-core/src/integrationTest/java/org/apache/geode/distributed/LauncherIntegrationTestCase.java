@@ -14,12 +14,16 @@
  */
 package org.apache.geode.distributed;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.lang.System.lineSeparator;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.internal.AvailablePort.SOCKET;
 import static org.apache.geode.internal.AvailablePort.isPortAvailable;
 import static org.apache.geode.internal.process.ProcessUtils.identifyPid;
 import static org.apache.geode.internal.process.ProcessUtils.isProcessAlive;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.getTimeout;
+import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertTrue;
 
@@ -36,9 +40,7 @@ import java.net.UnknownHostException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.commons.lang.StringUtils;
-import org.awaitility.Awaitility;
-import org.awaitility.core.ConditionFactory;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -46,13 +48,12 @@ import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.junit.rules.TemporaryFolder;
 import org.junit.rules.TestName;
 
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.net.SocketCreatorFactory;
 import org.apache.geode.internal.process.ProcessStreamReader.InputListener;
 import org.apache.geode.internal.process.ProcessType;
 import org.apache.geode.internal.process.lang.AvailablePid;
-import org.apache.geode.test.dunit.IgnoredException;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Abstract base class for integration tests of both {@link LocatorLauncher} and
@@ -62,6 +63,8 @@ import org.apache.geode.test.dunit.IgnoredException;
  */
 public abstract class LauncherIntegrationTestCase {
 
+  protected static final long AWAIT_MILLIS = getTimeout().toMillis() * 2;
+
   private static final int PREFERRED_FAKE_PID = 42;
 
   private static final String EXPECTED_EXCEPTION_MBEAN_NOT_REGISTERED =
@@ -69,8 +72,8 @@ public abstract class LauncherIntegrationTestCase {
 
   protected volatile int localPid;
   protected volatile int fakePid;
+
   private volatile ServerSocket socket;
-  private IgnoredException ignoredException;
 
   @Rule
   public RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
@@ -83,16 +86,14 @@ public abstract class LauncherIntegrationTestCase {
 
   @Before
   public void setUpAbstractLauncherIntegrationTestCase() throws Exception {
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + MCAST_PORT, Integer.toString(0));
-    ignoredException =
-        IgnoredException.addIgnoredException(EXPECTED_EXCEPTION_MBEAN_NOT_REGISTERED);
+    System.setProperty(GeodeGlossary.GEMFIRE_PREFIX + MCAST_PORT, Integer.toString(0));
+    addIgnoredException(EXPECTED_EXCEPTION_MBEAN_NOT_REGISTERED);
     localPid = identifyPid();
     fakePid = new AvailablePid().findAvailablePid(PREFERRED_FAKE_PID);
   }
 
   @After
   public void tearDownAbstractLauncherIntegrationTestCase() throws Exception {
-    ignoredException.remove();
     if (socket != null) {
       socket.close();
     }
@@ -101,7 +102,9 @@ public abstract class LauncherIntegrationTestCase {
   protected abstract ProcessType getProcessType();
 
   protected void assertDeletionOf(final File file) {
-    await().untilAsserted(() -> assertThat(file).doesNotExist());
+    await()
+        .atMost(AWAIT_MILLIS, MILLISECONDS)
+        .untilAsserted(() -> assertThat(file).doesNotExist());
   }
 
   protected void assertThatServerPortIsFree(final int serverPort) {
@@ -144,7 +147,7 @@ public abstract class LauncherIntegrationTestCase {
       File file = new File(getWorkingDirectory(), getProcessType().getPidFileName());
       FileWriter writer = new FileWriter(file);
       writer.write(String.valueOf(content));
-      writer.write("\n");
+      writer.write(lineSeparator());
       writer.flush();
       writer.close();
       assertTrue(file.exists());
@@ -160,10 +163,6 @@ public abstract class LauncherIntegrationTestCase {
 
   protected void givenServerPortInUse(final int serverPort) {
     givenPortInUse(serverPort);
-  }
-
-  protected ConditionFactory await() {
-    return Awaitility.await().atMost(2, MINUTES);
   }
 
   protected InputListener createExpectedListener(final String name, final String expected,
@@ -294,7 +293,8 @@ public abstract class LauncherIntegrationTestCase {
     try {
       socket = SocketCreatorFactory
           .createNonDefaultInstance(false, false, null, null, System.getProperties())
-          .createServerSocket(port, 50, bindAddress, -1);
+          .forCluster()
+          .createServerSocket(port, 50, bindAddress);
       assertThat(socket.isBound()).isTrue();
       assertThat(socket.isClosed()).isFalse();
       assertThat(isPortAvailable(port, SOCKET)).isFalse();
@@ -320,5 +320,4 @@ public abstract class LauncherIntegrationTestCase {
     assertThat(isProcessAlive(pid)).isTrue();
     return pid;
   }
-
 }

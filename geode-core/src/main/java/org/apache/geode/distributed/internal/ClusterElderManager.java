@@ -24,10 +24,8 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.distributed.DistributedSystemDisconnectedException;
 import org.apache.geode.distributed.internal.locks.ElderState;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantLock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class ClusterElderManager {
   private static final Logger logger = LogService.getLogger();
@@ -65,15 +63,14 @@ public class ClusterElderManager {
     return theMembers.stream()
         .filter(member -> member.getVmKind() != ClusterDistributionManager.ADMIN_ONLY_DM_TYPE)
         .filter(
-            member -> !clusterDistributionManager.getMembershipManager().isSurpriseMember(member))
+            member -> !clusterDistributionManager.getDistribution().isSurpriseMember(member))
         .collect(Collectors.toList());
   }
 
   public InternalDistributedMember getElderId() throws DistributedSystemDisconnectedException {
     if (clusterDistributionManager.isCloseInProgress()) {
       throw new DistributedSystemDisconnectedException(
-          LocalizedStrings.DistributionManager_NO_VALID_ELDER_WHEN_SYSTEM_IS_SHUTTING_DOWN
-              .toLocalizedString(),
+          "no valid elder when system is shutting down",
           clusterDistributionManager.getRootCause());
     }
     clusterDistributionManager.getSystem().getCancelCriterion().checkCancelInProgress(null);
@@ -85,13 +82,12 @@ public class ClusterElderManager {
     return clusterDistributionManager.getId().equals(getElderCandidate());
   }
 
-  public ElderState getElderState(boolean waitToBecomeElder) {
+  public ElderState getElderState(boolean waitToBecomeElder) throws InterruptedException {
     if (waitToBecomeElder) {
-      // This should always return true.
       waitForElder(clusterDistributionManager.getId());
     }
 
-    if (!isElder()) {
+    if (!isElder() && !waitToBecomeElder) {
       return null; // early return if this clusterDistributionManager is not the elder
     }
 
@@ -124,23 +120,16 @@ public class ClusterElderManager {
    * @return true if desiredElder is the elder; false if it is no longer a member or the local
    *         member is the elder
    */
-  public boolean waitForElder(final InternalDistributedMember desiredElder) {
+  public boolean waitForElder(final InternalDistributedMember desiredElder)
+      throws InterruptedException {
     MembershipChangeListener changeListener =
         new MembershipChangeListener();
 
     clusterDistributionManager.addMembershipListener(changeListener);
 
-    boolean interrupted = false;
     InternalDistributedMember currentElder;
 
     try {
-      if (logger.isDebugEnabled()) {
-        currentElder = getElderCandidate();
-        logger.debug(LocalizedMessage.create(
-            LocalizedStrings.DistributionManager_CHANGING_ELDER_TO_0_FROM_1,
-            new Object[] {desiredElder, currentElder}));
-      }
-
       while (true) {
         if (clusterDistributionManager.isCloseInProgress()) {
           return false;
@@ -148,6 +137,10 @@ public class ClusterElderManager {
         currentElder = getElderCandidate();
         if (desiredElder.equals(currentElder)) {
           return true;
+        }
+        if (logger.isDebugEnabled()) {
+          logger.debug("Expecting Elder to be {} but it is {}.",
+              desiredElder, currentElder);
         }
         if (!clusterDistributionManager.isCurrentMember(desiredElder)) {
           return false; // no longer present
@@ -159,18 +152,13 @@ public class ClusterElderManager {
           return false;
         }
 
-        try {
-          changeListener.waitForMembershipChange();
-        } catch (InterruptedException e) {
-          interrupted = true;
+        if (logger.isDebugEnabled()) {
+          logger.debug("Waiting for membership to change");
         }
+        changeListener.waitForMembershipChange();
       }
     } finally {
       clusterDistributionManager.removeMembershipListener(changeListener);
-
-      if (interrupted) {
-        Thread.currentThread().interrupt();
-      }
     }
   }
 

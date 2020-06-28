@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.jta;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -35,7 +36,6 @@ import javax.transaction.SystemException;
 import javax.transaction.TransactionManager;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
@@ -48,7 +48,6 @@ import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientCacheFactory;
 import org.apache.geode.cache.client.ClientRegionShortcut;
 import org.apache.geode.cache.server.CacheServer;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.TXCommitMessage;
 import org.apache.geode.internal.cache.TXId;
@@ -56,12 +55,13 @@ import org.apache.geode.internal.cache.TXManagerImpl;
 import org.apache.geode.internal.cache.TXStateProxy;
 import org.apache.geode.internal.cache.TXStateProxyImpl;
 import org.apache.geode.internal.cache.tx.ClientTXStateStub;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.dunit.rules.DistributedRestoreSystemProperties;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 
 public class ClientServerJTADUnitTest extends JUnit4CacheTestCase {
@@ -123,8 +123,8 @@ public class ClientServerJTADUnitTest extends JUnit4CacheTestCase {
     // GEODE commit apply the tx change to cache before releasing the locks held, so
     // the region could have the new value but still hold the locks.
     // Add the wait to check new JTA tx can be committed.
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
-        .atMost(30, TimeUnit.SECONDS).until(() -> ableToCommitNewTx(REGION_NAME, mgr));
+    await()
+        .until(() -> ableToCommitNewTx(REGION_NAME, mgr));
   }
 
   private boolean expectionLogged = false;
@@ -288,7 +288,7 @@ public class ClientServerJTADUnitTest extends JUnit4CacheTestCase {
 
   final String restoreSetOperationTransactionBehavior = "restoreSetOperationTransactionBehavior";
   final String RESTORE_SET_OPERATION_PROPERTY =
-      (System.currentTimeMillis() % 2 == 0 ? DistributionConfig.GEMFIRE_PREFIX : "geode.")
+      (System.currentTimeMillis() % 2 == 0 ? GeodeGlossary.GEMFIRE_PREFIX : "geode.")
           + restoreSetOperationTransactionBehavior;
 
   @Test

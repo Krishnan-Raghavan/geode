@@ -62,6 +62,7 @@ public class CustomMappingJackson2HttpMessageConverter extends MappingJackson2Ht
       return outputStream;
     }
 
+    @Override
     public long getContentLength() {
       return outputStream.size();
     }
@@ -71,6 +72,7 @@ public class CustomMappingJackson2HttpMessageConverter extends MappingJackson2Ht
       return httpOutputMessage.getHeaders();
     }
 
+    @Override
     public void flush() throws IOException {
       getHeaders().setContentLength(getContentLength());
       outputStream.writeTo(httpOutputMessage.getBody());
@@ -102,6 +104,7 @@ public class CustomMappingJackson2HttpMessageConverter extends MappingJackson2Ht
       return outputStream;
     }
 
+    @Override
     public long getContentLength() {
       return outputStream.getByteCount();
     }
@@ -111,6 +114,7 @@ public class CustomMappingJackson2HttpMessageConverter extends MappingJackson2Ht
       return httpOutputMessage.getHeaders();
     }
 
+    @Override
     public void flush() throws IOException {
       getHeaders().setContentLength(getContentLength());
     }
@@ -143,6 +147,12 @@ public class CustomMappingJackson2HttpMessageConverter extends MappingJackson2Ht
     public void write(final int byteData) throws IOException {
       outputStream.write(byteData);
       byteCount.incrementAndGet();
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+      outputStream.write(b, off, len);
+      byteCount.addAndGet(len);
     }
   }
 

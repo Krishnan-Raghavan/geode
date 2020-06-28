@@ -27,8 +27,8 @@ import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.control.ResourceManagerStats;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.monitoring.executor.AbstractExecutor;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 
 public class ThreadsMonitoringProcess extends TimerTask {
@@ -60,19 +60,24 @@ public class ThreadsMonitoringProcess extends TimerTask {
       if (delta >= this.timeLimit) {
         isStuck = true;
         numOfStuck++;
-        logger.warn("Thread <{}> is stuck", entry1.getKey());
+        logger.warn("Thread {} (0x{}) is stuck", entry1.getKey(),
+            Long.toHexString(entry1.getKey()));
         entry1.getValue().handleExpiry(delta);
       }
     }
     if (!isStuck) {
       if (this.resourceManagerStats != null)
         this.resourceManagerStats.setNumThreadStuck(0);
-      logger.trace("There are no stuck threads in the system\n");
+      logger.trace("There are no stuck threads in the system");
       return false;
     } else {
       if (this.resourceManagerStats != null)
         this.resourceManagerStats.setNumThreadStuck(numOfStuck);
-      logger.warn("There are <{}> stuck threads in thia node", numOfStuck);
+      if (numOfStuck != 1) {
+        logger.warn("There are {} stuck threads in this node", numOfStuck);
+      } else {
+        logger.warn("There is 1 stuck thread in this node");
+      }
       return true;
     }
   }
@@ -88,7 +93,7 @@ public class ThreadsMonitoringProcess extends TimerTask {
         InternalCache cache = distributionManager.getExistingCache();
         this.resourceManagerStats = cache.getInternalResourceManager().getStats();
       } catch (CacheClosedException e1) {
-        logger.trace("No cache exists yet - process will run on next iteration\n");
+        logger.trace("No cache exists yet - process will run on next iteration");
       }
     } else
       mapValidation();

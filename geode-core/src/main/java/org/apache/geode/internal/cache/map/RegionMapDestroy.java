@@ -16,6 +16,8 @@ package org.apache.geode.internal.cache.map;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.InternalGemFireError;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.CacheWriterException;
 import org.apache.geode.cache.EntryNotFoundException;
 import org.apache.geode.cache.TimeoutException;
@@ -30,10 +32,10 @@ import org.apache.geode.internal.cache.Token;
 import org.apache.geode.internal.cache.versions.ConcurrentCacheModificationException;
 import org.apache.geode.internal.cache.versions.VersionStamp;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.sequencelog.EntryLogger;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * RegionMap Destroy operation.
@@ -45,6 +47,7 @@ public class RegionMapDestroy {
 
   private static final Logger logger = LogService.getLogger();
 
+  @MutableForTesting
   static Runnable testHookRunnableForConcurrentOperation;
 
   private final InternalRegion internalRegion;
@@ -85,7 +88,7 @@ public class RegionMapDestroy {
       throws CacheWriterException, EntryNotFoundException, TimeoutException {
 
     if (internalRegion == null) {
-      Assert.assertTrue(false, "The internalRegion for RegionMap " + this // "fix" for bug 32440
+      throw new InternalGemFireError("The internalRegion for RegionMap " + this
           + " is null for event " + event);
     }
 
@@ -105,8 +108,8 @@ public class RegionMapDestroy {
     }
 
     cacheModificationLock.lockForCacheModification(internalRegion, event);
+    final boolean locked = internalRegion.lockWhenRegionIsInitializing();
     try {
-
       while (retry) {
         retry = false;
         opCompleted = false;
@@ -172,6 +175,9 @@ public class RegionMapDestroy {
       } // retry loop
 
     } finally {
+      if (locked) {
+        internalRegion.unlockWhenRegionIsInitializing();
+      }
       cacheModificationLock.releaseCacheModificationLock(internalRegion, event);
     }
     return false;

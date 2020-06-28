@@ -17,16 +17,15 @@ package org.apache.geode.internal.jta;
 
 import static org.apache.geode.cache.RegionShortcut.PARTITION;
 import static org.apache.geode.cache.client.ClientRegionShortcut.LOCAL;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.VM.getHostName;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.junit.Assert.assertEquals;
 
 import java.io.Serializable;
-import java.util.concurrent.TimeUnit;
 
 import javax.transaction.Status;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -49,7 +48,7 @@ import org.apache.geode.internal.cache.TXManagerImpl;
 import org.apache.geode.internal.cache.TXStateProxyImpl;
 import org.apache.geode.internal.cache.tier.sockets.CacheServerTestUtil;
 import org.apache.geode.internal.cache.tx.ClientTXStateStub;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.rules.CacheRule;
 import org.apache.geode.test.dunit.rules.ClientCacheRule;
@@ -283,7 +282,7 @@ public class ClientServerJTAFailoverDistributedTest implements Serializable {
       region = cache.getRegion(regionName);
       txManager = (TXManagerImpl) cache.getCacheTransactionManager();
 
-      Awaitility.await().atMost(30, TimeUnit.SECONDS).pollInterval(10, TimeUnit.MILLISECONDS)
+      await()
           .until(() -> txManager.isHostedTXStatesEmpty());
     }
     txManager.begin();

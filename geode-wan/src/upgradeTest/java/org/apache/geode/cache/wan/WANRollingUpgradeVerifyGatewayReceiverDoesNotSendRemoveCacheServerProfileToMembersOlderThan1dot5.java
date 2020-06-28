@@ -14,11 +14,9 @@
  */
 package org.apache.geode.cache.wan;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertTrue;
 
-import java.util.concurrent.TimeUnit;
-
-import org.awaitility.Awaitility;
 import org.junit.Test;
 
 import org.apache.geode.distributed.internal.InternalLocator;
@@ -28,7 +26,7 @@ import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.version.VersionManager;
 
 public class WANRollingUpgradeVerifyGatewayReceiverDoesNotSendRemoveCacheServerProfileToMembersOlderThan1dot5
     extends WANRollingUpgradeDUnitTest {
@@ -42,7 +40,7 @@ public class WANRollingUpgradeVerifyGatewayReceiverDoesNotSendRemoveCacheServerP
 
     // Start locator
     final int port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    DistributedTestUtils.deleteLocatorStateFile(port);
+    oldLocator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(port));
     final String locators = NetworkUtils.getServerHostName(host) + "[" + port + "]";
     oldLocator.invoke(() -> startLocator(port, 0, locators, ""));
 
@@ -55,7 +53,7 @@ public class WANRollingUpgradeVerifyGatewayReceiverDoesNotSendRemoveCacheServerP
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));

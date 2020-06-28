@@ -14,7 +14,10 @@
  */
 package org.apache.geode.cache30;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.ROLES;
+import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
+import static org.apache.geode.test.util.ResourceUtils.createTempFileFromResource;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -131,7 +134,6 @@ import org.apache.geode.internal.cache.xmlcache.RegionAttributesCreation;
 import org.apache.geode.internal.cache.xmlcache.RegionCreation;
 import org.apache.geode.internal.cache.xmlcache.ResourceManagerCreation;
 import org.apache.geode.internal.cache.xmlcache.SerializerCreation;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
@@ -139,7 +141,6 @@ import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.util.test.TestUtil;
 
 /**
  * Tests 7.0 cache.xml feature : Fixed Partitioning.
@@ -197,6 +198,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     assertEquals(0, cp.getServers().size());
     assertEquals(createINSA(ALIAS2, 3777), cp.getLocators().get(0));
     assertEquals(PoolFactory.DEFAULT_FREE_CONNECTION_TIMEOUT, cp.getFreeConnectionTimeout());
+    assertEquals(PoolFactory.DEFAULT_SERVER_CONNECTION_TIMEOUT, cp.getServerConnectionTimeout());
     assertEquals(PoolFactory.DEFAULT_LOAD_CONDITIONING_INTERVAL, cp.getLoadConditioningInterval());
     assertEquals(PoolFactory.DEFAULT_SOCKET_BUFFER_SIZE, cp.getSocketBufferSize());
     assertEquals(PoolFactory.DEFAULT_THREAD_LOCAL_CONNECTIONS, cp.getThreadLocalConnections());
@@ -265,7 +267,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     CacheCreation cache = new CacheCreation();
     PoolFactory f = cache.createPoolFactory();
     f.addServer(ALIAS2, 3777).addServer(ALIAS1, 3888);
-    f.setFreeConnectionTimeout(12345).setLoadConditioningInterval(12345).setSocketBufferSize(12345)
+    f.setFreeConnectionTimeout(12345).setServerConnectionTimeout(111)
+        .setLoadConditioningInterval(12345).setSocketBufferSize(12345)
         .setThreadLocalConnections(true).setPRSingleHopEnabled(true).setReadTimeout(12345)
         .setMinConnections(12346).setMaxConnections(12347).setRetryAttempts(12348)
         .setIdleTimeout(12349).setPingInterval(12350).setStatisticInterval(12351)
@@ -279,7 +282,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     attrs.setPoolName("mypool");
     attrs.setDataPolicy(DataPolicy.EMPTY); // required for multiuser mode
     cache.createVMRegion("rootNORMAL", attrs);
-    IgnoredException.addIgnoredException("Connection refused: connect");
+    addIgnoredException("Connection refused: connect");
     testXml(cache);
     Cache c = getCache();
     assertNotNull(c);
@@ -293,6 +296,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     assertEquals(createINSA(ALIAS2, 3777), cp.getServers().get(0));
     assertEquals(createINSA(ALIAS1, 3888), cp.getServers().get(1));
     assertEquals(12345, cp.getFreeConnectionTimeout());
+    assertEquals(111, cp.getServerConnectionTimeout());
     assertEquals(12345, cp.getLoadConditioningInterval());
     assertEquals(12345, cp.getSocketBufferSize());
     assertEquals(true, cp.getThreadLocalConnections());
@@ -329,7 +333,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       fail("Expected IllegalStateException to be thrown");
     } catch (IllegalStateException e) {
       assertTrue(e.getMessage().contains(
-          LocalizedStrings.DiskStore_IS_USED_IN_NONPERSISTENT_REGION.toLocalizedString()));
+          "Only regions with persistence or overflow to disk can specify DiskStore"));
     }
 
     EvictionAttributes ea =
@@ -350,8 +354,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       fail("Expected IllegalStateException to be thrown");
     } catch (IllegalStateException e) {
       assertTrue(e.getMessage()
-          .contains(LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString("setDiskDirs or setDiskWriteAttributes", getUniqueName())));
+          .contains(String.format("Deprecated API %s cannot be used with DiskStore %s",
+              "setDiskDirs or setDiskWriteAttributes", getUniqueName())));
     }
 
     try {
@@ -362,8 +366,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       fail("Expected IllegalStateException to be thrown");
     } catch (IllegalStateException e) {
       assertTrue(e.getMessage()
-          .contains(LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString("setDiskDirs", getUniqueName())));
+          .contains(String.format("Deprecated API %s cannot be used with DiskStore %s",
+              "setDiskDirs", getUniqueName())));
     }
 
     testXml(cache);
@@ -482,8 +486,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       csc.setOverflowDirectory("overFlow");
     } catch (IllegalStateException e) {
       assertTrue(e.getMessage()
-          .contains(LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString("setOverflowDirectory", getUniqueName())));
+          .contains(String.format("Deprecated API %s cannot be used with DiskStore %s",
+              "setOverflowDirectory", getUniqueName())));
     }
 
     cache.getLogger().config("Eviction disk store : " + csc.getDiskStoreName());
@@ -569,8 +573,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
     setXmlFile(findFile("ewtest.xml"));
 
-    String regionName_west = "orders/west";
-    String regionName_east = "orders/east";
+    String regionName_west = "orders" + SEPARATOR + "west";
+    String regionName_east = "orders" + SEPARATOR + "east";
 
     Cache cache = getCache();
 
@@ -1472,8 +1476,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     CacheTransactionManagerCreation txMgrCreation = new CacheTransactionManagerCreation();
     txMgrCreation.setWriter(new TestTransactionWriter());
     cc.addCacheTransactionManagerCreation(txMgrCreation);
-    IgnoredException expectedException = IgnoredException
-        .addIgnoredException(LocalizedStrings.TXManager_NO_WRITER_ON_CLIENT.toLocalizedString());
+    IgnoredException expectedException =
+        addIgnoredException("A TransactionWriter cannot be registered on a client");
     try {
       testXml(cc);
       fail("expected exception not thrown");
@@ -1484,6 +1488,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   }
 
   public static class TestTXListener extends TransactionListenerAdapter implements Declarable {
+    @Override
     public void init(Properties props) {}
 
     @Override
@@ -1668,9 +1673,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     rmc.setEvictionHeapPercentage(high);
     rmc.setCriticalHeapPercentage(low);
     cache.setResourceManagerCreation(rmc);
-    IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.MemoryMonitor_EVICTION_PERCENTAGE_LTE_CRITICAL_PERCENTAGE
-            .toLocalizedString());
+    IgnoredException expectedException = addIgnoredException(
+        "Eviction percentage must be less than the critical percentage.");
     try {
       testXml(cache);
       assertTrue(false);
@@ -1719,15 +1723,19 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
   // A bunch of classes for use in testing the serialization schtuff
   public static class DS1 implements DataSerializable {
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {}
+    @Override
+    public void fromData(DataInput in) {}
 
-    public void toData(DataOutput out) throws IOException {}
+    @Override
+    public void toData(DataOutput out) {}
   };
 
   public static class DS2 implements DataSerializable {
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {}
+    @Override
+    public void fromData(DataInput in) {}
 
-    public void toData(DataOutput out) throws IOException {}
+    @Override
+    public void toData(DataOutput out) {}
   };
 
   public static class NotDataSerializable implements Serializable {
@@ -1737,7 +1745,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     public GoodSerializer() {}
 
     @Override
-    public Object fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public Object fromData(DataInput in) {
       return null;
     }
 
@@ -1752,14 +1760,14 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     }
 
     @Override
-    public boolean toData(Object o, DataOutput out) throws IOException {
+    public boolean toData(Object o, DataOutput out) {
       return false;
     }
   }
 
   public static class BadSerializer extends DataSerializer {
     @Override
-    public Object fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public Object fromData(DataInput in) {
       return null;
     }
 
@@ -1774,7 +1782,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     }
 
     @Override
-    public boolean toData(Object o, DataOutput out) throws IOException {
+    public boolean toData(Object o, DataOutput out) {
       return false;
     }
   }
@@ -1803,7 +1811,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     cc.setSerializerCreation(sc);
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       testXml(cc);
       fail("Instantiator should not have registered due to bad class.");
@@ -1818,7 +1826,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     cc.setSerializerCreation(sc);
 
     IgnoredException expectedException1 =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       testXml(cc);
       fail("Serializer should not have registered due to bad class.");
@@ -2087,9 +2095,9 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     Cache c = getCache();
     assertNotNull(c);
 
-    Region cust = c.getRegion(Region.SEPARATOR + "Customer");
+    Region cust = c.getRegion(SEPARATOR + "Customer");
     assertNotNull(cust);
-    Region order = c.getRegion(Region.SEPARATOR + "Order");
+    Region order = c.getRegion(SEPARATOR + "Order");
     assertNotNull(order);
     String coLocatedRegion = order.getAttributes().getPartitionAttributes().getColocatedWith();
     assertEquals("Customer", coLocatedRegion);
@@ -2101,9 +2109,9 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("coLocation.xml"));
     Cache c = getCache();
     assertNotNull(c);
-    Region cust = c.getRegion(Region.SEPARATOR + "Customer");
+    Region cust = c.getRegion(SEPARATOR + "Customer");
     assertNotNull(cust);
-    Region order = c.getRegion(Region.SEPARATOR + "Order");
+    Region order = c.getRegion(SEPARATOR + "Order");
     assertNotNull(order);
 
     assertTrue(cust.getAttributes().getPartitionAttributes().getColocatedWith() == null);
@@ -2381,9 +2389,9 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     RegionAttributesCreation attrs = new RegionAttributesCreation(cache);
     attrs.setPoolName("mypool");
     cache.createVMRegion("rootNORMAL", attrs);
-    IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.AbstractRegion_THE_CONNECTION_POOL_0_HAS_NOT_BEEN_CREATED
-            .toLocalizedString("mypool"));
+    IgnoredException expectedException = addIgnoredException(
+        String.format("The connection pool %s has not been created",
+            "mypool"));
     try {
       testXml(cache);
       fail("expected IllegalStateException");
@@ -2402,8 +2410,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       // now make sure declarative cache can't create the same pool
       CacheCreation cache = new CacheCreation();
       cache.createPoolFactory().addLocator(ALIAS2, 12345).create("mypool");
-      IgnoredException expectedException = IgnoredException.addIgnoredException(
-          LocalizedStrings.PoolManagerImpl_POOL_NAMED_0_ALREADY_EXISTS.toLocalizedString("mypool"));
+      IgnoredException expectedException = addIgnoredException(
+          String.format("A pool named %s already exists", "mypool"));
       try {
         testXml(cache);
         fail("expected IllegalStateException");
@@ -2418,14 +2426,15 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
   @Test
   public void testDynamicRegionFactoryConnectionPool() throws Exception, IOException {
-    IgnoredException.addIgnoredException("Connection reset");
-    IgnoredException.addIgnoredException("SocketTimeoutException");
-    IgnoredException.addIgnoredException("ServerConnectivityException");
-    IgnoredException.addIgnoredException("Socket Closed");
+    addIgnoredException("Connection reset");
+    addIgnoredException("SocketTimeoutException");
+    addIgnoredException("ServerConnectivityException");
+    addIgnoredException("Socket Closed");
     getSystem();
     VM vm0 = Host.getHost(0).getVM(0);
     final int port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
     vm0.invoke(new SerializableCallable("Create cache server") {
+      @Override
       public Object call() throws IOException {
         DynamicRegionFactory.get().open();
         Cache cache = getCache();
@@ -2841,7 +2850,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
    * leaving the functionality for future comparisons (by hand of course).
    */
   @Test
-  public void testPartitionedRegionInstantiation() throws Exception {
+  public void testPartitionedRegionInstantiation() {
     CacheCreation cache = new CacheCreation();
     RegionAttributesCreation attrs = new RegionAttributesCreation(cache);
 
@@ -3047,8 +3056,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   @Override
   public Properties getDistributedSystemProperties() {
     Properties props = super.getDistributedSystemProperties();
-    if (this.xmlProps != null) {
-      for (Iterator iter = this.xmlProps.entrySet().iterator(); iter.hasNext();) {
+    if (xmlProps != null) {
+      for (Iterator iter = xmlProps.entrySet().iterator(); iter.hasNext();) {
         Map.Entry entry = (Map.Entry) iter.next();
         String key = (String) entry.getKey();
         String value = (String) entry.getValue();
@@ -3099,13 +3108,13 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
       // will not think the a required role is missing
       Properties config = new Properties();
       config.setProperty(ROLES, MY_ROLES);
-      this.xmlProps = config;
+      xmlProps = config;
     }
     DistributedRegion.ignoreReconnect = true;
     try {
       testXml(cache);
     } finally {
-      this.xmlProps = null;
+      xmlProps = null;
       try {
         preTearDown();
       } finally {
@@ -3190,7 +3199,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     factory.setEvictionAttributes(ev);
     // RegionAttributes atts = factory.create();
     createRegion(name, factory.create());
-    finishCacheXml(this.temporaryFolder.getRoot(), getUniqueName(), getUseSchema(),
+    finishCacheXml(temporaryFolder.getRoot(), getUniqueName(), getUseSchema(),
         getGemFireVersion());
     Region r = getRootRegion().getSubregion(name);
 
@@ -3342,9 +3351,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   public void testUnknownNamedAttributes() throws Exception {
     setXmlFile(findFile("unknownNamedAttributes.xml"));
 
-    IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.RegionAttributesCreation_CANNOT_REFERENCE_NONEXISTING_REGION_ATTRIBUTES_NAMED_0
-            .toLocalizedString());
+    IgnoredException expectedException = addIgnoredException(
+        "Cannot reference non-existing region attributes named");
     try {
       getCache();
       fail("Should have thrown an IllegalStateException");
@@ -3378,8 +3386,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
     setXmlFile(findFile("sameRootRegion.xml"));
 
-    IgnoredException.addIgnoredException("While reading Cache XML file");
-    IgnoredException.addIgnoredException("org.apache.geode.cache.RegionExistsException");
+    addIgnoredException("While reading Cache XML file");
+    addIgnoredException("org.apache.geode.cache.RegionExistsException");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -3404,7 +3412,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   public void testCreateSameSubregionTwice() throws Exception {
     CacheCreation cache = new CacheCreation();
     RegionAttributesCreation attrs = new RegionAttributesCreation(cache);
-    String name = this.getUniqueName();
+    String name = getUniqueName();
 
     Region root = cache.createRegion("root", attrs);
 
@@ -3420,8 +3428,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
     setXmlFile(findFile("sameSubregion.xml"));
 
-    IgnoredException.addIgnoredException("While reading Cache XML file");
-    IgnoredException.addIgnoredException("org.apache.geode.cache.RegionExistsException");
+    addIgnoredException("While reading Cache XML file");
+    addIgnoredException("org.apache.geode.cache.RegionExistsException");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -3445,11 +3453,10 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   public InputStream generate(CacheCreation creation) {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
-    final boolean useSchema = getUseSchema();
     final String version = getGemFireVersion();
 
     PrintWriter pw = new PrintWriter(new OutputStreamWriter(baos), true);
-    CacheXmlGenerator.generate(creation, pw, useSchema, version);
+    CacheXmlGenerator.generate(creation, pw, getUseSchema(), version);
     pw.close();
 
     byte[] bytes = baos.toByteArray();
@@ -3785,7 +3792,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   }
 
   /**
-   * Tests declarative bridge servers
+   * Tests declarative cache servers
    *
    * @since GemFire 4.0
    */
@@ -3867,17 +3874,17 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
    * Tests creating a cache with a non-existent XML file
    */
   @Test
-  public void testNonExistentFile() throws Exception {
+  public void testNonExistentFile() {
     // System.out.println("testNonExistentFile - start: " + System.currentTimeMillis());
-    File nonExistent = new File(this.getName() + ".xml");
+    File nonExistent = new File(getName() + ".xml");
     nonExistent.delete();
     // System.out.println("testNonExistentFile - deleted: " + System.currentTimeMillis());
     setXmlFile(nonExistent);
     // System.out.println("testNonExistentFile - set: " + System.currentTimeMillis());
 
-    IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.GemFireCache_DECLARATIVE_CACHE_XML_FILERESOURCE_0_DOES_NOT_EXIST
-            .toLocalizedString(nonExistent.getPath()));
+    IgnoredException expectedException = addIgnoredException(
+        String.format("Declarative Cache XML file/resource %s does not exist.",
+            nonExistent.getPath()));
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -3894,14 +3901,14 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
    * Tests creating a cache with a XML file that is a directory
    */
   @Test
-  public void testXmlFileIsDirectory() throws Exception {
-    File dir = new File(this.getName() + "dir");
+  public void testXmlFileIsDirectory() {
+    File dir = new File(getName() + "dir");
     dir.mkdirs();
     dir.deleteOnExit();
     setXmlFile(dir);
 
-    IgnoredException expectedException = IgnoredException.addIgnoredException(
-        LocalizedStrings.GemFireCache_DECLARATIVE_XML_FILE_0_IS_NOT_A_FILE.toLocalizedString(dir));
+    IgnoredException expectedException = addIgnoredException(
+        String.format("Declarative XML file %s is not a file.", dir));
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4077,7 +4084,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("malformed.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4097,7 +4104,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("badInt.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4120,7 +4127,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("badFloat.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4140,7 +4147,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("badScope.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4160,7 +4167,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("badKeyConstraintClass.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4191,7 +4198,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("callbackWithException.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4214,7 +4221,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     setXmlFile(findFile("loaderNotLoader.xml"));
 
     IgnoredException expectedException =
-        IgnoredException.addIgnoredException("While reading Cache XML file");
+        addIgnoredException("While reading Cache XML file");
     try {
       getCache();
       fail("Should have thrown a CacheXmlException");
@@ -4287,8 +4294,8 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     CacheCreation cache = new CacheCreation();
 
     RegionAttributesCreation attrs = new RegionAttributesCreation(cache);
-    File[] dirs = new File[] {new File(this.getUniqueName() + "-dir1"),
-        new File(this.getUniqueName() + "-dir2")};
+    File[] dirs = new File[] {new File(getUniqueName() + "-dir1"),
+        new File(getUniqueName() + "-dir2")};
     for (int i = 0; i < dirs.length; i++) {
       dirs[i].mkdirs();
       dirs[i].deleteOnExit();
@@ -4360,7 +4367,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
   @Ignore // TODO: why is testExampleCacheXmlFile @Ignored?
   public void testExampleCacheXmlFile() throws Exception {
     // Check for old example files
-    String dirName = "examples_" + this.getGemFireVersion();
+    String dirName = "examples_" + getGemFireVersion();
     File dir = null;
     try {
       dir = findFile(dirName);
@@ -4385,18 +4392,18 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
     } else {
 
-      File example = new File(TestUtil.getResourcePath(getClass(),
-          "/org/apache/geode/cache/doc-files/example-cache.xml"));
+      File example = new File(createTempFileFromResource(getClass(),
+          "/org/apache/geode/cache/doc-files/example-cache.xml").getAbsolutePath());
       FileInputStream fis = new FileInputStream(example);
       CacheXmlParser.parse(fis);
 
-      File example2 = new File(TestUtil.getResourcePath(getClass(),
-          "/org/apache/geode/cache/doc-files/example2-cache.xml"));
+      File example2 = new File(createTempFileFromResource(getClass(),
+          "/org/apache/geode/cache/doc-files/example2-cache.xml").getAbsolutePath());
       fis = new FileInputStream(example2);
       CacheXmlParser.parse(fis);
 
-      File example3 = new File(TestUtil.getResourcePath(getClass(),
-          "/org/apache/geode/cache/doc-files/example3-cache.xml"));
+      File example3 = new File(createTempFileFromResource(getClass(),
+          "/org/apache/geode/cache/doc-files/example3-cache.xml").getAbsolutePath());
       fis = new FileInputStream(example3);
       CacheXmlParser.parse(fis);
     }
@@ -4423,11 +4430,11 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
 
     @Override
     public Properties getConfig() {
-      if (null == this.props) {
-        this.props = new Properties();
+      if (null == props) {
+        props = new Properties();
       }
-      this.props.setProperty("EvictionObjectSizerColor", "blue");
-      return this.props;
+      props.setProperty("EvictionObjectSizerColor", "blue");
+      return props;
     }
 
     @Override
@@ -4444,7 +4451,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
         return false;
       }
       EvictionObjectSizer other = (EvictionObjectSizer) obj;
-      if (!this.props.equals(other.props)) {
+      if (!props.equals(other.props)) {
         return false;
       }
       return true;
@@ -4559,7 +4566,7 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
      * Creates a new loader and initializes its properties
      */
     public CacheLoaderWithDeclarables() {
-      this.props = new Properties();
+      props = new Properties();
       props.put("KEY1", "VALUE1");
       props.put("KEY2", new TestDeclarable());
     }
@@ -4568,18 +4575,21 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
      * Returns whether or not this {@code Declarable} was initialized.
      */
     public boolean isInitialized() {
-      return this.initialized;
+      return initialized;
     }
 
+    @Override
     public void init(Properties props) {
-      this.initialized = true;
+      initialized = true;
       assertEquals(this.props, props);
     }
 
+    @Override
     public Properties getConfig() {
-      return this.props;
+      return props;
     }
 
+    @Override
     public Object load(LoaderHelper helper) throws CacheLoaderException {
 
       fail("Loader shouldn't be invoked");
@@ -4589,18 +4599,20 @@ public abstract class CacheXml66DUnitTest extends CacheXmlTestCase {
     public boolean equals(Object o) {
       if (o instanceof CacheLoaderWithDeclarables) {
         CacheLoaderWithDeclarables other = (CacheLoaderWithDeclarables) o;
-        return this.props.equals(other.props);
+        return props.equals(other.props);
 
       } else {
         return false;
       }
     }
 
+    @Override
     public void close() {}
 
   }
 
   public static class TestDeclarable implements Declarable {
+    @Override
     public void init(Properties props) {}
 
     public boolean equals(Object o) {

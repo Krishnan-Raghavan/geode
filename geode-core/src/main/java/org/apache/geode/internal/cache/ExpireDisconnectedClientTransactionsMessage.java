@@ -25,7 +25,9 @@ import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.HighPriorityDistributionMessage;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 
 public class ExpireDisconnectedClientTransactionsMessage
     extends HighPriorityDistributionMessage {
@@ -45,7 +47,7 @@ public class ExpireDisconnectedClientTransactionsMessage
     Set newVersionRecipients = new HashSet();
     for (InternalDistributedMember recipient : recipients) {
       // to geode 1.7.0 and later version servers
-      if (recipient.getVersionObject().compareTo(Version.GEODE_170) >= 0) {
+      if (recipient.getVersionObject().isNotOlderThan(Version.GEODE_1_7_0)) {
         newVersionRecipients.add(recipient);
       }
     }
@@ -54,15 +56,18 @@ public class ExpireDisconnectedClientTransactionsMessage
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     DataSerializer.writeHashSet((HashSet<TXId>) this.txIds, out);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     this.txIds = DataSerializer.readHashSet(in);
   }
 
+  @Override
   public int getDSFID() {
     return EXPIRE_CLIENT_TRANSACTIONS;
   }
@@ -73,7 +78,7 @@ public class ExpireDisconnectedClientTransactionsMessage
     InternalDistributedMember sender = getSender();
     if (cache != null) {
       TXManagerImpl mgr = cache.getTXMgr();
-      if (sender.getVersionObject().compareTo(Version.GEODE_170) >= 0) {
+      if (sender.getVersionObject().isNotOlderThan(Version.GEODE_1_7_0)) {
         // schedule to expire disconnected client transaction.
         mgr.expireDisconnectedClientTransactions(this.txIds, false);
       } else {

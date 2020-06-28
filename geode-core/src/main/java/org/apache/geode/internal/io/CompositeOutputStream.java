@@ -101,6 +101,7 @@ public class CompositeOutputStream extends OutputStream implements Iterable<Outp
     return this.streams.size();
   }
 
+  @Override
   public Iterator<OutputStream> iterator() {
     return this.streams.iterator();
   }
@@ -116,10 +117,19 @@ public class CompositeOutputStream extends OutputStream implements Iterable<Outp
    * @param b the <code>byte</code>.
    * @exception IOException if an I/O error occurs.
    */
+  @Override
   public void write(int b) throws IOException {
     Set<OutputStream> outputStreams = this.streams;
     for (OutputStream out : outputStreams) {
       out.write(b);
+    }
+  }
+
+  @Override
+  public void write(byte[] b, int off, int len) throws IOException {
+    Set<OutputStream> outputStreams = this.streams;
+    for (OutputStream out : outputStreams) {
+      out.write(b, off, len);
     }
   }
 
@@ -131,8 +141,9 @@ public class CompositeOutputStream extends OutputStream implements Iterable<Outp
    * method of its underlying output stream.
    *
    * @exception IOException if an I/O error occurs.
-   * @see java.io.FilterOutputStream#out
+   * @see OutputStream#flush()
    */
+  @Override
   public void flush() throws IOException {
     Set<OutputStream> outputStreams = this.streams;
     for (OutputStream out : outputStreams) {
@@ -147,9 +158,9 @@ public class CompositeOutputStream extends OutputStream implements Iterable<Outp
    * method, and then calls the <code>close</code> method of its underlying output stream.
    *
    * @exception IOException if an I/O error occurs.
-   * @see java.io.FilterOutputStream#flush()
-   * @see java.io.FilterOutputStream#out
+   * @see OutputStream#flush()
    */
+  @Override
   public void close() throws IOException {
     Set<OutputStream> outputStreams = this.streams;
     for (OutputStream out : outputStreams) {

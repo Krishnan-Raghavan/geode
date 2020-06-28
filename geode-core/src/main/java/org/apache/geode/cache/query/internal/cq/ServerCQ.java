@@ -54,9 +54,22 @@ public interface ServerCQ extends InternalCqQuery {
   void removeFromCqResultKeys(Object key, boolean isTokenMode);
 
   /**
+   * Invalidates the internal cache containing the keys that are part of the CQ query results.
+   * Once this method finishes, the CQ engine will not apply the internal optimization for already
+   * seen keys anymore, not until the cache is manually rebuilt.
+   */
+  void invalidateCqResultKeys();
+
+  /**
    * Sets the CQ Results key cache state as initialized.
    */
   void setCqResultsCacheInitialized();
+
+  /**
+   *
+   * @return true if the CQ Results key cache is initialized.
+   */
+  boolean isCqResultsCacheInitialized();
 
   /**
    * Returns true if old value is required for query processing.
@@ -69,6 +82,7 @@ public interface ServerCQ extends InternalCqQuery {
    *
    * @param sendRequestToServer true to send the request to server.
    */
+  @Override
   void close(boolean sendRequestToServer) throws CqClosedException, CqException;
 
 
@@ -76,5 +90,6 @@ public interface ServerCQ extends InternalCqQuery {
 
   ClientProxyMembershipID getClientProxyId();
 
+  @Override
   void stop() throws CqClosedException, CqException;
 }

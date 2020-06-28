@@ -15,6 +15,7 @@
 package org.apache.geode.experimental.driver;
 
 import static org.apache.geode.internal.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -31,7 +32,7 @@ import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.distributed.Locator;
-import org.apache.geode.security.SimpleTestSecurityManager;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 
 @Category({ClientServerTest.class})
@@ -39,7 +40,7 @@ public class AuthenticationTest {
   @Rule
   public RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
 
-  private static final String TEST_USERNAME = "cluster";
+  private static final String TEST_USERNAME = "";
   private static final String TEST_PASSWORD = TEST_USERNAME;
   private Locator locator;
   private Cache cache;
@@ -53,7 +54,7 @@ public class AuthenticationTest {
     // Create a cache
     CacheFactory cf = new CacheFactory();
     cf.set(ConfigurationProperties.MCAST_PORT, "0");
-    cf.setSecurityManager(new SimpleTestSecurityManager());
+    cf.setSecurityManager(new SimpleSecurityManager());
     cache = cf.create();
 
     // Start a locator
@@ -89,4 +90,16 @@ public class AuthenticationTest {
         .setPassword(TEST_PASSWORD).create();
     assertTrue(driver.isConnected());
   }
+
+  @Test
+  public void driverWithBadPasswordIsRejected() throws Exception {
+    CacheServer server = cache.addCacheServer();
+    server.setPort(0);
+    server.start();
+    DriverFactory factory =
+        new DriverFactory().addLocator("localhost", locatorPort).setUsername(TEST_USERNAME)
+            .setPassword("my my my");
+    assertThatThrownBy(() -> factory.create()).isInstanceOf(IOException.class);
+  }
+
 }

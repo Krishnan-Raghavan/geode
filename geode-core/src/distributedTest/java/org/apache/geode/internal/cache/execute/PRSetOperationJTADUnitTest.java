@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.execute;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -42,16 +43,16 @@ import org.apache.geode.cache.execute.Function;
 import org.apache.geode.cache.execute.FunctionContext;
 import org.apache.geode.cache.execute.FunctionService;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.TXManagerImpl;
 import org.apache.geode.internal.cache.TXStateProxyImpl;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.dunit.rules.DistributedRestoreSystemProperties;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 
 @RunWith(JUnitParamsRunner.class)
@@ -143,7 +144,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
   }
 
   private void loadRegion() {
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     testData.forEach((k, v) -> region.put(k, v));
   }
 
@@ -172,7 +173,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
       throws Exception {
     Context ctx = basicGetCache().getJNDIContext();
     UserTransaction userTX = startUserTransaction(ctx);
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     try {
       userTX.begin();
       Collection<Long> set = region.keySet();
@@ -190,7 +191,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
       throws Exception {
     Context ctx = basicGetCache().getJNDIContext();
     UserTransaction userTX = startUserTransaction(ctx);
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     try {
       userTX.begin();
       Collection<String> set = region.values();
@@ -208,7 +209,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
       throws Exception {
     Context ctx = basicGetCache().getJNDIContext();
     UserTransaction userTX = startUserTransaction(ctx);
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     try {
       userTX.begin();
       Collection<Map.Entry<Long, String>> set = region.entrySet();
@@ -247,7 +248,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
 
   final String restoreSetOperationTransactionBehavior = "restoreSetOperationTransactionBehavior";
   final String RESTORE_SET_OPERATION_PROPERTY =
-      (System.currentTimeMillis() % 2 == 0 ? DistributionConfig.GEMFIRE_PREFIX : "geode.")
+      (System.currentTimeMillis() % 2 == 0 ? GeodeGlossary.GEMFIRE_PREFIX : "geode.")
           + restoreSetOperationTransactionBehavior;
 
   private void createCache(boolean disableSetOpToStartJTA) {
@@ -286,7 +287,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
   private void verifyRegionValuesWhenSetOperationStartsJTA() throws Exception {
     Context ctx = cache.getJNDIContext();
     UserTransaction userTX = startUserTransaction(ctx);
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     try {
       userTX.begin();
       Collection<String> set = region.values();
@@ -315,7 +316,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
   private void verifyRegionValuesWhenSetOperationDoesNotStartJTA() throws Exception {
     Context ctx = cache.getJNDIContext();
     UserTransaction userTX = startUserTransaction(ctx);
-    Region<Long, String> region = basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+    Region<Long, String> region = basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     try {
       userTX.begin();
       Collection<String> set = region.values();
@@ -364,6 +365,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
   class TXFunctionSetOpStartsJTA implements Function {
     static final String id = "TXFunctionSetOpStartsJTA";
 
+    @Override
     public void execute(FunctionContext context) {
       Region r = null;
       try {
@@ -374,18 +376,22 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
       context.getResultSender().lastResult(Boolean.TRUE);
     }
 
+    @Override
     public String getId() {
       return id;
     }
 
+    @Override
     public boolean hasResult() {
       return true;
     }
 
+    @Override
     public boolean optimizeForWrite() {
       return true;
     }
 
+    @Override
     public boolean isHA() {
       return false;
     }
@@ -394,6 +400,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
   class TXFunctionSetOpDoesNoStartJTA implements Function {
     static final String id = "TXFunctionSetOpDoesNotStartJTA";
 
+    @Override
     public void execute(FunctionContext context) {
       Region r = null;
       try {
@@ -404,18 +411,22 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
       context.getResultSender().lastResult(Boolean.TRUE);
     }
 
+    @Override
     public String getId() {
       return id;
     }
 
+    @Override
     public boolean hasResult() {
       return true;
     }
 
+    @Override
     public boolean optimizeForWrite() {
       return true;
     }
 
+    @Override
     public boolean isHA() {
       return false;
     }
@@ -423,7 +434,7 @@ public class PRSetOperationJTADUnitTest extends JUnit4CacheTestCase {
 
   private void doTxFunction(boolean disableSetOpToStartJTA) {
     PartitionedRegion region =
-        (PartitionedRegion) basicGetCache().getRegion(Region.SEPARATOR + REGION_NAME);
+        (PartitionedRegion) basicGetCache().getRegion(SEPARATOR + REGION_NAME);
     DistributedMember owner = region.getOwnerForKey(region.getKeyInfo(5L));
     if (disableSetOpToStartJTA) {
       FunctionService.onMember(owner).execute(TXFunctionSetOpDoesNoStartJTA.id).getResult();

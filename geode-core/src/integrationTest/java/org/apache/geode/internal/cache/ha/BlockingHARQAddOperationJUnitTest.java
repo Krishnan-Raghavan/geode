@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
@@ -47,10 +48,12 @@ public class BlockingHARQAddOperationJUnitTest extends HARQAddOperationJUnitTest
    *
    * @return Blocking HA region-queue object
    */
+  @Override
   protected HARegionQueue createHARegionQueue(String name)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
     HARegionQueue regionqueue =
-        HARegionQueue.getHARegionQueueInstance(name, cache, HARegionQueue.BLOCKING_HA_QUEUE, false);
+        HARegionQueue.getHARegionQueueInstance(name, cache, HARegionQueue.BLOCKING_HA_QUEUE, false,
+            disabledClock());
     return regionqueue;
   }
 
@@ -59,10 +62,11 @@ public class BlockingHARQAddOperationJUnitTest extends HARQAddOperationJUnitTest
    *
    * @return Blocking HA region-queue object
    */
+  @Override
   protected HARegionQueue createHARegionQueue(String name, HARegionQueueAttributes attrs)
       throws IOException, ClassNotFoundException, CacheException, InterruptedException {
     HARegionQueue regionqueue = HARegionQueue.getHARegionQueueInstance(name, cache, attrs,
-        HARegionQueue.BLOCKING_HA_QUEUE, false);
+        HARegionQueue.BLOCKING_HA_QUEUE, false, disabledClock());
     return regionqueue;
   }
 
@@ -108,6 +112,7 @@ public class BlockingHARQAddOperationJUnitTest extends HARQAddOperationJUnitTest
     final HARegionQueue rq = createHARegionQueue("testBlockingTake");
     final List takenObjects = new ArrayList();
     Thread takeThread = new Thread() {
+      @Override
       public void run() {
         try {
           takenObjects.add(rq.take());
@@ -158,6 +163,7 @@ public class BlockingHARQAddOperationJUnitTest extends HARQAddOperationJUnitTest
     Thread[] takeThreads = new Thread[totalTakeThreads];
     for (int i = 0; i < totalTakeThreads; i++) {
       takeThreads[i] = new Thread() {
+        @Override
         public void run() {
           try {
             takenObjects.add(rq.take());

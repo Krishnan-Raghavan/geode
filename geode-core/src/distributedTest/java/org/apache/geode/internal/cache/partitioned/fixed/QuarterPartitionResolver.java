@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 
@@ -41,6 +42,7 @@ public class QuarterPartitionResolver
 
   int numBuckets;
 
+  @Override
   public String getPartitionName(EntryOperation opDetails, Set allAvailablePartitions) {
     Date date = (Date) opDetails.getKey();
     Calendar cal = Calendar.getInstance();
@@ -59,10 +61,12 @@ public class QuarterPartitionResolver
     }
   }
 
+  @Override
   public String getName() {
     return "QuarterPartitionResolver";
   }
 
+  @Override
   public Serializable getRoutingObject(EntryOperation opDetails) {
     Date date = (Date) opDetails.getKey();
     Calendar cal = Calendar.getInstance();
@@ -71,6 +75,7 @@ public class QuarterPartitionResolver
     return month;
   }
 
+  @Override
   public void close() {
     // TODO Auto-generated method stub
 
@@ -85,6 +90,12 @@ public class QuarterPartitionResolver
     return this.numBuckets;
   }
 
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(this.resolveProps);
+  }
+
+  @Override
   public boolean equals(Object obj) {
     if (this == obj) {
       return true;
@@ -108,6 +119,7 @@ public class QuarterPartitionResolver
    *
    * @see org.apache.geode.internal.cache.xmlcache.Declarable2#getConfig()
    */
+  @Override
   public Properties getConfig() {
     return this.resolveProps;
   }
@@ -117,15 +129,18 @@ public class QuarterPartitionResolver
    *
    * @see org.apache.geode.cache.Declarable#init(java.util.Properties)
    */
+  @Override
   public void init(Properties props) {
     this.resolveProps.putAll(props);
   }
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     this.resolveProps = DataSerializer.readProperties(in);
     this.numBuckets = in.readInt();
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     DataSerializer.writeProperties(this.resolveProps, out);
     out.writeInt(this.numBuckets);

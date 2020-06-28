@@ -95,7 +95,7 @@ public class StatusServerExitCodeAcceptanceTest {
   @Test
   public void statusCommandWithIncorrectPidShouldFail() {
     String commandWithWrongPid = "status server --pid=100";
-    GfshScript.of(commandWithWrongPid).withName("test-frame").awaitAtMost(1, MINUTES)
+    GfshScript.of(commandWithWrongPid).withName("test-frame").awaitAtMost(2, MINUTES)
         .expectExitCode(ExitCode.FATAL.getValue()).execute(gfsh);
   }
 
@@ -145,7 +145,9 @@ public class StatusServerExitCodeAcceptanceTest {
   }
 
   private static String startServerCommand() {
-    return new CommandStringBuilder("start server").addOption("name", serverName).toString();
+    return new CommandStringBuilder("start server")
+        .addOption("server-port", "0")
+        .addOption("name", serverName).toString();
   }
 
   private String statusServerCommandByName() {

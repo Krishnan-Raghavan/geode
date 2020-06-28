@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
@@ -34,7 +35,7 @@ import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.lucene.test.Customer;
 import org.apache.geode.cache.lucene.test.Page;
 import org.apache.geode.cache.lucene.test.Person;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.pdx.JSONFormatter;
 import org.apache.geode.pdx.PdxReader;
 import org.apache.geode.pdx.PdxSerializable;
@@ -44,12 +45,22 @@ import org.apache.geode.test.junit.categories.LuceneTest;
 @Category({LuceneTest.class})
 public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest {
 
-  private static int WAIT_FOR_FLUSH_TIME = 10000;
-  private static final Logger logger = LogService.getLogger();
+  protected static int WAIT_FOR_FLUSH_TIME = 10000;
+  protected static final Logger logger = LogService.getLogger();
   LuceneQuery<Integer, Object> query;
   PageableLuceneQueryResults<Integer, Object> results;
 
-  private Region createRegionAndIndex() {
+  protected CustomerFactory getCustomerFactory() {
+    return Customer::new;
+  }
+
+  protected static interface CustomerFactory {
+    public Customer create(String name, Collection<String> phoneNumbers,
+        Collection<Person> contacts,
+        Page[] myHomePages);
+  }
+
+  protected Region createRegionAndIndex() {
     luceneService.createIndexFactory().setLuceneSerializer(new FlatFormatSerializer())
         .addField("name").addField("phoneNumbers").addField("myHomePages.content")
         .addField("contacts.name").addField("contacts.email", new KeywordAnalyzer())
@@ -61,7 +72,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     return region;
   }
 
-  private Region createRegionAndIndexOnInvalidFields() {
+  protected Region createRegionAndIndexOnInvalidFields() {
     luceneService.createIndexFactory().setLuceneSerializer(new FlatFormatSerializer())
         .addField("name").addField("contacts").addField("contacts.page")
         .addField("contacts.missing").addField("missing2").create(INDEX_NAME, REGION_NAME);
@@ -70,7 +81,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     return region;
   }
 
-  private void feedSomeNestedObjects(Region region) throws InterruptedException {
+  protected void feedSomeNestedObjects(Region region) throws InterruptedException {
     Person contact1 = new Person("Tommi Jackson", new String[] {"5036330001", "5036330002"}, 1);
     Person contact2 = new Person("Tommi2 Skywalker", new String[] {"5036330003", "5036330004"}, 2);
     HashSet<Person> contacts1 = new HashSet();
@@ -80,7 +91,8 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     ArrayList<String> phoneNumbers = new ArrayList();
     phoneNumbers.add("5035330001");
     phoneNumbers.add("5035330002");
-    Customer customer13 = new Customer("Tommy Jackson", phoneNumbers, contacts1, myHomePages1);
+    Customer customer13 =
+        getCustomerFactory().create("Tommy Jackson", phoneNumbers, contacts1, myHomePages1);
     region.put("object-13", customer13);
 
     Person contact3 = new Person("Johnni Jackson", new String[] {"5036330005", "5036330006"}, 3);
@@ -92,7 +104,9 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     phoneNumbers.add("5035330003");
     phoneNumbers.add("5035330004");
     Page[] myHomePages2 = new Page[] {new Page(14), new Page(141)};
-    Customer customer14 = new Customer("Johnny Jackson", phoneNumbers, contacts2, myHomePages2);
+
+    Customer customer14 =
+        getCustomerFactory().create("Johnny Jackson", phoneNumbers, contacts2, myHomePages2);
     region.put("object-14", customer14);
 
     Person contact5 = new Person("Johnni Jackson2", new String[] {"5036330009", "5036330010"}, 5);
@@ -105,7 +119,9 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     phoneNumbers.add("5035330005");
     phoneNumbers.add("5035330006");
     Page[] myHomePages3 = new Page[] {new Page(15), new Page(151)};
-    Customer customer15 = new Customer("Johnny Jackson2", phoneNumbers, contacts3, myHomePages3);
+
+    Customer customer15 =
+        getCustomerFactory().create("Johnny Jackson2", phoneNumbers, contacts3, myHomePages3);
     region.put("object-15", customer15);
 
     Person contact7 = new Person("Johnni Jackson21", new String[] {"5036330013", "5036330014"}, 7);
@@ -118,7 +134,9 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     phoneNumbers.add("5035330007");
     phoneNumbers.add("5035330008");
     Page[] myHomePages4 = new Page[] {new Page(16), new Page(161)};
-    Customer customer16 = new Customer("Johnny Jackson21", phoneNumbers, contacts4, myHomePages4);
+
+    Customer customer16 =
+        getCustomerFactory().create("Johnny Jackson21", phoneNumbers, contacts4, myHomePages4);
     region.put("object-16", customer16);
 
     region.put("key-1", "region value 1");
@@ -432,7 +450,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     assertEquals(0, results.size());
   }
 
-  private void printResults(PageableLuceneQueryResults<Integer, Object> results) {
+  protected void printResults(PageableLuceneQueryResults<Integer, Object> results) {
     if (results.size() > 0) {
       while (results.hasNext()) {
         results.next().stream().forEach(struct -> {
@@ -444,7 +462,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     }
   }
 
-  private Region createRegionAndIndexForPdxObject() {
+  protected Region createRegionAndIndexForPdxObject() {
     luceneService.createIndexFactory().setLuceneSerializer(new FlatFormatSerializer())
         .addField("ID").addField("description").addField("status").addField("names")
         .addField("position1.country").addField("position1.secId").addField("positions.secId")
@@ -454,7 +472,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     return region;
   }
 
-  private void feedSomePdxObjects(Region region) throws InterruptedException {
+  protected void feedSomePdxObjects(Region region) throws InterruptedException {
     SimplePortfolioPdx.resetCounter();
     SimplePositionPdx.resetCounter();
     for (int i = 1; i < 10; i++) {
@@ -666,6 +684,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
       return j;
     }
 
+    @Override
     public void fromData(PdxReader in) {
       this.ID = in.readInt("ID");
       this.position1 = (SimplePositionPdx) in.readObject("position1");
@@ -677,6 +696,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
       this.intArr = in.readIntArray("intArr");
     }
 
+    @Override
     public void toData(PdxWriter out) {
       out.writeInt("ID", this.ID);
       out.writeObject("position1", this.position1);
@@ -743,6 +763,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
           + this.sharesOutstanding + "]";
     }
 
+    @Override
     public void fromData(PdxReader in) {
       this.country = in.readString("country");
       this.secId = in.readString("secId");
@@ -751,6 +772,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
       this.portfolioId = in.readInt("portfolioId");
     }
 
+    @Override
     public void toData(PdxWriter out) {
       out.writeString("country", this.country);
       out.writeString("secId", this.secId);
@@ -762,6 +784,7 @@ public class NestedObjectSeralizerIntegrationTest extends LuceneIntegrationTest 
     }
 
 
+    @Override
     public int compareTo(Object o) {
       if (o == this || ((SimplePositionPdx) o).secId.equals(this.secId)) {
         return 0;

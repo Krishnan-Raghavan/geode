@@ -14,22 +14,23 @@
  */
 package org.apache.geode.internal.cache;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.geode.cache.RegionShortcut.REPLICATE_PERSISTENT;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.dunit.Invoke.invokeInEveryVM;
 import static org.apache.geode.test.dunit.VM.getVM;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 
 import org.apache.logging.log4j.Logger;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionFactory;
@@ -37,8 +38,9 @@ import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.DistributionMessageObserver;
 import org.apache.geode.internal.cache.backup.BackupOperation;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.test.dunit.AsyncInvocation;
+import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.dunit.rules.CacheRule;
@@ -73,6 +75,14 @@ public class PersistentRegionRecoveryDUnitTest extends JUnit4DistributedTestCase
     vm0 = getVM(0);
     vm1 = getVM(1);
     regionName = getClass().getSimpleName() + "-" + testName.getMethodName();
+    IgnoredException.addIgnoredException("Possible loss of quorum");
+  }
+
+  @After
+  public void tearDown() {
+    invokeInEveryVM(() -> {
+      DistributionMessageObserver.setInstance(null);
+    });
   }
 
   @Test
@@ -215,34 +225,15 @@ public class PersistentRegionRecoveryDUnitTest extends JUnit4DistributedTestCase
 
     vm0.invoke(() -> {
       DistributionMessageObserver.setInstance(
-          new DistributionMessageObserver() {
-            @Override
-            public void beforeProcessMessage(ClusterDistributionManager dm,
-                DistributionMessage message) {
-              logger.info("In DistributionMessageObserver message is: " + message);
-              if (message instanceof InitialImageOperation.RequestImageMessage) {
-                InitialImageOperation.RequestImageMessage rim =
-                    (InitialImageOperation.RequestImageMessage) message;
-                if (rim.regionPath.contains(regionName)) {
-                  logger.info("##### Before vm0 is bounced.");
-                  getBlackboard().signalGate("bounce");
-                  // vm0.bounceForcibly();
-                  await().atMost(2, MINUTES).until(() -> cacheRule.getCache().isClosed());
-                  logger.info("##### After vm0 is bounced.");
-                } else {
-                  logger.info("#### Region path: " + rim.regionPath);
-                }
-              }
-            }
-          });
+          new SignalBounceOnRequestImageMessageObserver(regionName, cacheRule.getCache(),
+              getBlackboard()));
     });
 
     AsyncInvocation asyncVM1 = vm1.invokeAsync(() -> createAsyncDiskRegion());
 
     logger.info("##### After async create region in vm1");
 
-    getBlackboard().waitForGate("bounce", 30, SECONDS);
-    vm0.bounceForcibly();
+    SignalBounceOnRequestImageMessageObserver.waitThenBounce(getBlackboard(), vm0);
 
     logger.info("##### After wait for cache close in vm0");
 
@@ -292,34 +283,15 @@ public class PersistentRegionRecoveryDUnitTest extends JUnit4DistributedTestCase
 
     vm0.invoke(() -> {
       DistributionMessageObserver.setInstance(
-          new DistributionMessageObserver() {
-            @Override
-            public void beforeProcessMessage(ClusterDistributionManager dm,
-                DistributionMessage message) {
-              logger.info("In DistributionMessageObserver message is: " + message);
-              if (message instanceof InitialImageOperation.RequestImageMessage) {
-                InitialImageOperation.RequestImageMessage rim =
-                    (InitialImageOperation.RequestImageMessage) message;
-                if (rim.regionPath.contains(regionName)) {
-                  logger.info("##### Before vm0 is bounced.");
-                  getBlackboard().signalGate("bounce");
-                  // vm0.bounceForcibly();
-                  await().atMost(2, MINUTES).until(() -> cacheRule.getCache().isClosed());
-                  logger.info("##### After vm0 is bounced.");
-                } else {
-                  logger.info("#### Region path: " + rim.regionPath);
-                }
-              }
-            }
-          });
+          new SignalBounceOnRequestImageMessageObserver(regionName, cacheRule.getCache(),
+              getBlackboard()));
     });
 
     AsyncInvocation asyncVM1 = vm1.invokeAsync(() -> createSyncDiskRegion());
 
     logger.info("##### After async create region in vm1");
 
-    getBlackboard().waitForGate("bounce", 30, SECONDS);
-    vm0.bounceForcibly();
+    SignalBounceOnRequestImageMessageObserver.waitThenBounce(getBlackboard(), vm0);
 
     logger.info("##### After wait for cache close in vm0");
 
@@ -408,6 +380,91 @@ public class PersistentRegionRecoveryDUnitTest extends JUnit4DistributedTestCase
       assertThat(region.get("KEY-1")).isEqualTo("VALUE-1");
       assertThat(region.get("KEY-2")).isEqualTo("VALUE-2");
     });
+  }
+
+  @Test
+  public void testRecoveryFromBackupAndRequestingDeltaGiiDoesFullGiiIfTombstoneGCVersionDiffers()
+      throws Exception {
+    getBlackboard().initBlackboard();
+    vm1.invoke(() -> cacheRule.createCache());
+
+    vm0.invoke(() -> createAsyncDiskRegion(true));
+    vm0.invoke(() -> {
+      Region<String, String> region = cacheRule.getCache().getRegion(regionName);
+      region.put("KEY-1", "VALUE-1");
+      region.put("KEY-2", "VALUE-2");
+      flushAsyncDiskRegion();
+    });
+
+    vm1.invoke(() -> createAsyncDiskRegion(true));
+    vm1.invoke(() -> {
+      Region<String, String> region = cacheRule.getCache().getRegion(regionName);
+      region.put("KEY-1", "VALUE-1");
+      region.put("KEY-2", "VALUE-2");
+      region.put("KEY-1", "VALUE-3");
+      region.put("KEY-2", "VALUE-4");
+      flushAsyncDiskRegion();
+    });
+
+    vm0.invoke(() -> {
+      Region<String, String> region = cacheRule.getCache().getRegion(regionName);
+      region.destroy("KEY-1");
+    });
+
+    vm0.bounceForcibly();
+
+    vm1.invoke(() -> flushAsyncDiskRegion());
+
+    vm1.invoke(() -> {
+      DistributionMessageObserver.setInstance(
+          new DistributionMessageObserver() {
+            @Override
+            public void beforeProcessMessage(ClusterDistributionManager dm,
+                DistributionMessage message) {
+              if (message instanceof InitialImageOperation.RequestImageMessage) {
+                InitialImageOperation.RequestImageMessage rim =
+                    (InitialImageOperation.RequestImageMessage) message;
+                if (rim.regionPath.contains(regionName)) {
+                  getBlackboard().signalGate("GotRegionIIRequest");
+                  await().until(() -> getBlackboard().isGateSignaled("TombstoneGCDone"));
+                }
+              }
+            }
+          });
+    });
+
+    AsyncInvocation vm0createRegion = vm0.invokeAsync(() -> createAsyncDiskRegion(true));
+
+    vm1.invoke(() -> {
+      await().until(() -> getBlackboard().isGateSignaled("GotRegionIIRequest"));
+      cacheRule.getCache().getTombstoneService().forceBatchExpirationForTests(1);
+      flushAsyncDiskRegion();
+      getBlackboard().signalGate("TombstoneGCDone");
+    });
+
+    vm0createRegion.await();
+
+    vm1.invoke(() -> {
+      Region<String, String> region = cacheRule.getCache().getRegion(regionName);
+      assertThat(region.get("KEY-1")).isEqualTo(null);
+      assertThat(region.get("KEY-2")).isEqualTo("VALUE-4");
+    });
+
+    vm0.invoke(() -> {
+      Region<String, String> region = cacheRule.getCache().getRegion(regionName);
+      assertThat(region.get("KEY-1")).isEqualTo(null);
+      assertThat(region.get("KEY-2")).isEqualTo("VALUE-4");
+
+      CachePerfStats stats = ((LocalRegion) region).getRegionPerfStats();
+      assertThat(stats.getDeltaGetInitialImagesCompleted()).isEqualTo(0);
+      assertThat(stats.getGetInitialImagesCompleted()).isEqualTo(1);
+    });
+  }
+
+  private void flushAsyncDiskRegion() {
+    for (DiskStore store : cacheRule.getCache().listDiskStoresIncludingRegionOwned()) {
+      ((DiskStoreImpl) store).forceFlush();
+    }
   }
 
   private void createSyncDiskRegion() throws IOException {

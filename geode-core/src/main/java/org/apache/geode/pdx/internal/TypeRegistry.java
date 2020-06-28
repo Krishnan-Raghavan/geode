@@ -22,27 +22,27 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.logging.log4j.Logger;
 
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.wan.GatewaySender;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.util.concurrent.CopyOnWriteHashMap;
 import org.apache.geode.internal.util.concurrent.CopyOnWriteWeakHashMap;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.pdx.PdxSerializationException;
 import org.apache.geode.pdx.PdxSerializer;
 import org.apache.geode.pdx.ReflectionBasedAutoSerializer;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 public class TypeRegistry {
   private static final Logger logger = LogService.getLogger();
 
   private static final boolean DISABLE_TYPE_REGISTRY =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "TypeRegistry.DISABLE_PDX_REGISTRY");
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "TypeRegistry.DISABLE_PDX_REGISTRY");
 
   private final Map<Integer, PdxType> idToType = new CopyOnWriteHashMap<>();
 
@@ -153,7 +153,8 @@ public class TypeRegistry {
   }
 
   public PdxType getExistingTypeForClass(Class<?> aClass) {
-    return this.localTypeIds.get(aClass);
+    PdxType result = this.localTypeIds.get(aClass);
+    return result;
   }
 
   /**
@@ -186,30 +187,35 @@ public class TypeRegistry {
 
   /**
    * Create a type id for a type that may come locally, or from a remote member.
+   *
+   * @return the existing type or the new type
    */
-  public int defineType(PdxType newType) {
+  public PdxType defineType(PdxType newType) {
     Integer existingId = this.typeToId.get(newType);
     if (existingId != null) {
-      int eid = existingId;
-      newType.setTypeId(eid);
-      return eid;
+      PdxType existingType = this.idToType.get(existingId);
+      if (existingType != null) {
+        return existingType;
+      }
     }
 
     int id = this.distributedTypeRegistry.defineType(newType);
-    newType.setTypeId(id);
     PdxType oldType = this.idToType.get(id);
     if (oldType == null) {
+      newType.setTypeId(id);
       this.idToType.put(id, newType);
       this.typeToId.put(newType, id);
       if (logger.isInfoEnabled()) {
         logger.info("Caching {}", newType.toFormattedString());
       }
-    } else if (!oldType.equals(newType)) {
-      Assert.fail("Old type does not equal new type for the same id. oldType=" + oldType
-          + " new type=" + newType);
+      return newType;
+    } else {
+      if (!oldType.equals(newType)) {
+        Assert.fail("Old type does not equal new type for the same id. oldType=" + oldType
+            + " new type=" + newType);
+      }
+      return oldType;
     }
-
-    return id;
   }
 
   public void addRemoteType(int typeId, PdxType newType) {
@@ -236,14 +242,13 @@ public class TypeRegistry {
       if (t != null) {
         return t;
       }
-      defineType(newType);
-      this.localTypeIds.put(o.getClass(), newType);
+      PdxType existingType = defineType(newType);
+      this.localTypeIds.put(o.getClass(), existingType);
+      return existingType;
     } else {
       // Defining a type for PdxInstanceFactory.
-      defineType(newType);
+      return defineType(newType);
     }
-
-    return newType;
   }
 
   public TypeRegistration getTypeRegistration() {
@@ -284,20 +289,24 @@ public class TypeRegistry {
     this.unreadDataMap.put(o, ud);
   }
 
+  @MakeNotStatic
   private static final AtomicReference<PdxSerializer> pdxSerializer = new AtomicReference<>(null);
 
+  @MakeNotStatic
   private static final AtomicReference<AutoSerializableManager> asm = new AtomicReference<>(null);
 
   /**
    * To fix bug 45116 we want any attempt to get the PdxSerializer after it has been closed to fail
    * with an exception.
    */
+  @MakeNotStatic
   private static volatile boolean open = false;
 
   /**
    * If the pdxSerializer is ever set to a non-null value then set this to true. It gets reset to
    * false when init() is called. This was added to fix bug 45116.
    */
+  @MakeNotStatic
   private static volatile boolean pdxSerializerWasSet = false;
 
   public static void init() {
@@ -493,7 +502,9 @@ public class TypeRegistry {
     PdxType existing = getType(typeId);
     if (existing != null && !existing.equals(importedType)) {
       throw new PdxSerializationException(
-          LocalizedStrings.Snapshot_PDX_CONFLICT_0_1.toLocalizedString(importedType, existing));
+          String.format(
+              "Detected conflicting PDX types during import:%s%sSnapshot data containing PDX types must be imported into an empty cache with no pre-existing type definitions. Allow the import to complete prior to inserting additional data into the cache.",
+              importedType, existing));
     }
 
     this.distributedTypeRegistry.addImportedType(typeId, importedType);
@@ -508,7 +519,9 @@ public class TypeRegistry {
     EnumInfo existing = getEnumInfoById(enumId);
     if (existing != null && !existing.equals(importedEnum)) {
       throw new PdxSerializationException(
-          LocalizedStrings.Snapshot_PDX_CONFLICT_0_1.toLocalizedString(importedEnum, existing));
+          String.format(
+              "Detected conflicting PDX types during import:%s%sSnapshot data containing PDX types must be imported into an empty cache with no pre-existing type definitions. Allow the import to complete prior to inserting additional data into the cache.",
+              importedEnum, existing));
     }
 
     this.distributedTypeRegistry.addImportedEnum(enumId, importedEnum);
@@ -534,5 +547,19 @@ public class TypeRegistry {
 
   public void setPdxReadSerializedOverride(boolean overridePdxReadSerialized) {
     pdxReadSerializedOverride.set(overridePdxReadSerialized);
+  }
+
+  // accessors for unit test
+
+  Map<Integer, PdxType> getIdToType() {
+    return idToType;
+  }
+
+  Map<PdxType, Integer> getTypeToId() {
+    return typeToId;
+  }
+
+  Map<Class<?>, PdxType> getLocalTypeIds() {
+    return localTypeIds;
   }
 }

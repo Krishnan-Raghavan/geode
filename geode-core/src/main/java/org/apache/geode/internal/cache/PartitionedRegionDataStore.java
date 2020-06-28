@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -35,6 +37,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.InternalGemFireError;
 import org.apache.geode.InternalGemFireException;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.AttributesMutator;
 import org.apache.geode.cache.Cache;
@@ -67,21 +70,19 @@ import org.apache.geode.cache.query.internal.QCompiler;
 import org.apache.geode.cache.query.internal.index.IndexCreationData;
 import org.apache.geode.cache.query.internal.index.PartitionedIndex;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.distributed.internal.ClusterDistributionManager;
-import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.DistributionManager;
+import org.apache.geode.distributed.internal.OperationExecutors;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.i18n.StringId;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.cache.BucketRegion.RawValue;
-import org.apache.geode.internal.cache.LocalRegion.RegionPerfStats;
 import org.apache.geode.internal.cache.PartitionedRegion.BucketLock;
 import org.apache.geode.internal.cache.PartitionedRegion.SizeEntry;
 import org.apache.geode.internal.cache.backup.BackupService;
 import org.apache.geode.internal.cache.execute.BucketMovedException;
-import org.apache.geode.internal.cache.execute.FunctionStats;
 import org.apache.geode.internal.cache.execute.PartitionedRegionFunctionResultSender;
 import org.apache.geode.internal.cache.execute.RegionFunctionContextImpl;
+import org.apache.geode.internal.cache.execute.metrics.FunctionStats;
+import org.apache.geode.internal.cache.execute.metrics.FunctionStatsManager;
 import org.apache.geode.internal.cache.partitioned.Bucket;
 import org.apache.geode.internal.cache.partitioned.PRLocallyDestroyedException;
 import org.apache.geode.internal.cache.partitioned.PartitionedRegionFunctionStreamingMessage;
@@ -96,12 +97,12 @@ import org.apache.geode.internal.cache.wan.AbstractGatewaySender;
 import org.apache.geode.internal.cache.wan.AbstractGatewaySenderEventProcessor;
 import org.apache.geode.internal.cache.wan.GatewaySenderEventImpl;
 import org.apache.geode.internal.cache.wan.parallel.ConcurrentParallelGatewaySenderQueue;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.internal.statistics.StatisticsClock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock.StoppableReadLock;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantReadWriteLock.StoppableWriteLock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  * Implementation of DataStore (DS) for a PartitionedRegion (PR). This will be import
@@ -166,15 +167,18 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
 
   private final Object keysOfInterestLock = new Object();
 
+  private final StatisticsClock statisticsClock;
+
   /**
    * Update an entry's last access time if a client is interested in the entry.
    */
   private static final boolean UPDATE_ACCESS_TIME_ON_INTEREST =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "updateAccessTimeOnClientInterest");
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "updateAccessTimeOnClientInterest");
 
 
   // Only for testing
   PartitionedRegionDataStore() {
+    statisticsClock = disabledClock();
     this.bucketCreationLock = null;
     bucketStats = null;
     partitionedRegion = null;
@@ -189,7 +193,8 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
    *
    * @param pr PartitionedRegion associated with this DataStore.
    */
-  PartitionedRegionDataStore(final PartitionedRegion pr) {
+  PartitionedRegionDataStore(final PartitionedRegion pr, StatisticsClock statisticsClock) {
+    this.statisticsClock = statisticsClock;
     final int bucketCount = pr.getTotalNumberOfBuckets();
     this.localBucket2RegionMap = new ConcurrentHashMap<Integer, BucketRegion>(bucketCount);
     this.partitionedRegion = pr;
@@ -207,7 +212,9 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
 
     // this.bucketStats = new CachePerfStats(pr.getSystem(), "partition-" + pr.getName());
     this.bucketStats =
-        new RegionPerfStats(pr.getCache(), pr.getCachePerfStats(), "partition-" + pr.getName());
+        new RegionPerfStats(pr.getCache().getInternalDistributedSystem().getStatisticsManager(),
+            "RegionStats-partition-" + pr.getName(), pr.getCachePerfStats(), pr,
+            pr.getCache().getMeterRegistry(), statisticsClock);
     this.keysOfInterest = new ConcurrentHashMap();
   }
 
@@ -217,9 +224,8 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
    * @return @throws PartitionedRegionException
    */
   static PartitionedRegionDataStore createDataStore(Cache cache, PartitionedRegion pr,
-      PartitionAttributes pa) throws PartitionedRegionException {
-    PartitionedRegionDataStore prd = new PartitionedRegionDataStore(pr);
-    return prd;
+      PartitionAttributes pa, StatisticsClock statisticsClock) throws PartitionedRegionException {
+    return new PartitionedRegionDataStore(pr, statisticsClock);
   }
 
   ConcurrentMap<Integer, BucketRegion> getLocalBucket2RegionMap() {
@@ -445,11 +451,11 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
               try {
                 buk.initializePrimaryElector(creationRequestor);
                 if (getPartitionedRegion().getColocatedWith() == null) {
-                  buk.getBucketAdvisor().setShadowBucketDestroyed(false);
+                  buk.getBucketAdvisor().markAllShadowBucketsAsNonDestroyed();
                 }
                 if (getPartitionedRegion().isShadowPR()) {
                   getPartitionedRegion().getColocatedWithRegion().getRegionAdvisor()
-                      .getBucketAdvisor(possiblyFreeBucketId).setShadowBucketDestroyed(false);
+                      .getBucketAdvisor(possiblyFreeBucketId).markAllShadowBucketsAsNonDestroyed();
                 }
                 bukReg = createBucketRegion(possiblyFreeBucketId);
                 // Mark the bucket as hosting and distribute to peers
@@ -466,7 +472,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
                   bukReg.invokePartitionListenerAfterBucketCreated();
                 } else {
                   if (buk.getPartitionedRegion().getColocatedWith() == null) {
-                    buk.getBucketAdvisor().setShadowBucketDestroyed(true);
+                    buk.getBucketAdvisor().markAllShadowBucketsAsDestroyed();
                     // clear tempQueue for all the shadowPR buckets
                     clearAllTempQueueForShadowPR(buk.getBucketId());
                   }
@@ -708,7 +714,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     }
     factory.setEnableAsyncConflation(true);
 
-    if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "PRDebug")) {
+    if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "PRDebug")) {
       factory.addCacheListener(createDebugBucketListener());
     }
 
@@ -769,10 +775,10 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     LocalRegion rootRegion = PartitionedRegionHelper.getPRRoot(this.partitionedRegion.getCache());
     BucketRegion bucketRegion = null;
 
-    if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "PRDebug")) {
-      logger.info(LocalizedMessage.create(
-          LocalizedStrings.PartitionedRegionDataStore_CREATEBUCKETREGION_CREATING_BUCKETID_0_NAME_1,
-          new Object[] {this.partitionedRegion.bucketStringForLogs(bucketId), bucketRegionName}));
+    if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "PRDebug")) {
+      logger.info("createBucketRegion: Creating bucketId, {} name, {}.",
+          this.partitionedRegion.bucketStringForLogs(bucketId),
+          bucketRegionName);
     }
     try {
       final Bucket proxyBucket = this.partitionedRegion.getRegionAdvisor().getBucket(bucketId);
@@ -804,9 +810,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       Assert.assertTrue(false, "ClassNotFoundException creating bucket Region: " + cne);
     } catch (InternalGemFireError e) {
       if (logger.isDebugEnabled()) {
-        logger.info(
-            LocalizedMessage.create(
-                LocalizedStrings.PartitionedRegionDataStore_ASSERTION_ERROR_CREATING_BUCKET_IN_REGION),
+        logger.info("Assertion error creating bucket in region",
             e);
       }
       this.getPartitionedRegion().checkReadiness();
@@ -815,7 +819,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     // Determine the size of the bucket (the Region in this case is mirrored,
     // get initial image has populated the bucket, compute the size of the
     // region)
-    if (Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "PRDebug")) {
+    if (Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "PRDebug")) {
       dumpBuckets();
       dumpBucket(bucketId, bucketRegion);
     }
@@ -860,9 +864,9 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
         indexes.add(icd);
       } catch (Exception ignor) {
         // since bucket creation should not fail.
-        logger.info(LocalizedMessage.create(
-            LocalizedStrings.PartitionedRegionDataStore_EXCPETION__IN_BUCKET_INDEX_CREATION_,
-            ignor.getLocalizedMessage()), ignor);
+        logger.info(String.format("Excpetion  in bucket index creation : %s",
+            ignor.getLocalizedMessage()),
+            ignor);
       }
     }
     return indexes;
@@ -891,6 +895,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
 
   private CacheListener createDebugBucketListener() {
     return new CacheListener() {
+      @Override
       public void afterCreate(EntryEvent event) {
         EntryEventImpl ee = (EntryEventImpl) event;
         logger.debug("BucketListener: o={}, r={}, k={}, nv={}, dm={}", event.getOperation(),
@@ -898,6 +903,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
             event.getDistributedMember());
       }
 
+      @Override
       public void afterUpdate(EntryEvent event) {
         EntryEventImpl ee = (EntryEventImpl) event;
         logger.debug("BucketListener: o={}, r={}, k={}, ov={}, nv={}, dm={}", event.getOperation(),
@@ -905,26 +911,34 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
             ee.getRawNewValue(), event.getDistributedMember());
       }
 
+      @Override
       public void afterInvalidate(EntryEvent event) {
         logger.debug("BucketListener: o={}, r={}, k={}, dm={}", event.getOperation(),
             event.getRegion().getFullPath(), event.getKey(), event.getDistributedMember());
       }
 
+      @Override
       public void afterDestroy(EntryEvent event) {
         logger.debug("BucketListener: o={}, r={}, k={}, dm={}", event.getOperation(),
             event.getRegion().getFullPath(), event.getKey(), event.getDistributedMember());
       }
 
+      @Override
       public void afterRegionInvalidate(RegionEvent event) {}
 
+      @Override
       public void afterRegionDestroy(RegionEvent event) {}
 
+      @Override
       public void afterRegionClear(RegionEvent event) {}
 
+      @Override
       public void afterRegionCreate(RegionEvent event) {}
 
+      @Override
       public void afterRegionLive(RegionEvent event) {}
 
+      @Override
       public void close() {}
     };
   }
@@ -1143,29 +1157,6 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
   }
 
   /**
-   * Querys the buckets in this data store for query specified by queryPredicate.
-   *
-   * @param parameters the parameters to be used to execute the query
-   * @param buckets to be queried
-   * @throws QueryException TODO-javadocs
-   */
-  /*
-   * public void queryLocalNode(DefaultQuery query, Object[] parameters, List buckets,
-   * PRQueryResultCollector resultCollector) throws QueryException, InterruptedException {
-   * Assert.assertTrue(!buckets.isEmpty(), "bucket list can not be empty. ");
-   * invokeBucketReadHook();
-   *
-   * // Check if QueryMonitor is enabled, if so add query to be monitored. QueryMonitor queryMonitor
-   * = null; if( GemFireCacheImpl.getInstance() != null) { queryMonitor =
-   * GemFireCacheImpl.getInstance().getQueryMonitor(); }
-   *
-   * try { if (queryMonitor != null) { // Add current thread to be monitored by QueryMonitor.
-   * queryMonitor.monitorQueryThread(Thread.currentThread(), query); } new PRQueryProcessor(this,
-   * query, parameters, buckets).executeQuery(resultCollector); } finally { if (queryMonitor !=
-   * null) { queryMonitor.stopMonitoringQueryThread(Thread.currentThread(), query); } } }
-   */
-
-  /**
    * This method returns name of this Partitioned Region
    *
    * @return Partitioned Region name
@@ -1235,40 +1226,32 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     return UPDATE_ACCESS_TIME_ON_INTEREST && this.keysOfInterest.containsKey(event.getKey());
   }
 
-
-
   protected void updateMemoryStats(final long memoryDelta) {
-    // Update stats
     this.partitionedRegion.getPrStats().incBytesInUse(memoryDelta);
-
     final long locBytes = this.bytesInUse.addAndGet(memoryDelta);
 
-    if (!this.partitionedRegion.isEntryEvictionPossible()) {
-      StringId logStr = null;
-      // only check for exceeding local max memory if we're not evicting entries.
-      // TODO, investigate precision issues with cast to long
-      if (!this.exceededLocalMaxMemoryLimit) { // previously OK
-        if (locBytes > this.maximumLocalBytes) { // not OK now
-          this.exceededLocalMaxMemoryLimit = true;
-          logStr =
-              LocalizedStrings.PartitionedRegionDataStore_PARTITIONED_REGION_0_HAS_EXCEEDED_LOCAL_MAXIMUM_MEMORY_CONFIGURATION_2_MB_CURRENT_SIZE_IS_3_MB;
-        }
-      } else {
-        if (locBytes <= this.maximumLocalBytes) {
-          this.exceededLocalMaxMemoryLimit = false;
-          logStr =
-              LocalizedStrings.PartitionedRegionDataStore_PARTITIONED_REGION_0_IS_AT_OR_BELOW_LOCAL_MAXIMUM_MEMORY_CONFIGURATION_2_MB_CURRENT_SIZE_IS_3_MB;
-        }
+    // only check for exceeding local max memory if we're not evicting entries.
+    if (this.partitionedRegion.isEntryEvictionPossible()) {
+      return;
+    }
+
+    if (this.exceededLocalMaxMemoryLimit) { // previously over limit
+      if (locBytes <= this.maximumLocalBytes) { // not over limit now
+        this.exceededLocalMaxMemoryLimit = false;
+        logger.info(
+            "Partitioned Region {} is at or below local maximum memory configuration {} Mb, current size is {} Mb",
+            this.partitionedRegion.getFullPath(),
+            this.partitionedRegion.getLocalMaxMemory(),
+            locBytes / PartitionedRegionHelper.BYTES_PER_MB);
       }
-      if (logStr != null) {
-        Object[] logArgs = new Object[] {this.partitionedRegion.getFullPath(), logStr,
-            Long.valueOf(this.partitionedRegion.getLocalMaxMemory()),
-            Long.valueOf(locBytes / PartitionedRegionHelper.BYTES_PER_MB)};
-        if (this.exceededLocalMaxMemoryLimit) {
-          logger.warn(LocalizedMessage.create(logStr, logArgs));
-        } else {
-          logger.info(LocalizedMessage.create(logStr, logArgs));
-        }
+    } else { // previously not over limit
+      if (locBytes > this.maximumLocalBytes) { // over limit now
+        this.exceededLocalMaxMemoryLimit = true;
+        logger.warn(
+            "Partitioned Region {} has exceeded local maximum memory configuration {} Mb, current size is {} Mb",
+            this.partitionedRegion.getFullPath(),
+            this.partitionedRegion.getLocalMaxMemory(),
+            locBytes / PartitionedRegionHelper.BYTES_PER_MB);
       }
     }
   }
@@ -1365,8 +1348,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       if (this.partitionedRegion.isDestroyed()) {
         checkRegionDestroyedOnBucket(bucketRegion, event.isOriginRemote(),
             new RegionDestroyedException(
-                LocalizedStrings.PartitionedRegionDataStore_REGION_HAS_BEEN_DESTROYED
-                    .toLocalizedString(),
+                "Region has been destroyed",
                 this.partitionedRegion.getFullPath()));
       }
 
@@ -1441,15 +1423,15 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
                     && buk.getPartitionedRegion().isShadowPR()) {
                   if (buk.getPartitionedRegion().getColocatedWithRegion() != null) {
                     buk.getPartitionedRegion().getColocatedWithRegion().getRegionAdvisor()
-                        .getBucketAdvisor(bucketId).setShadowBucketDestroyed(true);
+                        .getBucketAdvisor(bucketId).markShadowBucketAsDestroyed(buk.getFullPath());
                   }
                 }
               } catch (RegionDestroyedException ignore) {
               } catch (Exception ex) {
-                logger.warn(LocalizedMessage.create(
-                    LocalizedStrings.PartitionedRegion_PARTITIONEDREGION_0_CLEANUP_PROBLEM_DESTROYING_BUCKET_1,
-                    new Object[] {this.partitionedRegion.getFullPath(),
-                        Integer.valueOf(buk.getId())}),
+                logger.warn(
+                    String.format("PartitionedRegion %s: cleanUp problem destroying bucket %s",
+                        new Object[] {this.partitionedRegion.getFullPath(),
+                            Integer.valueOf(buk.getId())}),
                     ex);
               }
 
@@ -1467,9 +1449,10 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
         lock.unlock();
       }
     } catch (Exception ex) {
-      logger.warn(LocalizedMessage.create(
-          LocalizedStrings.PartitionedRegionDataStore_PARTITIONEDREGION_0_CAUGHT_UNEXPECTED_EXCEPTION_DURING_CLEANUP,
-          this.partitionedRegion.getFullPath()), ex);
+      logger.warn(
+          String.format("PartitionedRegion %s: caught unexpected exception during data cleanup",
+              this.partitionedRegion.getFullPath()),
+          ex);
     } finally {
       this.partitionedRegion.getPrStats().setBucketCount(0);
       this.bucketStats.close();
@@ -1569,13 +1552,13 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       BucketAdvisor bucketAdvisor = bucketRegion.getBucketAdvisor();
       InternalDistributedMember myId =
           this.partitionedRegion.getDistributionManager().getDistributionManagerId();
-      Lock writeLock = bucketAdvisor.getActiveWriteLock();
+      Lock primaryMoveReadLock = bucketAdvisor.getPrimaryMoveReadLock();
 
       // Fix for 43613 - don't remove the bucket
       // if we are primary. We hold the lock here
       // to prevent this member from becoming primary until this
       // member is no longer hosting the bucket.
-      writeLock.lock();
+      primaryMoveReadLock.lock();
       try {
         // forceRemovePrimary==true will enable remove the bucket even when:
         // 1) it's primary
@@ -1610,12 +1593,12 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
         if (bucketRegion.getPartitionedRegion().isShadowPR()) {
           if (bucketRegion.getPartitionedRegion().getColocatedWithRegion() != null) {
             bucketRegion.getPartitionedRegion().getColocatedWithRegion().getRegionAdvisor()
-                .getBucketAdvisor(bucketId).setShadowBucketDestroyed(true);
+                .getBucketAdvisor(bucketId).markAllShadowBucketsAsDestroyed();
           }
         }
         bucketAdvisor.getProxyBucketRegion().removeBucket();
       } finally {
-        writeLock.unlock();
+        primaryMoveReadLock.unlock();
       }
 
       if (logger.isDebugEnabled()) {
@@ -1635,7 +1618,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       InternalDistributedMember primary = bucketAdvisor.getPrimary();
       if (!myId.equals(primary)) {
         StateFlushOperation flush = new StateFlushOperation(bucketRegion);
-        int executor = ClusterDistributionManager.WAITING_POOL_EXECUTOR;
+        int executor = OperationExecutors.WAITING_POOL_EXECUTOR;
         try {
           flush.flush(Collections.singleton(primary), myId, executor, false);
         } catch (InterruptedException e) {
@@ -1787,10 +1770,10 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
             this.partitionedRegion);
       }
       ForceReattemptException fre = new BucketNotFoundException(
-          LocalizedStrings.PartitionedRegionDataStore_BUCKET_ID_0_NOT_FOUND_ON_VM_1
-              .toLocalizedString(
-                  new Object[] {this.partitionedRegion.bucketStringForLogs(bucketId.intValue()),
-                      this.partitionedRegion.getMyId()}));
+          String.format("Bucket id %s not found on VM %s",
+
+              new Object[] {this.partitionedRegion.bucketStringForLogs(bucketId.intValue()),
+                  this.partitionedRegion.getMyId()}));
       if (key != null) {
         fre.setHash(key.hashCode());
       }
@@ -1875,8 +1858,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
           throw new ForceReattemptException("Bucket removed during containsValueForKey", rde);
         } else {
           throw new RegionDestroyedException(
-              LocalizedStrings.PartitionedRegionDataStore_UNABLE_TO_GET_VALUE_FOR_KEY
-                  .toLocalizedString(),
+              "Unable to get value for key.",
               this.partitionedRegion.toString(), rde);
         }
       }
@@ -2065,7 +2047,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       }
     } catch (IOException e) {
       throw new ForceReattemptException(
-          LocalizedStrings.PartitionedRegionDataStore_UNABLE_TO_SERIALIZE_VALUE.toLocalizedString(),
+          "Unable to serialize value",
           e);
     }
   }
@@ -2104,7 +2086,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
           throw new ForceReattemptException("Bucket removed during getEntry");
         }
         throw new EntryNotFoundException(
-            LocalizedStrings.PartitionedRegionDataStore_ENTRY_NOT_FOUND.toLocalizedString());
+            "entry not found");
 
       } else if ((ent.isTombstone() && allowTombstones) || !ent.isDestroyedOrRemoved()) {
         res = new EntrySnapshot(ent, bucketRegion, partitionedRegion, allowTombstones);
@@ -2120,7 +2102,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
           throw new ForceReattemptException("Bucket removed during getEntry", rde);
         } else {
           throw new RegionDestroyedException(
-              LocalizedStrings.PartitionedRegionDataStore_UNABLE_TO_GET_ENTRY.toLocalizedString(),
+              "Unable to get Entry.",
               this.partitionedRegion.toString(), rde);
         }
       }
@@ -2165,13 +2147,13 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
         throw new PRLocallyDestroyedException(rde);
       } else {
         this.getPartitionedRegion().checkReadiness();
-        if (r != null && r.isBucketDestroyed()) {
+        if (r.isBucketDestroyed()) {
           // bucket moved by rebalance
           throw new ForceReattemptException("Bucket removed during remoteGetKeys", rde);
         } else {
           throw new RegionDestroyedException(
-              LocalizedStrings.PartitionedRegionDataStore_UNABLE_TO_FETCH_KEYS_ON_0
-                  .toLocalizedString(this.partitionedRegion.toString()),
+              String.format("Unable to fetch keys on %s",
+                  this.partitionedRegion.toString()),
               this.partitionedRegion.getFullPath(), rde);
         }
       }
@@ -2214,8 +2196,8 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
           throw new ForceReattemptException("Bucket removed during keySet", rde);
         } else {
           throw new RegionDestroyedException(
-              LocalizedStrings.PartitionedRegionDataStore_UNABLE_TO_FETCH_KEYS_ON_0
-                  .toLocalizedString(this.partitionedRegion),
+              String.format("Unable to fetch keys on %s",
+                  this.partitionedRegion),
               this.partitionedRegion.getFullPath(), rde);
         }
       }
@@ -2344,7 +2326,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
    * @return the map of bucketIds and their associated sizes, or {@link Collections#EMPTY_MAP}when
    *         the size is zero
    */
-  public Map getSizeLocally() {
+  public Map<Integer, Integer> getSizeLocally() {
     return getSizeLocally(false);
   }
 
@@ -2358,7 +2340,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     if (this.localBucket2RegionMap.isEmpty()) {
       return Collections.EMPTY_MAP;
     }
-    mySizeMap = new HashMap<Integer, Integer>(this.localBucket2RegionMap.size());
+    mySizeMap = new HashMap<>(this.localBucket2RegionMap.size());
     Map.Entry<Integer, BucketRegion> me;
     BucketRegion r;
     for (Iterator<Map.Entry<Integer, BucketRegion>> itr =
@@ -2377,7 +2359,6 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
           }
         }
       } catch (CacheRuntimeException skip) {
-        continue;
       }
     } // for
     if (logger.isDebugEnabled()) {
@@ -2466,7 +2447,6 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     }
     return sizeOfLocal;
   }
-
 
   /**
    * Interface for visiting buckets
@@ -2637,18 +2617,15 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
 
   /**
    * <i>Test Method</i> Return the list of all the primary bucket ids in this data store.
-   *
    */
-  public List getLocalPrimaryBucketsListTestOnly() {
-    final List primaryBucketList = new ArrayList();
-    visitBuckets(new BucketVisitor() {
-      @Override
-      public void visit(Integer bucketId, Region r) {
-        BucketRegion br = (BucketRegion) r;
-        BucketAdvisor ba = (BucketAdvisor) br.getDistributionAdvisor();
-        if (ba.isPrimary()) {
-          primaryBucketList.add(bucketId);
-        }
+  @VisibleForTesting
+  public List<Integer> getLocalPrimaryBucketsListTestOnly() {
+    List<Integer> primaryBucketList = new ArrayList<>();
+    visitBuckets((bucketId, region) -> {
+      BucketRegion bucketRegion = (BucketRegion) region;
+      BucketAdvisor bucketAdvisor = (BucketAdvisor) bucketRegion.getDistributionAdvisor();
+      if (bucketAdvisor.isPrimary()) {
+        primaryBucketList.add(bucketId);
       }
     });
     return primaryBucketList;
@@ -2715,6 +2692,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     return br;
   }
 
+  @Override
   public CachePerfStats getCachePerfStats() {
     return this.bucketStats;
   }
@@ -2955,10 +2933,9 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
       if (!isNodeInMetaData) {
         partitionedRegion.checkReadiness();
         Set owners = partitionedRegion.getRegionAdvisor().getBucketOwners(buckId);
-        logger.info(LocalizedMessage.create(
-            LocalizedStrings.PartitionedRegionDataStore_VERIFIED_NODELIST_FOR_BUCKETID_0_IS_1,
-            new Object[] {partitionedRegion.bucketStringForLogs(buckId),
-                PartitionedRegionHelper.printCollection(owners)}));
+        logger.info("Verified nodelist for bucketId={} is {}",
+            partitionedRegion.bucketStringForLogs(buckId),
+            PartitionedRegionHelper.printCollection(owners));
         Assert.assertTrue(false,
             " This node " + partitionedRegion.getNode() + " is managing the bucket with bucketId= "
                 + partitionedRegion.bucketStringForLogs(buckId) + " but doesn't have an entry in "
@@ -2990,29 +2967,28 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
   }
 
   public void executeOnDataStore(final Set localKeys, final Function function, final Object object,
-      final int prid, final Set<Integer> bucketSet, final boolean isReExecute,
+      final int prid, final int[] bucketArray, final boolean isReExecute,
       final PartitionedRegionFunctionStreamingMessage msg, long time, ServerConnection servConn,
       int transactionID) {
 
-    if (!areAllBucketsHosted(bucketSet)) {
+    if (!areAllBucketsHosted(bucketArray)) {
       throw new BucketMovedException(
-          LocalizedStrings.FunctionService_BUCKET_MIGRATED_TO_ANOTHER_NODE.toLocalizedString());
+          "Bucket migrated to another node. Please retry.");
     }
     final DistributionManager dm = this.partitionedRegion.getDistributionManager();
 
     ResultSender resultSender = new PartitionedRegionFunctionResultSender(dm,
-        this.partitionedRegion, time, msg, function, bucketSet);
+        this.partitionedRegion, time, msg, function, bucketArray);
 
     final RegionFunctionContextImpl prContext =
         new RegionFunctionContextImpl(getPartitionedRegion().getCache(), function.getId(),
             this.partitionedRegion, object, localKeys, ColocationHelper
-                .constructAndGetAllColocatedLocalDataSet(this.partitionedRegion, bucketSet),
-            bucketSet, resultSender, isReExecute);
+                .constructAndGetAllColocatedLocalDataSet(this.partitionedRegion, bucketArray),
+            bucketArray, resultSender, isReExecute);
 
-    FunctionStats stats = FunctionStats.getFunctionStats(function.getId(), dm.getSystem());
+    FunctionStats stats = FunctionStatsManager.getFunctionStats(function.getId(), dm.getSystem());
+    long start = stats.startFunctionExecution(function.hasResult());
     try {
-      long start = stats.startTime();
-      stats.startFunctionExecution(function.hasResult());
       if (logger.isDebugEnabled()) {
         logger.debug("Executing Function: {} on Remote Node with context: ", function.getId(),
             prContext);
@@ -3024,7 +3000,7 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
         logger.debug("FunctionException occurred on remote node while executing Function: {}",
             function.getId(), functionException);
       }
-      stats.endFunctionExecutionWithException(function.hasResult());
+      stats.endFunctionExecutionWithException(start, function.hasResult());
       if (functionException.getCause() instanceof QueryInvalidException) {
         // Handle this exception differently since it can contain
         // non-serializable objects.
@@ -3036,13 +3012,19 @@ public class PartitionedRegionDataStore implements HasCachePerfStats {
     }
   }
 
-  public boolean areAllBucketsHosted(final Set<Integer> bucketSet) {
+  public boolean areAllBucketsHosted(final int[] bucketArray) {
     // boolean arr[] = new boolean[]{false, true, false, true , false , false , false , false };
     // Random random = new Random();
     // int num = random.nextInt(7);
     // System.out.println("PRDS.verifyBuckets returning " + arr[num]);
     // return arr[num];
-    for (Integer bucket : bucketSet) {
+    int bucketlength = BucketSetHelper.length(bucketArray);
+    if (bucketlength == 0) {
+      return true;
+    }
+    int bucket;
+    for (int i = 0; i < bucketlength; i++) {
+      bucket = BucketSetHelper.get(bucketArray, i);
       if (!this.partitionedRegion.getRegionAdvisor().getBucketAdvisor(bucket).isHosting()) {
         return false;
       }

@@ -118,6 +118,9 @@ limitations under the License.
                             </li>
                         </ul>
                     </li>
+                <li>
+                    <a href="/docs/guide/<%=vars.product_version_nodot%>/configuring/running/cluster-management-service.html">Cluster Management Service (Experimental)</a>
+                </li>
                 </ul>
             </li>
             <li class="has_submenu">
@@ -396,28 +399,33 @@ limitations under the License.
                         </ul>
                     </li>
                     <li class="has_submenu">
-                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html">Managing Heap and Off-heap Memory</a>
+                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_and_off_heap_management.html">Managing Heap and Off-heap Memory</a>
                         <ul>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#section_590DA955523246ED980E4E351FF81F71">Tuning the JVM's Garbage Collection Parameters</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#how_the_resource_manager_works">Using the Geode Resource Manager</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager_controlling_heap_use">Controlling Heap Use with the Resource Manager</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager__section_4949882892DA46F6BB8588FA97037F45">Configure Geode for Heap LRU Management</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#set_jvm_gc_tuning_params">Set the JVM GC Tuning Parameters</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager__section_DE1CC494C2B547B083AA00821250972A">Monitor and Tune Heap LRU Configurations</a>
-                            </li>
-                            <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#resource_manager_example_configurations">Resource Manager Example Configurations</a>
+                            <li class="has_submenu">
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html">Managing Heap Memory</a>
+                                <ul>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#how_the_resource_manager_works">Using the Geode Resource Manager</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#how_the_resource_manager_works__section_EA5E52E65923486488A71E3E6F0DE9DA">How Background Eviction Is Performed</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager_controlling_heap_use">Controlling Heap Use with the Resource Manager</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager__section_4949882892DA46F6BB8588FA97037F45">Configure Geode for Heap LRU Management</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#tuning_jvm_gc_parameters">Tuning the JVM's Garbage Collection Parameters</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#configuring_resource_manager__section_DE1CC494C2B547B083AA00821250972A">Monitor and Tune Heap LRU Configurations</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/heap_management.html#resource_manager_example_configurations">Resource Manager Example Configurations</a>
+                                    </li>
+                                </ul>
                             </li>
                             <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/heap_use/off_heap_management.html">Managing Off-Heap Memory</a>
@@ -597,7 +605,10 @@ limitations under the License.
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/security/implementing_authorization.html">Implementing Authorization</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/security/authorization_example.html">Authorization Example</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/security/method_invocation_authorizers.html">Method Invocation Authorizers</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/managing/security/authorization_example.html">Authorization Examples</a>
                                     </li>
                                 </ul>
                             </li>
@@ -921,6 +932,9 @@ limitations under the License.
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/partitioned_regions/checking_region_redundancy.html">Checking Redundancy in Partitioned Regions</a>
                             </li>
                             <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/partitioned_regions/restoring_region_redundancy.html">Restoring Redundancy in Partitioned Regions</a>
+                            </li>
+                            <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/partitioned_regions/moving_partitioned_data.html">Moving Partitioned Region Data to Another Member</a>
                             </li>
                         </ul>
@@ -1204,17 +1218,14 @@ limitations under the License.
                         <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/chapter_overview.html">Querying</a>
                         <ul>
                             <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/getting_started/querying_quick_reference.html">Geode Querying FAQ and Examples</a>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/getting_started/querying_quick_reference.html">Querying FAQ and Examples</a>
+                            </li>
+                            <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/query_basics.html">Querying with OQL</a>
                             </li>
                             <li class="has_submenu">
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/query_basics.html">Querying with OQL</a>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/running_a_query.html">Writing and Executing a Query in OQL</a>
                                 <ul>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/oql_compared_to_sql.html">Advantages of OQL</a>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/running_a_query.html">Writing and Executing a Query in Geode</a>
-                                    </li>
                                     <li class="has_submenu">
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/what_is_a_query_string.html">Building a Query String</a>
                                         <ul>
@@ -1283,6 +1294,9 @@ limitations under the License.
                                     </li>
                                     <li>
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/query_additional/using_query_bind_parameters.html">Using Query Bind Parameters</a>
+                                    </li>
+                                    <li>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/query_additional/querying-a-specific-member.html">Querying a Specific Member</a>
                                     </li>
                                     <li class="has_submenu">
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/querying_basics/querying_partitioned_regions.html">
@@ -1376,14 +1390,15 @@ limitations under the License.
                         <ul>
                            <li>
                            <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/transactions/transactions_intro.html">Adherence to ACID Promises</a>
-                           <li>
+                           </li>
                            <li>
                            <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/transactions/directed_example.html">Code Examples</a>
-                           <li>
+                           </li>
                            <li>
                            <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/transactions/design_considerations.html">Design Considerations</a>
-                           <li>
+                           </li>
                         </ul>
+                    </li>
                     <li class="has_submenu">
                         <a href="/docs/guide/<%=vars.product_version_nodot%>/developing/function_exec/chapter_overview.html">Function Execution</a>
                         <ul>
@@ -1445,46 +1460,46 @@ limitations under the License.
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/rest_regions.html">Region Endpoints</a>
                                 <ul>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_regions.html">GET /gemfire-api/v1</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_regions.html">GET /geode/v1</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_data.html">GET /gemfire-api/v1/{region}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_data.html">GET /geode/v1/{region}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_keys.html">GET /gemfire-api/v1/{region}/keys</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_keys.html">GET /geode/v1/{region}/keys</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_key_data.html">GET /gemfire-api/v1/{region}/{key}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_key_data.html">GET /geode/v1/{region}/{key}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_data_for_multiple_keys.html">GET /gemfire-api/v1/{region}/{key1},{key2},...,{keyN}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_region_data_for_multiple_keys.html">GET /geode/v1/{region}/{key1},{key2},...,{keyN}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/head_region_size.html">HEAD /gemfire-api/v1/{region}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/head_region_size.html">HEAD /geode/v1/{region}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_if_absent_data.html">POST /gemfire-api/v1/{region}?key=&lt;key&gt;</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_if_absent_data.html">POST /geode/v1/{region}?key=&lt;key&gt;</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_data.html">PUT /gemfire-api/v1/{region}/{key}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_data.html">PUT /geode/v1/{region}/{key}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_multiple_values_for_keys.html">PUT /gemfire-api/v1/{region}/{key1},{key2},...{keyN}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_multiple_values_for_keys.html">PUT /geode/v1/{region}/{key1},{key2},...{keyN}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_replace_data.html">PUT /gemfire-api/v1/{region}/{key}?op=REPLACE</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_replace_data.html">PUT /geode/v1/{region}/{key}?op=REPLACE</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_cas_data.html">PUT /gemfire-api/v1/{region}/{key}?op=CAS</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_cas_data.html">PUT /geode/v1/{region}/{key}?op=CAS</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_all_data.html">DELETE /gemfire-api/v1/{region}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_all_data.html">DELETE /geode/v1/{region}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_data_for_key.html">DELETE /gemfire-api/v1/{region}/{key}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_data_for_key.html">DELETE /geode/v1/{region}/{key}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_data_for_multiple_keys.html">DELETE /gemfire-api/v1/{region}/{key1},{key2},...{keyN}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_data_for_multiple_keys.html">DELETE /geode/v1/{region}/{key1},{key2},...{keyN}</a>
                                     </li>
                                 </ul>
                             </li>
@@ -1492,22 +1507,22 @@ limitations under the License.
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/rest_queries.html">Query Endpoints</a>
                                 <ul>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_queries.html">GET /gemfire-api/v1/queries</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_queries.html">GET /geode/v1/queries</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_create_query.html">POST /gemfire-api/v1/queries?id=&lt;queryId&gt;&amp;q=&lt;OQL-statement&gt;</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_create_query.html">POST /geode/v1/queries?id=&lt;queryId&gt;&amp;q=&lt;OQL-statement&gt;</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_execute_query.html">POST /gemfire-api/v1/queries/{queryId}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_execute_query.html">POST /geode/v1/queries/{queryId}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_query.html">PUT /gemfire-api/v1/queries/{queryId}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/put_update_query.html">PUT /geode/v1/queries/{queryId}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_named_query.html">DELETE /gemfire-api/v1/queries/{queryId}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/delete_named_query.html">DELETE /geode/v1/queries/{queryId}</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_execute_adhoc_query.html">GET /gemfire-api/v1/queries/adhoc?q=&lt;OQL-statement&gt;</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_execute_adhoc_query.html">GET /geode/v1/queries/adhoc?q=&lt;OQL-statement&gt;</a>
                                     </li>
                                 </ul>
                             </li>
@@ -1515,10 +1530,10 @@ limitations under the License.
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/rest_functions.html">Function Endpoints</a>
                                 <ul>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_functions.html">GET /gemfire-api/v1/functions</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_functions.html">GET /geode/v1/functions</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_execute_functions.html">POST /gemfire-api/v1/functions/{functionId}</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/post_execute_functions.html">POST /geode/v1/functions/{functionId}</a>
                                     </li>
                                 </ul>
                             </li>
@@ -1526,10 +1541,10 @@ limitations under the License.
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/rest_admin.html">Administrative Endpoints</a>
                                 <ul>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/ping_service.html">[HEAD | GET] /gemfire-api/v1/ping</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/ping_service.html">[HEAD | GET] /geode/v1/ping</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_servers.html">GET /gemfire-api/v1/servers</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/rest_apps/get_servers.html">GET /geode/v1/servers</a>
                                     </li>
                                 </ul>
                             </li>
@@ -1629,6 +1644,9 @@ gfsh</a>
                                             </li>
                                             <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/alter.html#topic_99BCAD98BDB5470189662D2F308B68EB">alter disk-store</a>
+                                            </li>
+                                            <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/alter.html#topic_alter_query_service">alter query-service</a>
                                             </li>
                                             <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/alter.html#topic_E74ED23CB60342538B2175C326E7D758">alter region</a>
@@ -1745,6 +1763,9 @@ gfsh</a>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/describe.html#topic_kys_yvk_2l">describe offline-disk-store</a>
                                             </li>
                                             <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/describe.html#topic_describe_query_service">describe query-service</a>
+                                            </li>
+                                            <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/describe.html#topic_DECF7D3D33F54071B6B8AD4EA7E3F90B">describe region
                                                 </a>
                                             </li>
@@ -1761,6 +1782,9 @@ gfsh</a>
                                             </li>
                                             <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/destroy.html#topic_E48C2DF809054C12A162026D8A2139BB">destroy function</a>
+                                            </li>
+                                            <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/destroy.html#destroy-gr">destroy gateway-receiver</a>
                                             </li>
                                             <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/destroy.html#destroy-gs">destroy gateway-sender</a>
@@ -1911,8 +1935,19 @@ gfsh</a>
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/remove.html">remove</a>
                                     </li>
                                     <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/resume.html">resume gateway-sender</a>
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/restore.html">restore redundancy</a>
                                     </li>
+                                    <li class="has_submenu">
+                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/resume.html">resume</a>
+                                        <ul>
+                                            <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/resume.html#topic_resume_async_event_queue_dispatcher">resume async-event-queue-dispatcher</a>
+                                            </li>
+                                            <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/resume.html#topic_resume_gateway_sender">resume gateway-sender</a>
+                                            </li>
+                                        </ul>
+                                        </li>
                                     <li>
                                         <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/revoke.html">revoke missing-disk-store</a>
                                     </li>
@@ -1997,6 +2032,9 @@ gfsh</a>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/status.html#topic_E96D0EFA513C4CD79B833FCCDD69C832">status locator</a>
                                             </li>
                                             <li>
+                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/status.html#topic_status_redundancy">status redundancy</a>
+                                            </li>
+                                            <li>
                                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/gfsh/command-pages/status.html#topic_E5DB49044978404D9D6B1971BF5D400D">status server</a>
                                             </li>
                                         </ul>
@@ -2073,6 +2111,9 @@ gfsh</a>
                             <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/http_session_mgmt/session_state_log_files.html">Session State Log Files</a>
                             </li>
+                            <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/http_session_mgmt/configuring_non_sticky_sessions.html">Configuring Non-Sticky Sessions</a>
+                            </li>
                             <li class="has_submenu">
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/http_session_mgmt/session_mgmt_tcserver.html">HTTP Session Management Module for Pivotal tc Server</a>
                                 <ul>
@@ -2148,16 +2189,19 @@ gfsh</a>
                         </ul>
                     </li>
                     <li class="has_submenu">
-                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_adapter.html">Geode Redis Adapter</a>
+                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_api_for_geode.html">Redis API for <%=vars.product_name%></a>
                         <ul>
                             <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_adapter.html#using-the-redis-adapter">Using the Redis Adapter</a>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_api_for_geode.html#using-the-api">Using the Redis API for <%=vars.product_name%></a>
                             </li>
                             <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_adapter.html#how-the-redis-adapter-works">How the Redis Adapter Works</a>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_api_for_geode.html#included-commands">Included Redis Commands</a>
                             </li>
                             <li>
-                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_adapter.html#advantages-of-geode-over-redis">Advantages of Geode over a Redis Server</a>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_api_for_geode.html#advantages-over-redis">Advantages of <%=vars.product_name%> over Redis</a>
+                            </li>
+                            <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/redis_api_for_geode.html#expiration-accuracy">Expiration Accuracy</a>
                             </li>
                         </ul>
                     </li>
@@ -2169,6 +2213,17 @@ gfsh</a>
                             </li>
                             <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/lucene_integration.html#LuceneRandC">Requirements and Caveats</a>
+                            </li>
+                        </ul>
+                    </li>
+                    <li class="has_submenu">
+                        <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/micrometer/micrometer-overview.html">Micrometer</a>
+                        <ul>
+                            <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/micrometer/micrometer-configuration.html">Configuration and Publishing</a>
+                            </li>
+                            <li>
+                                <a href="/docs/guide/<%=vars.product_version_nodot%>/tools_modules/micrometer/micrometer-meters.html">Micrometer Meters and Tags</a>
                             </li>
                         </ul>
                     </li>
@@ -2203,547 +2258,15 @@ gfsh</a>
                             <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache-elements-list.html">&lt;cache&gt; Element Hierarchy</a>
                             </li>
-                            <li class="has_submenu">
+                            <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html">&lt;cache&gt; Element Reference</a>
-                                <ul>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#cache-transaction-manager">&lt;cache-transaction-manager&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#transaction-listener">&lt;transaction-listener&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#transaction-writer">&lt;transaction-writer&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#dynamic-region-factory">&lt;dynamic-region-factory&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-sender">&lt;gateway-sender&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-event-filter">&lt;gateway-event-filter&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-event-substitution-filter">&lt;gateway-event-substitution-filter&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-transport-filter">&lt;gateway-transport-filter&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-receiver">&lt;gateway-receiver&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-receiver_gateway-transport-filter">&lt;gateway-transport-filter&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#gateway-conflict-resolver">&lt;gateway-conflict-resolver&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#async-event-queue">&lt;async-event-queue&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#async-event-listener">&lt;async-event-listener&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#cache-server">&lt;cache-server&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#client-subscription">&lt;client-subscription&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#custom-load-probe">&lt;custom-load-probe&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#pool">&lt;pool&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#locator">&lt;locator&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#server">&lt;server&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#disk-store">&lt;disk-store&gt;</a>
-                                        <ul>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#disk-dirs">&lt;disk-dirs&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#disk-dir">&lt;disk-dir&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#pdx">&lt;pdx&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#pdx-serializer_24898989679">&lt;pdx-serializer&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region-attributes">&lt;region-attributes&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#key-constraint">&lt;key-constraint&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#value-constraint">&lt;value-constraint&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region-time-to-live">&lt;region-time-to-live&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region-idle-time">&lt;region-idle-time&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region-idle-time_expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region-idle-time_custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-time-to-live">&lt;entry-time-to-live&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-idle-time_expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-time-to-live_custom_expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-idle-time">&lt;entry-idle-time&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-idle-time_expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry-idle-time_custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#partition-attributes">&lt;partition-attributes&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#partition-resolver">&lt;partition-resolver&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#partition-listener">&lt;partition-listener&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#fixed-partition-attributes">&lt;fixed-partition-attributes&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#membership-attributes">&lt;membership-attributes&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#required-role">&lt;required-role&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#subscription-attributes">&lt;subscription-attributes&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#topic_qsb_pnw_bm">&lt;cache-loader&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#topic_h53_pnw_bm">&lt;cache-writer&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#cache-listener">&lt;cache-listener&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#topic_pcd_t25_44">&lt;compressor&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#eviction-attributes">&lt;eviction-attributes&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#lru-entry-count">&lt;lru-entry-count&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#lru-heap-percentage">&lt;lru-heap-percentage&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#lru-memory-size">&lt;lru-memory-size&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#jndi-bindings">&lt;jndi-bindings&gt;</a>
-                                        <ul>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#jndi-binding">&lt;jndi-binding&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#config-property">&lt;config-property&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#config-property-name">&lt;config-property-name&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#config-property-type">&lt;config-property-type&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#config-property-value">&lt;config-property-value&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region">&lt;region&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#index">&lt;index&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#luceneindex">&lt;lucene:index&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#lucenefield">&lt;lucene:field&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#entry">&lt;entry&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#key">&lt;key&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#string">&lt;string&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#declarable">&lt;declarable&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#value">&lt;value&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#string">&lt;string&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#declarable">&lt;declarable&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#region_region">&lt;region&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#vm-root-region">&lt;vm-root-region&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#function-service">&lt;function-service&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#function">&lt;function&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#resource-manager">&lt;resource-manager&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#serialization-registration">&lt;serialization-registration&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#serializer">&lt;serializer&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#instantiator">&lt;instantiator&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#backup">&lt;backup&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#initializer">&lt;initializer&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#declarable">&lt;declarable&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#class-name_parameter">&lt;class-name&gt; and &lt;parameter&gt;</a>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#declarable">&lt;declarable&gt;</a>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#string">&lt;string&gt;</a>
-                                    </li>
-                                </ul>
                             </li>
                             <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache-elements-list.html">
-                                    &lt;client-cache&gt; Element Hierarchy
-                                </a>
+                                    &lt;client-cache&gt; Element Hierarchy</a>
                             </li>
-                            <li class="has_submenu">
+                            <li>
                                 <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html">&lt;client-cache&gt; Element Reference</a>
-                                <ul>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-cache-transaction-manager">&lt;cache-transaction-manager&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-transaction-listener">&lt;transaction-listener&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-transaction-writer">&lt;transaction-writer&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-pool">&lt;pool&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-locator">&lt;locator&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-server">&lt;server&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-disk-store">&lt;disk-store&gt;</a>
-                                        <ul>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-disk-dirs">&lt;disk-dirs&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-disk-dir">&lt;disk-dir&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-pdx">&lt;pdx&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-pdx-serializer">&lt;pdx-serializer&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-region-attributes">&lt;region-attributes&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-key-constraint">&lt;key-constraint&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-value-constraint">&lt;value-constraint&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-region-time-to-live">&lt;region-time-to-live&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-region-idle-time">&lt;region-idle-time&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-rit-expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-rit-custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-entry-time-to-live">&lt;entry-time-to-live&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-ettl-expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-ettl-custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-entry-idle-time">&lt;entry-idle-time&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-eit-expiration-attributes">&lt;expiration-attributes&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-eit-custom-expiry">&lt;custom-expiry&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#topic_qsb_pnw_bm">&lt;cache-loader&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/cache_xml.html#topic_h53_pnw_bm">&lt;cache-writer&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-cache-listener">&lt;cache-listener&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-eviction-attributes">&lt;eviction-attributes&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-lru-entry-count">&lt;lru-entry-count&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-lru-heap-percentage">&lt;lru-heap-percentage&gt;</a>
-                                                    </li>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-lru-memory-size">&lt;lru-memory-size&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-jndi-bindings">&lt;jndi-bindings&gt;</a>
-                                        <ul>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-jndi-binding">&lt;jndi-binding&gt;</a>
-                                                <ul>
-                                                    <li>
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-config-property">&lt;config-property&gt;</a>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-region">&lt;region&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-r-region-attributes">&lt;region-attributes&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-index">&lt;index&gt;</a>
-                                            </li>
-                                            <li class="has_submenu">
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-entry">&lt;entry&gt;</a>
-                                                <ul>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-key">&lt;key&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-string">&lt;string&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-declarable">&lt;declarable&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                    <li class="has_submenu">
-                                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-value">&lt;value&gt;</a>
-                                                        <ul>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-v-string">&lt;string&gt;</a>
-                                                            </li>
-                                                            <li>
-                                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-v-declarable">&lt;declarable&gt;</a>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-ra-region">&lt;region&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-function-service">&lt;function-service&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-function">&lt;function&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-resource-manager">&lt;resource-manager&gt;</a>
-                                    </li>
-                                    <li class="has_submenu">
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-serialization-registration">&lt;serialization-registration&gt;</a>
-                                        <ul>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-serializer">&lt;serializer&gt;</a>
-                                            </li>
-                                            <li>
-                                                <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-instantiator">&lt;instantiator&gt;</a>
-                                            </li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <a href="/docs/guide/<%=vars.product_version_nodot%>/reference/topics/client-cache.html#cc-initializer">&lt;initializer&gt;</a>
-                                    </li>
-                                </ul>
                             </li>
                         </ul>
                     </li>

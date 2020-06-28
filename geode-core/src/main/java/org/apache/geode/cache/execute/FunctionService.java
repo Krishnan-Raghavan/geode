@@ -18,17 +18,16 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionService;
 import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientCacheFactory;
 import org.apache.geode.cache.client.Pool;
-import org.apache.geode.cache.execute.internal.FunctionServiceManager;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.distributed.DistributedSystemDisconnectedException;
-import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.cache.execute.FunctionExecutionService;
+import org.apache.geode.internal.cache.execute.InternalFunctionExecutionServiceImpl;
 
 /**
  * Provides the entry point into execution of user defined {@linkplain Function}s.
@@ -40,9 +39,19 @@ import org.apache.geode.internal.i18n.LocalizedStrings;
  * @since GemFire 6.0
  */
 public class FunctionService {
-  private static final FunctionServiceManager functionSvcMgr = new FunctionServiceManager();
 
-  FunctionService() {}
+  @MakeNotStatic("The FunctionService requires a cache. We need to have an instance per cache.")
+  private static final FunctionService INSTANCE =
+      new FunctionService(new InternalFunctionExecutionServiceImpl());
+
+  private final FunctionExecutionService functionExecutionService;
+
+  /**
+   * Protected visibility to allow InternalFunctionService to extend FunctionService.
+   */
+  protected FunctionService(FunctionExecutionService functionExecutionService) {
+    this.functionExecutionService = functionExecutionService;
+  }
 
   /**
    * Returns an {@link Execution} object that can be used to execute a data dependent function on
@@ -64,7 +73,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static Execution onRegion(Region region) {
-    return functionSvcMgr.onRegion(region);
+    return getFunctionExecutionService().onRegion(region);
   }
 
   /**
@@ -79,7 +88,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static Execution onServer(Pool pool) {
-    return functionSvcMgr.onServer(pool);
+    return getFunctionExecutionService().onServer(pool);
   }
 
   /**
@@ -92,7 +101,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static Execution onServers(Pool pool) {
-    return functionSvcMgr.onServers(pool);
+    return getFunctionExecutionService().onServers(pool);
   }
 
   /**
@@ -109,7 +118,7 @@ public class FunctionService {
    * @since GemFire 6.5
    */
   public static Execution onServer(RegionService regionService) {
-    return functionSvcMgr.onServer(regionService);
+    return getFunctionExecutionService().onServer(regionService);
   }
 
   /**
@@ -124,7 +133,7 @@ public class FunctionService {
    * @since GemFire 6.5
    */
   public static Execution onServers(RegionService regionService) {
-    return functionSvcMgr.onServers(regionService);
+    return getFunctionExecutionService().onServers(regionService);
   }
 
   /**
@@ -136,10 +145,9 @@ public class FunctionService {
    * @param distributedMember defines a member in the distributed system
    * @throws FunctionException if distributedMember is null
    * @since GemFire 7.0
-   *
    */
   public static Execution onMember(DistributedMember distributedMember) {
-    return functionSvcMgr.onMember(getDistributedSystem(), distributedMember);
+    return getFunctionExecutionService().onMember(distributedMember);
   }
 
   /**
@@ -158,7 +166,7 @@ public class FunctionService {
    * @since GemFire 7.0
    */
   public static Execution onMembers(String... groups) {
-    return functionSvcMgr.onMembers(getDistributedSystem(), groups);
+    return getFunctionExecutionService().onMembers(groups);
   }
 
   /**
@@ -171,7 +179,7 @@ public class FunctionService {
    * @since GemFire 7.0
    */
   public static Execution onMembers(Set<DistributedMember> distributedMembers) {
-    return functionSvcMgr.onMembers(getDistributedSystem(), distributedMembers);
+    return getFunctionExecutionService().onMembers(distributedMembers);
   }
 
   /**
@@ -186,7 +194,7 @@ public class FunctionService {
    * @since GemFire 7.0
    */
   public static Execution onMember(String... groups) {
-    return functionSvcMgr.onMember(getDistributedSystem(), groups);
+    return getFunctionExecutionService().onMember(groups);
   }
 
   /**
@@ -197,7 +205,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static Function getFunction(String functionId) {
-    return functionSvcMgr.getFunction(functionId);
+    return getFunctionExecutionService().getFunction(functionId);
   }
 
   /**
@@ -213,7 +221,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static void registerFunction(Function function) {
-    functionSvcMgr.registerFunction(function);
+    getFunctionExecutionService().registerFunction(function);
   }
 
   /**
@@ -225,7 +233,7 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static void unregisterFunction(String functionId) {
-    functionSvcMgr.unregisterFunction(functionId);
+    getFunctionExecutionService().unregisterFunction(functionId);
   }
 
   /**
@@ -235,9 +243,8 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static boolean isRegistered(String functionId) {
-    return functionSvcMgr.isRegistered(functionId);
+    return getFunctionExecutionService().isRegistered(functionId);
   }
-
 
   /**
    * Returns all locally registered functions
@@ -246,16 +253,10 @@ public class FunctionService {
    * @since GemFire 6.0
    */
   public static Map<String, Function> getRegisteredFunctions() {
-    return functionSvcMgr.getRegisteredFunctions();
+    return getFunctionExecutionService().getRegisteredFunctions();
   }
 
-  private static DistributedSystem getDistributedSystem() {
-    DistributedSystem system = InternalDistributedSystem.getConnectedInstance();
-    if (system == null) {
-      throw new DistributedSystemDisconnectedException(
-          LocalizedStrings.InternalDistributedSystem_THIS_CONNECTION_TO_A_DISTRIBUTED_SYSTEM_HAS_BEEN_DISCONNECTED
-              .toLocalizedString());
-    }
-    return system;
+  private static FunctionExecutionService getFunctionExecutionService() {
+    return INSTANCE.functionExecutionService;
   }
 }

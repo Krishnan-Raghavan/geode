@@ -14,12 +14,14 @@
  */
 package org.apache.geode.internal.cache.wan;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.DISTRIBUTED_SYSTEM_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.OFF_HEAP_MEMORY_SIZE;
 import static org.apache.geode.distributed.ConfigurationProperties.REMOTE_LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.START_LOCATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -44,10 +46,7 @@ import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.awaitility.Awaitility;
 
 import org.apache.geode.DataSerializable;
 import org.apache.geode.DataSerializer;
@@ -101,17 +100,23 @@ import org.apache.geode.internal.cache.RegionQueue;
 import org.apache.geode.internal.cache.control.InternalResourceManager;
 import org.apache.geode.internal.cache.control.InternalResourceManager.ResourceObserver;
 import org.apache.geode.internal.size.Sizeable;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
+import org.apache.geode.test.dunit.rules.ClusterStartupRule;
+import org.apache.geode.test.dunit.rules.DistributedRule;
 
 
+/**
+ * @deprecated Please use {@link DistributedRule} and Geode User APIs or {@link ClusterStartupRule}
+ *             instead.
+ */
 public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
 
   protected static Cache cache;
@@ -502,7 +507,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
 
   public static void waitForAsyncEventQueueSize(String senderId, int numQueueEntries,
       boolean localSize) {
-    Awaitility.await().atMost(60, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> checkAsyncEventQueueSize(senderId, numQueueEntries, localSize));
   }
 
@@ -729,12 +734,12 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
       }
     }
     final AsyncEventQueueStats statistics = ((AsyncEventQueueImpl) queue).getStatistics();
-    Awaitility.await().atMost(120, TimeUnit.SECONDS)
+    await()
         .untilAsserted(
             () -> assertEquals("Expected queue entries: " + queueSize + " but actual entries: "
                 + statistics.getEventQueueSize(), queueSize, statistics.getEventQueueSize()));
     if (isParallel) {
-      Awaitility.await().atMost(60, TimeUnit.SECONDS).untilAsserted(() -> {
+      await().untilAsserted(() -> {
         assertEquals(
             "Expected events in the secondary queue is " + secondaryQueueSize + ", but actual is "
                 + statistics.getSecondaryEventQueueSize(),
@@ -842,6 +847,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     Set<GatewaySender> senders = ((GemFireCacheImpl) cache).getAllGatewaySenders();
     final GatewaySender sender = getGatewaySenderById(senders, senderId);
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         if (sender != null && ((AbstractGatewaySender) sender).isPrimary()) {
           return true;
@@ -849,11 +855,12 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
         return false;
       }
 
+      @Override
       public String description() {
         return "Expected sender primary state to be true but is false";
       }
     };
-    Wait.waitForCriterion(wc, 10000, 1000, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   private static GatewaySender getGatewaySenderById(Set<GatewaySender> senders, String senderId) {
@@ -928,19 +935,6 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     }
   }
 
-  public static void pauseWaitCriteria(final long millisec) {
-    WaitCriterion wc = new WaitCriterion() {
-      public boolean done() {
-        return false;
-      }
-
-      public String description() {
-        return "Expected to wait for " + millisec + " millisec.";
-      }
-    };
-    Wait.waitForCriterion(wc, millisec, 500, false);
-  }
-
   public static int createReceiver(int locPort) {
     AsyncEventQueueTestBase test = new AsyncEventQueueTestBase();
     Properties props = test.getDistributedSystemProperties();
@@ -1005,7 +999,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     IgnoredException exp2 =
         IgnoredException.addIgnoredException(GatewaySenderException.class.getName());
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       for (long i = 0; i < numPuts; i++) {
         r.put(i, i);
@@ -1020,7 +1014,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static void doHeavyPuts(String regionName, int numPuts) {
-    Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     for (long i = 0; i < numPuts; i++) {
       r.put(i, new byte[1024 * 1024]);
@@ -1031,7 +1025,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
    * To be used for CacheLoader related tests
    */
   public static void doGets(String regionName, int numGets) {
-    Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     for (long i = 0; i < numGets; i++) {
       r.get(i);
@@ -1039,7 +1033,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static void doPutsFrom(String regionName, int from, int numPuts) {
-    Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     for (long i = from; i < numPuts; i++) {
       r.put(i, i);
@@ -1047,7 +1041,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static void doPutAll(String regionName, int numPuts, int size) {
-    Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     for (long i = 0; i < numPuts; i++) {
       Map putAllMap = new HashMap();
@@ -1060,7 +1054,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static void putGivenKeyValue(String regionName, Map keyValues) {
-    Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     for (Object key : keyValues.keySet()) {
       r.put(key, keyValues.get(key));
@@ -1072,7 +1066,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     IgnoredException exp =
         IgnoredException.addIgnoredException(CacheClosedException.class.getName());
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + regionName);
+      Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       for (long i = start; i < numPuts; i++) {
         r.put(i, i);
@@ -1089,9 +1083,10 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
         IgnoredException.addIgnoredException(CacheClosedException.class.getName());
     try {
 
-      final Region r = cache.getRegion(Region.SEPARATOR + regionName);
+      final Region r = cache.getRegion(SEPARATOR + regionName);
       assertNotNull(r);
       WaitCriterion wc = new WaitCriterion() {
+        @Override
         public boolean done() {
           if (r.keySet().size() == regionSize) {
             return true;
@@ -1099,12 +1094,13 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
           return false;
         }
 
+        @Override
         public String description() {
           return "Expected region entries: " + regionSize + " but actual entries: "
               + r.keySet().size() + " present region keyset " + r.keySet();
         }
       };
-      Wait.waitForCriterion(wc, 240000, 500, true);
+      GeodeAwaitility.await().untilAsserted(wc);
     } finally {
       exp.remove();
       exp1.remove();
@@ -1181,6 +1177,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     final Map eventsMap = ((MyAsyncEventListener) theListener).getEventsMap();
     assertNotNull(eventsMap);
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         if (eventsMap.size() == expectedSize) {
           return true;
@@ -1188,11 +1185,12 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
         return false;
       }
 
+      @Override
       public String description() {
         return "Expected map entries: " + expectedSize + " but actual entries: " + eventsMap.size();
       }
     };
-    Wait.waitForCriterion(wc, 60000, 500, true); // TODO:Yogs
+    GeodeAwaitility.await().untilAsserted(wc); // TODO:Yogs
   }
 
   public static void validateAsyncEventForOperationDetail(String asyncQueueId,
@@ -1210,6 +1208,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     final Map eventsMap = ((MyAsyncEventListener_CacheLoader) theListener).getEventsMap();
     assertNotNull(eventsMap);
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         if (eventsMap.size() == expectedSize) {
           return true;
@@ -1217,11 +1216,12 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
         return false;
       }
 
+      @Override
       public String description() {
         return "Expected map entries: " + expectedSize + " but actual entries: " + eventsMap.size();
       }
     };
-    Wait.waitForCriterion(wc, 60000, 500, true); // TODO:Yogs
+    GeodeAwaitility.await().untilAsserted(wc); // TODO:Yogs
     Collection values = eventsMap.values();
     Iterator itr = values.iterator();
     while (itr.hasNext()) {
@@ -1246,6 +1246,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
     final Map eventsMap = ((CustomAsyncEventListener) theListener).getEventsMap();
     assertNotNull(eventsMap);
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         if (eventsMap.size() == expectedSize) {
           return true;
@@ -1253,11 +1254,12 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
         return false;
       }
 
+      @Override
       public String description() {
         return "Expected map entries: " + expectedSize + " but actual entries: " + eventsMap.size();
       }
     };
-    Wait.waitForCriterion(wc, 60000, 500, true); // TODO:Yogs
+    GeodeAwaitility.await().untilAsserted(wc); // TODO:Yogs
 
     Iterator<AsyncEvent> itr = eventsMap.values().iterator();
     while (itr.hasNext()) {
@@ -1275,6 +1277,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
       final Set<RegionQueue> queues = ((AbstractGatewaySender) sender).getQueues();
 
       WaitCriterion wc = new WaitCriterion() {
+        @Override
         public boolean done() {
           int size = 0;
           for (RegionQueue q : queues) {
@@ -1286,6 +1289,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
           return false;
         }
 
+        @Override
         public String description() {
           int size = 0;
           for (RegionQueue q : queues) {
@@ -1294,10 +1298,11 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
           return "Expected queue size to be : " + 0 + " but actual entries: " + size;
         }
       };
-      Wait.waitForCriterion(wc, 60000, 500, true);
+      GeodeAwaitility.await().untilAsserted(wc);
 
     } else {
       WaitCriterion wc = new WaitCriterion() {
+        @Override
         public boolean done() {
           Set<RegionQueue> queues = ((AbstractGatewaySender) sender).getQueues();
           int size = 0;
@@ -1310,6 +1315,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
           return false;
         }
 
+        @Override
         public String description() {
           Set<RegionQueue> queues = ((AbstractGatewaySender) sender).getQueues();
           int size = 0;
@@ -1319,7 +1325,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
           return "Expected queue size to be : " + 0 + " but actual entries: " + size;
         }
       };
-      Wait.waitForCriterion(wc, 60000, 500, true);
+      GeodeAwaitility.await().untilAsserted(wc);
     }
   }
 
@@ -1423,7 +1429,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static String getRegionFullPath(String regionName) {
-    final Region r = cache.getRegion(Region.SEPARATOR + regionName);
+    final Region r = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(r);
     return r.getFullPath();
   }
@@ -1434,7 +1440,7 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
   }
 
   public static void addCacheListenerAndCloseCache(String regionName) {
-    final Region region = cache.getRegion(Region.SEPARATOR + regionName);
+    final Region region = cache.getRegion(SEPARATOR + regionName);
     assertNotNull(region);
     CacheListenerAdapter cl = new CacheListenerAdapter() {
       @Override
@@ -1507,11 +1513,13 @@ public class AsyncEventQueueTestBase extends JUnit4DistributedTestCase {
 
     private final Set removedLocators = new HashSet();
 
+    @Override
     public synchronized void locatorsDiscovered(List locators) {
       discoveredLocators.addAll(locators);
       notifyAll();
     }
 
+    @Override
     public synchronized void locatorsRemoved(List locators) {
       removedLocators.addAll(locators);
       notifyAll();
@@ -1643,6 +1651,7 @@ class MyAsyncEventListener_CacheLoader implements AsyncEventListener {
     this.eventsMap = new ConcurrentHashMap();
   }
 
+  @Override
   public boolean processEvents(List<AsyncEvent> events) {
     for (AsyncEvent event : events) {
       this.eventsMap.put(event.getKey(), event);
@@ -1654,19 +1663,23 @@ class MyAsyncEventListener_CacheLoader implements AsyncEventListener {
     return eventsMap;
   }
 
+  @Override
   public void close() {}
 }
 
 
 class MyCacheLoader implements CacheLoader, Declarable {
 
+  @Override
   public Object load(LoaderHelper helper) {
     Long key = (Long) helper.getKey();
     return "LoadedValue" + "_" + key;
   }
 
+  @Override
   public void close() {}
 
+  @Override
   public void init(Properties props) {}
 
 }
@@ -1678,12 +1691,15 @@ class SizeableGatewayEventSubstitutionFilter implements GatewayEventSubstitution
 
   protected static final String SUBSTITUTION_PREFIX = "substituted_";
 
+  @Override
   public Object getSubstituteValue(EntryEvent event) {
     return new GatewayEventSubstituteObject(this, SUBSTITUTION_PREFIX + event.getKey());
   }
 
+  @Override
   public void close() {}
 
+  @Override
   public void init(Properties properties) {}
 
   protected void incNumToDataInvocations() {
@@ -1711,15 +1727,18 @@ class GatewayEventSubstituteObject implements DataSerializable, Sizeable {
     return this.id;
   }
 
+  @Override
   public void toData(DataOutput out) throws IOException {
     this.filter.incNumToDataInvocations();
     DataSerializer.writeString(this.id, out);
   }
 
+  @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     this.id = DataSerializer.readString(in);
   }
 
+  @Override
   public int getSizeInBytes() {
     return 0;
   }
@@ -1737,13 +1756,16 @@ class MyGatewayEventSubstitutionFilter implements GatewayEventSubstitutionFilter
 
   protected static final String SUBSTITUTION_PREFIX = "substituted_";
 
+  @Override
   public Object getSubstituteValue(EntryEvent event) {
     this.numInvocations.incrementAndGet();
     return SUBSTITUTION_PREFIX + event.getKey();
   }
 
+  @Override
   public void close() {}
 
+  @Override
   public void init(Properties properties) {}
 
   protected int getNumInvocations() {

@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -224,7 +226,8 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
     when(harq.updateHAEventWrapper(any(), any(), any()))
         .thenAnswer(AdditionalAnswers.returnsSecondArg());
 
-    HARegion.getInstance(REGION_NAME, (GemFireCacheImpl) cache, harq, factory.create());
+    HARegion.getInstance(REGION_NAME, (GemFireCacheImpl) cache, harq, factory.create(),
+        disabledClock());
   }
 
   private static HARegionQueue hrq = null;
@@ -239,7 +242,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
      * factory.setDataPolicy(DataPolicy.REPLICATE);
      */
     hrq = HARegionQueue.getHARegionQueueInstance(REGION_NAME, cache,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
     EventID id1 = new EventID(new byte[] {1}, 1, 1);
     EventID id2 = new EventID(new byte[] {1}, 1, 2);
     ConflatableObject c1 = new ConflatableObject("1", "1", id1, false, REGION_NAME);
@@ -289,7 +292,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void putValue1() {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       r1.put("key-1", "value-1");
     } catch (Exception ex) {
       ex.printStackTrace();
@@ -303,7 +306,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void putValue2() {
     try {
-      Region r1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r1 = cache.getRegion(SEPARATOR + REGION_NAME);
       r1.put("key-1", "value-2");
     } catch (Exception ex) {
       ex.printStackTrace();
@@ -317,7 +320,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void getValue1() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       if (!(r.get("key-1").equals("value-1"))) {
         fail("expected value to be value-1 but it is not so");
       }
@@ -334,7 +337,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void getNull() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       if (!(r.get("key-1") == (null))) {
         fail("expected value to be null but it is not so");
       }
@@ -351,7 +354,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void getValue2() {
     try {
-      Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region r = cache.getRegion(SEPARATOR + REGION_NAME);
       if (!(r.get("key-1").equals("value-2"))) {
         fail("expected value to be value-2 but it is not so");
       }
@@ -368,7 +371,7 @@ public class HARegionDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void destroy() {
     try {
-      Region region1 = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+      Region region1 = cache.getRegion(SEPARATOR + REGION_NAME);
       region1.localDestroy("key-1");
     } catch (Exception e) {
       e.printStackTrace();

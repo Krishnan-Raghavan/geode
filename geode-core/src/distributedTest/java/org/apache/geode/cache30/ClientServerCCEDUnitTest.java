@@ -18,6 +18,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_ID;
 import static org.apache.geode.distributed.ConfigurationProperties.DURABLE_CLIENT_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
+import static org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier.getInstance;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -32,7 +35,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
-import org.awaitility.Awaitility;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -75,7 +77,7 @@ import org.apache.geode.internal.cache.ha.HARegionQueue;
 import org.apache.geode.internal.cache.partitioned.PRTombstoneMessage;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
@@ -224,6 +226,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
     int port = createServerRegion(vm0, name, true);
 
     vm0.invoke(new SerializableCallable("create old entry") {
+      @Override
       public Object call() throws Exception {
         LocalRegion r = (LocalRegion) basicGetCache().getRegion(name);
         r.put(key, "value");
@@ -237,6 +240,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
     createClientRegion(vm1, name, port, true, ClientRegionShortcut.CACHING_PROXY, false);
 
     vm1.invoke(new SerializableCallable("fetch entry and validate") {
+      @Override
       public Object call() throws Exception {
         final Long[] expirationTimeMillis = new Long[1];
         int expirationSeconds = 1;
@@ -256,7 +260,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
         // Set the expiration time on the client entry.
         r.get(key);
 
-        Awaitility.await("waiting for object to expire").atMost(30, SECONDS).until(() -> {
+        await("waiting for object to expire").until(() -> {
           return expirationTimeMillis[0] != null;
         });
 
@@ -271,6 +275,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
     });
 
     vm0.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         disconnectFromDS();
       }
@@ -357,11 +362,11 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
       vm1.invoke(() -> {
         PRTombstoneMessageObserver mo =
             (PRTombstoneMessageObserver) DistributionMessageObserver.getInstance();
-        Awaitility.await().atMost(60, SECONDS).until(() -> {
+        await().until(() -> {
           return mo.tsMessageProcessed >= 1;
         });
         assertTrue("Tombstone GC message is not expected.", mo.thName.contains(
-            LocalizedStrings.DistributionManager_POOLED_MESSAGE_PROCESSOR.toLocalizedString()));
+            "Pooled Message Processor "));
       });
 
     } finally {
@@ -408,7 +413,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
         PRTombstoneMessageObserver mo =
             (PRTombstoneMessageObserver) DistributionMessageObserver.getInstance();
         // Should receive tombstone message for each bucket.
-        Awaitility.await().atMost(60, SECONDS).until(() -> {
+        await().until(() -> {
           return mo.prTsMessageProcessed >= 2;
         });
         assertEquals("Tombstone GC message is expected.", 2, mo.prTsMessageProcessed);
@@ -666,6 +671,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void registerInterest(VM vm) {
     vm.invoke(new SerializableRunnable("register interest in all keys") {
+      @Override
       public void run() {
         TestRegion.registerInterestRegex(".*");
       }
@@ -674,6 +680,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void unregisterInterest(VM vm) {
     vm.invoke(new SerializableRunnable("unregister interest in all keys") {
+      @Override
       public void run() {
         TestRegion.unregisterInterestRegex(".*");
       }
@@ -682,6 +689,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void registerInterest(VM vm, final List keys) {
     vm.invoke(new SerializableRunnable("register interest in key list") {
+      @Override
       public void run() {
         TestRegion.registerInterest(keys);
       }
@@ -690,6 +698,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void registerInterestOneKey(VM vm, final String key) {
     vm.invoke(new SerializableRunnable("register interest in " + key) {
+      @Override
       public void run() {
         TestRegion.registerInterest(key);
       }
@@ -698,6 +707,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void registerInterestRegex(VM vm, final String pattern) {
     vm.invoke(new SerializableRunnable("register interest in key list") {
+      @Override
       public void run() {
         TestRegion.registerInterestRegex(pattern);
       }
@@ -706,6 +716,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void ensureAllTombstonesPresent(VM vm) {
     vm.invoke(new SerializableCallable("check all are tombstones") {
+      @Override
       public Object call() {
         for (int i = 0; i < 10; i++) {
           assertTrue("expected a tombstone for Object" + i,
@@ -718,6 +729,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void ensureAllTombstonesPresent(VM vm, final List keys) {
     vm.invoke(new SerializableCallable("check tombstones in list") {
+      @Override
       public Object call() {
         for (Object key : keys) {
           assertTrue("expected to find a tombstone for " + key, TestRegion.containsTombstone(key));
@@ -729,6 +741,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void ensureAllInvalidsPresent(VM vm) {
     vm.invoke(new SerializableCallable("check all are tombstones") {
+      @Override
       public Object call() {
         for (int i = 0; i < 10; i++) {
           assertTrue("expected to find an entry for Object" + i,
@@ -743,6 +756,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void ensureAllInvalidsPresent(VM vm, final List keys) {
     vm.invoke(new SerializableCallable("check tombstones in list") {
+      @Override
       public Object call() {
         for (Object key : keys) {
           assertTrue("expected to find an entry for " + key, TestRegion.containsKey(key));
@@ -756,6 +770,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
   /* do a getAll of all keys */
   private void getAll(VM vm) {
     vm.invoke(new SerializableRunnable("getAll for all keys") {
+      @Override
       public void run() {
         Set<String> keys = new HashSet();
         for (int i = 0; i < 10; i++) {
@@ -772,6 +787,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
   /* this should remove all entries from the region, including tombstones */
   private void clearLocalCache(VM vm) {
     vm.invoke(new SerializableRunnable("clear local cache") {
+      @Override
       public void run() {
         TestRegion.localClear();
       }
@@ -832,6 +848,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void createEntries(VM vm) {
     vm.invoke(new SerializableCallable("create entries") {
+      @Override
       public Object call() {
         for (int i = 0; i < 10; i++) {
           TestRegion.create("Object" + i, Integer.valueOf(i));
@@ -844,6 +861,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void destroyEntries(VM vm) {
     vm.invoke(new SerializableCallable("destroy entries") {
+      @Override
       public Object call() {
         for (int i = 0; i < 10; i++) {
           TestRegion.destroy("Object" + i, Integer.valueOf(i));
@@ -859,6 +877,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void doPutAllInClient(VM vm) {
     vm.invoke(new SerializableRunnable("do putAll") {
+      @Override
       public void run() {
         Map map = new HashMap();
         for (int i = 1000; i < 1100; i++) {
@@ -880,6 +899,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void invalidateEntries(VM vm) {
     vm.invoke(new SerializableCallable("invalidate entries") {
+      @Override
       public Object call() {
         for (int i = 0; i < 10; i++) {
           TestRegion.invalidate("Object" + i, Integer.valueOf(i));
@@ -893,6 +913,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void forceGC(VM vm) {
     vm.invoke(new SerializableCallable("force GC") {
+      @Override
       public Object call() throws Exception {
         TestRegion.getCache().getTombstoneService().forceBatchExpirationForTests(10);
         return null;
@@ -902,14 +923,15 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void checkClientReceivedGC(VM vm) {
     vm.invoke(new SerializableCallable("check that GC happened") {
+      @Override
       public Object call() throws Exception {
         WaitCriterion wc = new WaitCriterion() {
 
           @Override
           public boolean done() {
-            LogWriterUtils.getLogWriter()
+            getLogWriter()
                 .info("tombstone count = " + TestRegion.getTombstoneCount());
-            LogWriterUtils.getLogWriter().info("region size = " + TestRegion.size());
+            getLogWriter().info("region size = " + TestRegion.size());
             return TestRegion.getTombstoneCount() == 0 && TestRegion.size() == 0;
           }
 
@@ -918,7 +940,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
             return "waiting for garbage collection to occur";
           }
         };
-        Wait.waitForCriterion(wc, 60000, 2000, true);
+        GeodeAwaitility.await().untilAsserted(wc);
         return null;
       }
     });
@@ -928,13 +950,14 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
     vm.invoke(new SerializableCallable(
         "check that client queues are properly cleared of old ClientTombstone messages") {
 
+      @Override
       public Object call() throws Exception {
         WaitCriterion wc = new WaitCriterion() {
           // boolean firstTime = true;
 
           @Override
           public boolean done() {
-            CacheClientNotifier singleton = CacheClientNotifier.getInstance();
+            CacheClientNotifier singleton = getInstance();
             Collection<CacheClientProxy> proxies = singleton.getClientProxies();
             // boolean first = firstTime;
             // firstTime = false;
@@ -945,7 +968,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
                   // if (first) {
                   // ((LocalRegion)proxy.getHARegion()).dumpBackingMap();
                   // }
-                  LogWriterUtils.getLogWriter()
+                  getLogWriter()
                       .info("queue size (" + size + ") is still > 0 for " + proxy.getProxyID());
                   return false;
                 }
@@ -954,7 +977,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
             // also ensure that server regions have been cleaned up
             int regionEntryCount = TestRegion.getRegionMap().size();
             if (regionEntryCount > 0) {
-              LogWriterUtils.getLogWriter()
+              getLogWriter()
                   .info("TestRegion has unexpected entries - all should have been GC'd but we have "
                       + regionEntryCount);
               TestRegion.dumpBackingMap();
@@ -968,7 +991,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
             return "waiting for queue removal messages to clear client queues";
           }
         };
-        Wait.waitForCriterion(wc, 60000, 2000, true);
+        GeodeAwaitility.await().untilAsserted(wc);
         return null;
       }
     });
@@ -977,6 +1000,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
 
   private void checkClientDoesNotReceiveGC(VM vm) {
     vm.invoke(new SerializableCallable("check that GC did not happen") {
+      @Override
       public Object call() throws Exception {
         if (TestRegion.getTombstoneCount() == 0) {
           LogWriterUtils.getLogWriter().warning("region has no tombstones");
@@ -996,6 +1020,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
   private int createServerRegion(VM vm, final String regionName, final boolean replicatedRegion,
       Scope regionScope) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         // TombstoneService.VERBOSE = true;
         AttributesFactory af = new AttributesFactory();
@@ -1031,6 +1056,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
       final boolean ccEnabled, final ClientRegionShortcut clientRegionShortcut,
       final boolean registerInterest) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientCacheFactory cf = new ClientCacheFactory();
         cf.addPoolServer(NetworkUtils.getServerHostName(vm.getHost()), port);
@@ -1057,6 +1083,7 @@ public class ClientServerCCEDUnitTest extends JUnit4CacheTestCase {
   private void createDurableClientRegion(final VM vm, final String regionName, final int port1,
       final int port2, final boolean ccEnabled) {
     SerializableCallable createRegion = new SerializableCallable() {
+      @Override
       public Object call() throws Exception {
         ClientCacheFactory cf = new ClientCacheFactory();
         cf.addPoolServer(NetworkUtils.getServerHostName(vm.getHost()), port1);

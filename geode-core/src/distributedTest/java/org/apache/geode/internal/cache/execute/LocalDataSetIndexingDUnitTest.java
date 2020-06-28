@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.execute;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,6 +41,8 @@ import org.apache.geode.cache.query.IndexType;
 import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.SelectResults;
 import org.apache.geode.cache.query.internal.DefaultQuery;
+import org.apache.geode.cache.query.internal.ExecutionContext;
+import org.apache.geode.cache.query.internal.QueryExecutionContext;
 import org.apache.geode.cache.query.internal.QueryObserverAdapter;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
 import org.apache.geode.cache30.CacheSerializableRunnable;
@@ -83,6 +87,7 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
   @Test
   public void testLocalDataSetIndexing() {
     final CacheSerializableRunnable createPRs = new CacheSerializableRunnable("create prs ") {
+      @Override
       public void run2() {
         AttributesFactory<Integer, RegionValue> factory =
             new AttributesFactory<Integer, RegionValue>();
@@ -98,11 +103,12 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
 
     final CacheSerializableRunnable createIndexesOnPRs =
         new CacheSerializableRunnable("create prs ") {
+          @Override
           public void run2() {
             try {
               QueryService qs = getCache().getQueryService();
-              qs.createIndex("valueIndex1", IndexType.FUNCTIONAL, "e1.value", "/pr1 e1");
-              qs.createIndex("valueIndex2", IndexType.FUNCTIONAL, "e2.value", "/pr2 e2");
+              qs.createIndex("valueIndex1", IndexType.FUNCTIONAL, "e1.value", SEPARATOR + "pr1 e1");
+              qs.createIndex("valueIndex2", IndexType.FUNCTIONAL, "e2.value", SEPARATOR + "pr2 e2");
             } catch (Exception e) {
               org.apache.geode.test.dunit.Assert
                   .fail("Test failed due to Exception in index creation ", e);
@@ -110,6 +116,7 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
           }
         };
     final CacheSerializableRunnable execute = new CacheSerializableRunnable("execute function") {
+      @Override
       public void run2() {
 
         final PartitionedRegion pr1 = (PartitionedRegion) getRootRegion("pr1");
@@ -128,6 +135,7 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
 
         ArrayList<List> result = (ArrayList<List>) FunctionService.onRegion(pr1).withFilter(filter)
             .execute(new FunctionAdapter() {
+              @Override
               public void execute(FunctionContext context) {
                 try {
                   RegionFunctionContext rContext = (RegionFunctionContext) context;
@@ -138,13 +146,17 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
                       PartitionRegionHelper.getColocatedRegions(pr1);
                   Map<String, Region<?, ?>> localColocatedRegions =
                       PartitionRegionHelper.getLocalColocatedRegions(rContext);
-                  Region pr2 = colocatedRegions.get("/pr2");
-                  LocalDataSet localOrd = (LocalDataSet) localColocatedRegions.get("/pr2");
+                  Region pr2 = colocatedRegions.get(SEPARATOR + "pr2");
+                  LocalDataSet localOrd =
+                      (LocalDataSet) localColocatedRegions.get(SEPARATOR + "pr2");
                   QueryObserverImpl observer = new QueryObserverImpl();
                   QueryObserverHolder.setInstance(observer);
                   QueryService qs = pr1.getCache().getQueryService();
                   DefaultQuery query = (DefaultQuery) qs.newQuery(
-                      "select distinct e1.value from /pr1 e1, /pr2  e2 where e1.value=e2.value");
+                      "select distinct e1.value from " + SEPARATOR + "pr1 e1, " + SEPARATOR
+                          + "pr2  e2 where e1.value=e2.value");
+                  final ExecutionContext executionContext =
+                      new QueryExecutionContext(null, cache, query);
 
                   GemFireCacheImpl.getInstance().getLogger()
                       .fine(" Num BUCKET SET: " + localCust.getBucketSet());
@@ -171,7 +183,8 @@ public class LocalDataSetIndexingDUnitTest extends JUnit4CacheTestCase {
                   }
 
                   SelectResults r =
-                      (SelectResults) localCust.executeQuery(query, null, localCust.getBucketSet());
+                      (SelectResults) localCust.executeQuery(query, executionContext, null,
+                          localCust.getBucketSet());
 
                   GemFireCacheImpl.getInstance().getLogger().fine("Result :" + r.asList());
 
@@ -222,12 +235,14 @@ class QueryObserverImpl extends QueryObserverAdapter {
 
   String indexName;
 
+  @Override
   public void beforeIndexLookup(Index index, int oper, Object key) {
     indexName = index.getName();
     indexesUsed.add(index.getName());
 
   }
 
+  @Override
   public void afterIndexLookup(Collection results) {
     if (results != null) {
       isIndexesUsed = true;
@@ -253,6 +268,7 @@ class RegionValue implements Serializable, Comparable<RegionValue> {
     this.value2 = value;
   }
 
+  @Override
   public int compareTo(RegionValue o) {
     if (this.value > o.value) {
       return 1;

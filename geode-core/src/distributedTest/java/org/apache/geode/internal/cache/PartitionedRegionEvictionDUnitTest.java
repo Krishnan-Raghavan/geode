@@ -14,6 +14,9 @@
  */
 package org.apache.geode.internal.cache;
 
+import static java.lang.System.getProperties;
+import static java.util.Map.Entry;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
@@ -25,7 +28,6 @@ import java.io.File;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 
@@ -47,19 +49,18 @@ import org.apache.geode.cache.SubscriptionAttributes;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache.util.ObjectSizer;
 import org.apache.geode.cache30.CacheSerializableRunnable;
-import org.apache.geode.distributed.internal.DistributionConfig;
-import org.apache.geode.internal.OSProcess;
 import org.apache.geode.internal.cache.control.HeapMemoryMonitor;
 import org.apache.geode.internal.cache.control.InternalResourceManager.ResourceType;
 import org.apache.geode.internal.cache.eviction.HeapEvictor;
 import org.apache.geode.internal.cache.eviction.HeapLRUController;
+import org.apache.geode.logging.internal.OSProcess;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 
@@ -82,6 +83,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final CacheSerializableRunnable create =
         new CacheSerializableRunnable("Create Heap LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run2() {
             System.setProperty(HeapLRUController.TOP_UP_HEAP_EVICTION_PERCENTAGE_PROPERTY,
                 Float.toString(0));
@@ -111,6 +113,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final int bucketsToCreate = 3;
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         setEvictionPercentage(heapPercentage);
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
@@ -130,21 +133,22 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
 
             try {
               setEvictionPercentage(heapPercentage);
-              final Properties sp = System.getProperties();
+              final Properties sp = getProperties();
               final int expectedInvocations = 10;
               final int maximumWaitSeconds = 60; // seconds
               final int pollWaitMillis = evictorInterval * 2;
-              assertTrue(pollWaitMillis < (TimeUnit.SECONDS.toMillis(maximumWaitSeconds) * 4));
+              assertTrue(pollWaitMillis < (SECONDS.toMillis(maximumWaitSeconds) * 4));
               final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
               assertNotNull(pr);
               for (final Iterator i =
                   ((PartitionedRegion) pr).getDataStore().getAllLocalBuckets().iterator(); i
                       .hasNext();) {
-                final Map.Entry entry = (Map.Entry) i.next();
+                final Entry entry = (Entry) i.next();
                 final BucketRegion bucketRegion = (BucketRegion) entry.getValue();
                 if (bucketRegion == null) {
                   continue;
@@ -158,6 +162,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
               WaitCriterion wc = new WaitCriterion() {
                 String excuse;
 
+                @Override
                 public boolean done() {
                   // we have a primary
                   if (pr.getDiskRegionStats().getNumOverflowOnDisk() == 9) {
@@ -166,11 +171,12 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
                   return false;
                 }
 
+                @Override
                 public String description() {
                   return excuse;
                 }
               };
-              Wait.waitForCriterion(wc, 60000, 1000, true);
+              GeodeAwaitility.await().untilAsserted(wc);
 
               int entriesEvicted = 0;
 
@@ -196,20 +202,18 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
   protected void raiseFakeNotification() {
     ((GemFireCacheImpl) getCache()).getHeapEvictor().setTestAbortAfterLoopCount(1);
     HeapMemoryMonitor.setTestDisableMemoryUpdates(true);
-    System.setProperty(DistributionConfig.GEMFIRE_PREFIX + "memoryEventTolerance", "0");
 
     setEvictionPercentage(85);
     HeapMemoryMonitor hmm =
         ((GemFireCacheImpl) getCache()).getInternalResourceManager().getHeapMonitor();
     hmm.setTestMaxMemoryBytes(100);
 
-    hmm.updateStateAndSendEvent(90);
+    hmm.updateStateAndSendEvent(90, "test");
   }
 
   protected void cleanUpAfterFakeNotification() {
     ((GemFireCacheImpl) getCache()).getHeapEvictor().setTestAbortAfterLoopCount(Integer.MAX_VALUE);
     HeapMemoryMonitor.setTestDisableMemoryUpdates(false);
-    System.clearProperty(DistributionConfig.GEMFIRE_PREFIX + "memoryEventTolerance");
   }
 
   @Test
@@ -228,6 +232,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Heap LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         System.setProperty(HeapLRUController.TOP_UP_HEAP_EVICTION_PERCENTAGE_PROPERTY,
             Float.toString(0));
@@ -247,6 +252,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final int bucketsToCreate = 3;
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -265,20 +271,21 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
             try {
-              final Properties sp = System.getProperties();
+              final Properties sp = getProperties();
               final int expectedInvocations = 10;
               final int maximumWaitSeconds = 60; // seconds
               final int pollWaitMillis = evictorInterval * 2;
-              assertTrue(pollWaitMillis < (TimeUnit.SECONDS.toMillis(maximumWaitSeconds) * 4));
+              assertTrue(pollWaitMillis < (SECONDS.toMillis(maximumWaitSeconds) * 4));
               final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
               assertNotNull(pr);
 
               long entriesEvicted = 0;
               for (final Iterator i = pr.getDataStore().getAllLocalBuckets().iterator(); i
                   .hasNext();) {
-                final Map.Entry entry = (Map.Entry) i.next();
+                final Entry entry = (Entry) i.next();
 
                 final BucketRegion bucketRegion = (BucketRegion) entry.getValue();
                 if (bucketRegion == null) {
@@ -293,6 +300,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
               WaitCriterion wc = new WaitCriterion() {
                 String excuse;
 
+                @Override
                 public boolean done() {
                   // we have a primary
                   if (pr.getTotalEvictions() == 9) {
@@ -301,11 +309,12 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
                   return false;
                 }
 
+                @Override
                 public String description() {
                   return excuse;
                 }
               };
-              Wait.waitForCriterion(wc, 60000, 1000, true);
+              GeodeAwaitility.await().untilAsserted(wc);
 
               entriesEvicted = pr.getTotalEvictions();
               return new Long(entriesEvicted);
@@ -342,6 +351,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     final String name = uniqName + "-PR";
     final SerializableRunnable create =
         new SerializableRunnable("Create Memory LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             try {
               final AttributesFactory factory = new AttributesFactory();
@@ -372,6 +382,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     vm2.invoke(create);
     final int extraEntries = 4;
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -384,6 +395,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
             final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
             assertNotNull(pr);
@@ -420,6 +432,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     vm0.invoke(create);
 
     vm0.invoke(new SerializableRunnable("Test to see that we can get keys") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         // Make sure we can get all of the entries
@@ -445,6 +458,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Memory LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         final AttributesFactory factory = new AttributesFactory();
         factory.setOffHeap(isOffHeap());
@@ -462,6 +476,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final int extraEntries = 4;
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -474,6 +489,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
             try {
               final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
@@ -516,6 +532,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     final String name = uniqName + "-PR";
     final SerializableRunnable create =
         new SerializableRunnable("Create Entry LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             try {
               final AttributesFactory factory = new AttributesFactory();
@@ -544,6 +561,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     vm2.invoke(create);
     final int extraEntries = 4;
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -556,6 +574,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
             final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
             assertNotNull(pr);
@@ -612,6 +631,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         final AttributesFactory factory = new AttributesFactory();
         factory.setOffHeap(isOffHeap());
@@ -622,6 +642,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         factory.addCacheListener(new VerifiableCacheListener() {
           private long evictionDestroyEvents = 0;
 
+          @Override
           public void afterDestroy(EntryEvent e) {
             System.out.println("EEEEEEEEEEEEEE key:" + e.getKey());
             EntryEventImpl eei = (EntryEventImpl) e;
@@ -630,6 +651,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
             }
           }
 
+          @Override
           public boolean verify(long expectedEntries) {
             return expectedEntries == evictionDestroyEvents;
           }
@@ -642,6 +664,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with local destroy on a partitioned Region") {
+          @Override
           public void run() {
             try {
               final AttributesFactory factory = new AttributesFactory();
@@ -661,6 +684,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     vm2.invoke(create2);
 
     final SerializableRunnable createBuckets = new SerializableRunnable("Create Buckets") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -673,6 +697,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertBucketAttributesAndEviction =
         new SerializableCallable("Assert bucket attributes and eviction") {
+          @Override
           public Object call() throws Exception {
             try {
               final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
@@ -703,6 +728,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableCallable assertListenerCount = new SerializableCallable(
         "Assert that the number of listener invocations matches the expected total") {
+      @Override
       public Object call() throws Exception {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);
@@ -741,6 +767,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     // Creating LRU Entry Count Eviction Attribute
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
 
         // Assert that LRUEntry maximum can be less than 1 entry per
@@ -780,6 +807,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             final AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeap());
@@ -838,6 +866,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     testAccessor.invoke(
         new CacheSerializableRunnable("Create an Accessor with and without eviction attributes") {
+          @Override
           public void run2() throws CacheException {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -870,6 +899,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     // LOCAL_DESTROY
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         final AttributesFactory factory = new AttributesFactory();
         factory.setOffHeap(isOffHeap());
@@ -885,6 +915,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             final AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeap());
@@ -953,6 +984,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     // Creating LRU Entry Count Eviction Attribute : maxentries : 2
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         final AttributesFactory factory = new AttributesFactory();
         factory.setOffHeap(isOffHeap());
@@ -968,6 +1000,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             final AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeap());
@@ -1000,6 +1033,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     // Creating Heap LRU Eviction Attribute : evictorInterval : 100
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         getCache().getResourceManager().setEvictionHeapPercentage(heapPercentage);
         final AttributesFactory factory = new AttributesFactory();
@@ -1016,6 +1050,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with Overflow to disk partitioned Region") {
+          @Override
           public void run() {
             setEvictionPercentage(heapPercentage);
             final AttributesFactory factory = new AttributesFactory();
@@ -1114,6 +1149,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         .createLRUMemoryAttributes(PartitionAttributesFactory.GLOBAL_MAX_BUCKETS_DEFAULT);
     accessor.invoke(
         new CacheSerializableRunnable("Create an Accessor which sets the first PR eviction attrs") {
+          @Override
           public void run2() {
             final AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeap());
@@ -1131,6 +1167,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     testDatastore.invoke(
         new SerializableRunnable("Create a datastore to test existing eviction attributes") {
+          @Override
           public void run() {
             final AttributesFactory factory = new AttributesFactory();
             factory.setOffHeap(isOffHeap());
@@ -1164,6 +1201,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     firstDatastore
         .invoke(new CacheSerializableRunnable("First datastore setting LRU memory eviction attrs") {
+          @Override
           public void run2() {
             // Assert that LRUMemory attributes may be lesser than 1 Mb per
             // bucket
@@ -1227,6 +1265,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         }
       }
 
+      @Override
       public void run2() throws CacheException {
         // Configure a PR with the same local max mem as the eviction
         // attributes... and do these tests
@@ -1391,6 +1430,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createFirstAccessor =
         new CacheSerializableRunnable("Create an accessor without eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1403,6 +1443,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createFirstDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1417,6 +1458,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createSecondAccessor =
         new CacheSerializableRunnable("Create an accessor with incorrect eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1430,6 +1472,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createSecondDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1467,6 +1510,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createFirstAccessor =
         new CacheSerializableRunnable("Create an accessor without eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1479,6 +1523,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createFirstDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1493,6 +1538,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createSecondAccessor =
         new CacheSerializableRunnable("Create an accessor with incorrect eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1506,6 +1552,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createSecondDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1540,6 +1587,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createFirstAccessor =
         new CacheSerializableRunnable("Create an accessor without eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1552,6 +1600,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createFirstDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1566,6 +1615,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable createSecondAccessor =
         new CacheSerializableRunnable("Create an accessor with correct eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1580,6 +1630,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
         };
     final SerializableRunnable createSecondDataStore =
         new CacheSerializableRunnable("Create a data store with eviction attributes") {
+          @Override
           public void run2() {
             final PartitionAttributes pra = new PartitionAttributesFactory()
                 .setRedundantCopies(redundantCopies).setLocalMaxMemory(0).create();
@@ -1619,6 +1670,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create = new CacheSerializableRunnable(
         "Create Entry LRU with local destroy on a partitioned Region") {
+      @Override
       public void run2() {
         final AttributesFactory factory = new AttributesFactory();
         factory.setOffHeap(isOffHeap());
@@ -1634,6 +1686,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
 
     final SerializableRunnable create2 =
         new SerializableRunnable("Create Entry LRU with local destroy on a partitioned Region") {
+          @Override
           public void run() {
             try {
               final AttributesFactory factory = new AttributesFactory();
@@ -1667,6 +1720,7 @@ public class PartitionedRegionEvictionDUnitTest extends JUnit4CacheTestCase {
     vm1.invoke(create2);
 
     final SerializableRunnable doPuts = new SerializableRunnable("Do Puts") {
+      @Override
       public void run() {
         final PartitionedRegion pr = (PartitionedRegion) getRootRegion(name);
         assertNotNull(pr);

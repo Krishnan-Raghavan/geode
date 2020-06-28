@@ -1,19 +1,17 @@
 
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license
+ * agreements. See the NOTICE file distributed with this work for additional information regarding
+ * copyright ownership. The ASF licenses this file to You under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License. You may obtain a
+ * copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 package org.apache.geode.cache.configuration;
@@ -109,7 +107,7 @@ import org.apache.geode.annotations.Experimental;
 public class JndiBindingsType {
 
   @XmlElement(name = "jndi-binding", namespace = "http://geode.apache.org/schema/cache")
-  protected List<JndiBindingsType.JndiBinding> jndiBindings;
+  protected List<JndiBinding> jndiBindings;
 
   /**
    * Gets the value of the jndiBindings property.
@@ -134,9 +132,9 @@ public class JndiBindingsType {
    *
    *
    */
-  public List<JndiBindingsType.JndiBinding> getJndiBindings() {
+  public List<JndiBinding> getJndiBindings() {
     if (jndiBindings == null) {
-      jndiBindings = new ArrayList<JndiBindingsType.JndiBinding>();
+      jndiBindings = new ArrayList<JndiBinding>();
     }
     return this.jndiBindings;
   }
@@ -202,10 +200,10 @@ public class JndiBindingsType {
   @XmlAccessorType(XmlAccessType.FIELD)
   @XmlType(name = "", propOrder = {"configProperties"})
   @Experimental
-  public static class JndiBinding implements CacheElement {
+  public static class JndiBinding extends CacheElement {
 
     @XmlElement(name = "config-property", namespace = "http://geode.apache.org/schema/cache")
-    protected List<JndiBindingsType.JndiBinding.ConfigProperty> configProperties;
+    protected List<ConfigProperty> configProperties;
     @XmlAttribute(name = "blocking-timeout-seconds")
     protected String blockingTimeoutSeconds;
     @XmlAttribute(name = "conn-pooled-datasource-class")
@@ -260,9 +258,9 @@ public class JndiBindingsType {
      *
      *
      */
-    public List<JndiBindingsType.JndiBinding.ConfigProperty> getConfigProperties() {
+    public List<ConfigProperty> getConfigProperties() {
       if (configProperties == null) {
-        configProperties = new ArrayList<JndiBindingsType.JndiBinding.ConfigProperty>();
+        configProperties = new ArrayList<ConfigProperty>();
       }
       return this.configProperties;
     }
@@ -602,7 +600,6 @@ public class JndiBindingsType {
       return getJndiName();
     }
 
-
     /**
      * <p>
      * Java class for anonymous complex type.
@@ -629,7 +626,7 @@ public class JndiBindingsType {
     @XmlAccessorType(XmlAccessType.FIELD)
     @XmlType(name = "",
         propOrder = {"configPropertyName", "configPropertyType", "configPropertyValue"})
-    public static class ConfigProperty implements CacheElement {
+    public static class ConfigProperty extends CacheElement {
 
       @XmlElement(name = "config-property-name", namespace = "http://geode.apache.org/schema/cache",
           required = true)
@@ -646,6 +643,11 @@ public class JndiBindingsType {
       public ConfigProperty(String name, String type, String value) {
         this.configPropertyName = name;
         this.configPropertyType = type;
+        this.configPropertyValue = value;
+      }
+
+      public ConfigProperty(String name, String value) {
+        this.configPropertyName = name;
         this.configPropertyValue = value;
       }
 

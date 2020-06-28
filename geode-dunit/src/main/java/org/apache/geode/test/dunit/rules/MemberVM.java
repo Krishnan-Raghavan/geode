@@ -14,17 +14,17 @@
  */
 package org.apache.geode.test.dunit.rules;
 
-import static java.util.concurrent.TimeUnit.SECONDS;
+
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase.getBlackboard;
 
 import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.Logger;
-import org.awaitility.Awaitility;
 
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.distributed.internal.InternalLocator;
-import org.apache.geode.internal.cache.InternalCache;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
+import org.apache.geode.test.dunit.DUnitBlackboard;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.rules.Locator;
 import org.apache.geode.test.junit.rules.Member;
@@ -32,7 +32,7 @@ import org.apache.geode.test.junit.rules.Server;
 import org.apache.geode.test.junit.rules.VMProvider;
 
 public class MemberVM extends VMProvider implements Member {
-  private Logger logger = LogService.getLogger();
+  private static Logger logger = LogService.getLogger();
   protected Member member;
   protected VM vm;
 
@@ -41,10 +41,12 @@ public class MemberVM extends VMProvider implements Member {
     this.vm = vm;
   }
 
+  @Override
   public boolean isLocator() {
     return (member instanceof Locator);
   }
 
+  @Override
   public VM getVM() {
     return vm;
   }
@@ -88,49 +90,48 @@ public class MemberVM extends VMProvider implements Member {
     vm.invoke("force disconnect", () -> ClusterStartupRule.memberStarter.forceDisconnectMember());
   }
 
-  public void waitTilLocatorFullyReconnected() {
+  /**
+   * This disconnects the distributed system of the member. The reconnect thread will wait until the
+   * given mailbox is set to true from within the vm that this method is invoked on.
+   *
+   * For example, if forceDisconnect is called like this:
+   * member1.forceDisconnect(300, "reconnectReady");
+   * Then the reconnect should be triggered like this:
+   * member1.invoke(() -> getBlackboard().setMailbox("reconnectReady", true));
+   *
+   * Setting this mailbox from within the test JVM will not cause the member to begin reconnecting.
+   *
+   * @param timeout maximum time that the reconnect can take
+   * @param timeUnit the units for the timeout
+   * @param reconnectBBKey String key to the blackboard mailbox containing a boolean that shall
+   *        be set to true when the member should start reconnecting.
+   */
+  public void forceDisconnect(long timeout, TimeUnit timeUnit, String reconnectBBKey) {
     vm.invoke(() -> {
-      try {
-        Awaitility.waitAtMost(60, TimeUnit.SECONDS).until(() -> {
-          InternalLocator intLocator = ClusterStartupRule.getLocator();
-          InternalCache cache = ClusterStartupRule.getCache();
-          return intLocator != null && cache != null && intLocator.getDistributedSystem()
-              .isConnected() && intLocator.isReconnected();
-        });
-      } catch (Exception e) {
-        // provide more information when condition is not satisfied after one minute
-        InternalLocator intLocator = ClusterStartupRule.getLocator();
-        InternalCache cache = ClusterStartupRule.getCache();
-        logger.info("locator is not null: " + (intLocator != null));
-        logger.info("cache is not null: " + (cache != null));
-        logger.info("ds is connected: " + (intLocator.getDistributedSystem().isConnected()));
-        logger.info("locator is reconnected: " + (intLocator.isReconnected()));
-        throw e;
-      }
+      DUnitBlackboard server1BB = getBlackboard();
+      server1BB.initBlackboard();
+      server1BB.setMailbox(reconnectBBKey, false);
 
+      InternalDistributedSystem.addReconnectListener(
+          new InternalDistributedSystem.ReconnectListener() {
+            @Override
+            public void reconnecting(InternalDistributedSystem oldSystem) {
+              await().atMost(timeout, timeUnit)
+                  .until(() -> (boolean) server1BB.getMailbox(reconnectBBKey));
+            }
+
+            @Override
+            public void onReconnect(InternalDistributedSystem oldSystem,
+                InternalDistributedSystem newSystem) {}
+          });
+
+      ClusterStartupRule.memberStarter.forceDisconnectMember();
     });
   }
 
-  public void waitTilServerFullyReconnected() {
+  public void waitTilFullyReconnected() {
     vm.invoke(() -> {
-      try {
-        Awaitility.waitAtMost(60, SECONDS).until(() -> {
-          InternalDistributedSystem internalDistributedSystem =
-              InternalDistributedSystem.getConnectedInstance();
-          return internalDistributedSystem != null
-              && internalDistributedSystem.getCache() != null
-              && !internalDistributedSystem.getCache().getCacheServers().isEmpty();
-        });
-      } catch (Exception e) {
-        // provide more information when condition is not satisfied after one minute
-        InternalDistributedSystem internalDistributedSystem =
-            InternalDistributedSystem.getConnectedInstance();
-        logger.info("ds is not null: " + (internalDistributedSystem != null));
-        logger.info("cache is not null: " + (internalDistributedSystem.getCache() != null));
-        logger.info("has cache server: "
-            + (!internalDistributedSystem.getCache().getCacheServers().isEmpty()));
-        throw e;
-      }
+      ClusterStartupRule.memberStarter.waitTilFullyReconnected();
     });
   }
 
@@ -161,12 +162,6 @@ public class MemberVM extends VMProvider implements Member {
       int serverCount) {
     vm.invoke(() -> ClusterStartupRule.memberStarter
         .waitUntilAsyncEventQueuesAreReadyOnExactlyThisManyServers(queueId, serverCount));
-  }
-
-  public void waitUntilGatewaySendersAreReadyOnExactlyThisManyServers(
-      int expectedGatewayObjectCount) {
-    vm.invoke(() -> ClusterStartupRule.memberStarter
-        .waitUntilGatewaySendersAreReadyOnExactlyThisManyServers(expectedGatewayObjectCount));
   }
 
   public void waitTillCacheClientProxyHasBeenPaused() {

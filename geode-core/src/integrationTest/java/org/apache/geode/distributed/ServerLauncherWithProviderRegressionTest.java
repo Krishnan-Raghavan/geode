@@ -14,22 +14,25 @@
  */
 package org.apache.geode.distributed;
 
+import static java.util.concurrent.CompletableFuture.completedFuture;
 import static org.apache.geode.internal.process.ProcessType.PROPERTY_TEST_PREFIX;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.geode.cache.Cache;
+import org.apache.geode.internal.cache.control.InternalResourceManager;
 
 /**
  * Extracted from {@link ServerLauncherLocalIntegrationTest}. This tests the same mechanism used by
- * Spring Data GemFire/Geode. This test confirms the fix for TRAC #51201 (see below).
+ * Spring Data GemFire/Geode.
  *
  * <p>
- * TRAC #51201: ServerLauncher.start fails to configure server with Spring
+ * ServerLauncher.start fails to configure server with Spring
  */
 public class ServerLauncherWithProviderRegressionTest extends ServerLauncherIntegrationTestCase {
 
@@ -41,6 +44,9 @@ public class ServerLauncherWithProviderRegressionTest extends ServerLauncherInte
     System.setProperty(PROPERTY_TEST_PREFIX, getUniqueName() + "-");
 
     providerCache = mock(Cache.class);
+    InternalResourceManager internalResourceManager = mock(InternalResourceManager.class);
+    when(providerCache.getResourceManager()).thenReturn(internalResourceManager);
+    when(internalResourceManager.allOfStartupTasks()).thenReturn(completedFuture(null));
     TestServerLauncherCacheProvider.setCache(providerCache);
   }
 
@@ -52,7 +58,9 @@ public class ServerLauncherWithProviderRegressionTest extends ServerLauncherInte
 
   @Test
   public void startGetsCacheFromServerLauncherCacheProvider() {
-    startServer(newBuilder().setDisableDefaultServer(true).setSpringXmlLocation(springXml()));
+    startServer(newBuilder()
+        .setDisableDefaultServer(true)
+        .setSpringXmlLocation(springXml()));
 
     Cache cache = launcher.getCache();
 

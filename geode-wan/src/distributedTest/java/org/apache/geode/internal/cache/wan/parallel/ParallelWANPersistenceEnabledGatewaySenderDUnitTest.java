@@ -22,9 +22,9 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.AttributesFactory;
 import org.apache.geode.cache.PartitionAttributesFactory;
 import org.apache.geode.cache.Region;
+import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.wan.GatewaySender;
 import org.apache.geode.cache.wan.GatewaySenderFactory;
 import org.apache.geode.internal.cache.ColocationHelper;
@@ -63,14 +63,14 @@ public class ParallelWANPersistenceEnabledGatewaySenderDUnitTest extends WANTest
       try {
         GatewaySender sender1 = fact.create("NYSender", 2);
 
-        AttributesFactory rFact = new AttributesFactory();
-        rFact.addGatewaySenderId(sender1.getId());
+        RegionFactory regionFactory = cache.createRegionFactory();
+        regionFactory.addGatewaySenderId(sender1.getId());
 
         PartitionAttributesFactory pFact = new PartitionAttributesFactory();
         pFact.setTotalNumBuckets(100);
         pFact.setRedundantCopies(1);
-        rFact.setPartitionAttributes(pFact.create());
-        Region r = cache.createRegionFactory(rFact.create()).create("MyRegion");
+        regionFactory.setPartitionAttributes(pFact.create());
+        Region r = regionFactory.create("MyRegion");
         sender1.start();
       } finally {
         ex.remove();
@@ -1598,6 +1598,297 @@ public class ParallelWANPersistenceEnabledGatewaySenderDUnitTest extends WANTest
           new Object[] {false});
     }
   }
+
+
+  /**
+   * Enable persistence for GatewaySender. Pause the sender and do some puts in local region. Stop
+   * GatewaySender.
+   * Then start GatewaySender. Check if the remote site receives all the events.
+   */
+  @Test
+  public void testpersistentWanGateway_restartSender_expectAllEventsReceived() {
+    // create locator on local site
+    Integer lnPort = (Integer) vm0.invoke(() -> WANTestBase.createFirstLocatorWithDSId(1));
+    // create locator on remote site
+    Integer nyPort = (Integer) vm1.invoke(() -> WANTestBase.createFirstRemoteLocator(2, lnPort));
+
+    // create receiver on remote site
+    createCacheInVMs(nyPort, vm2, vm3);
+    createReceiverInVMs(vm2, vm3);
+
+    // create cache in local site
+    createCacheInVMs(lnPort, vm4, vm5, vm6, vm7);
+
+    // create senders with disk store
+    String diskStore1 = (String) vm4.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore2 = (String) vm5.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore3 = (String) vm6.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore4 = (String) vm7.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+
+    LogWriterUtils.getLogWriter()
+        .info("The DS are: " + diskStore1 + "," + diskStore2 + "," + diskStore3 + "," + diskStore4);
+
+    // create PR on remote site
+    vm2.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+    vm3.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+
+    // create PR on local site
+    vm4.invoke(createPartitionedRegionRunnable());
+    vm5.invoke(createPartitionedRegionRunnable());
+    vm6.invoke(createPartitionedRegionRunnable());
+    vm7.invoke(createPartitionedRegionRunnable());
+
+    // start the senders on local site
+    startSenderInVMs("ln", vm4, vm5, vm6, vm7);
+
+    // wait for senders to become running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+    vm7.invoke(waitForSenderRunnable());
+
+    // pause the senders
+    vm4.invoke(pauseSenderRunnable());
+    vm5.invoke(pauseSenderRunnable());
+    vm6.invoke(pauseSenderRunnable());
+    vm7.invoke(pauseSenderRunnable());
+
+    // start puts in region on local site
+    vm4.invoke(() -> WANTestBase.doPuts(getTestMethodName(), 3000));
+    LogWriterUtils.getLogWriter().info("Completed puts in the region");
+
+    // --------------------close and rebuild local site
+    // -------------------------------------------------
+    // stop the senders
+
+    vm4.invoke(() -> WANTestBase.stopSender("ln"));
+    vm5.invoke(() -> WANTestBase.stopSender("ln"));
+    vm6.invoke(() -> WANTestBase.stopSender("ln"));
+    vm7.invoke(() -> WANTestBase.stopSender("ln"));
+
+
+    LogWriterUtils.getLogWriter().info("Stopped all the senders.");
+
+    // start the senders in async mode. This will ensure that the
+    // node of shadow PR that went down last will come up first
+    startSenderInVMsAsync("ln", vm4, vm5, vm6, vm7);
+
+    LogWriterUtils.getLogWriter().info("Waiting for senders running.");
+    // wait for senders running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+    vm7.invoke(waitForSenderRunnable());
+
+    LogWriterUtils.getLogWriter().info("All the senders are now running...");
+
+    // ----------------------------------------------------------------------------------------------------
+
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 3000));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 3000));
+  }
+
+  /**
+   * Enable persistence for GatewaySender. Pause the sender and do some puts in local region. Stop
+   * GatewaySender.
+   * Then start GatewaySender with clean-queues option. Check if the remote site receives all the
+   * events.
+   */
+  @Test
+  public void testpersistentWanGateway_restartSenderWithCleanQueues_expectNoEventsReceived() {
+    // create locator on local site
+    Integer lnPort = (Integer) vm0.invoke(() -> WANTestBase.createFirstLocatorWithDSId(1));
+    // create locator on remote site
+    Integer nyPort = (Integer) vm1.invoke(() -> WANTestBase.createFirstRemoteLocator(2, lnPort));
+
+    // create receiver on remote site
+    createCacheInVMs(nyPort, vm2, vm3);
+    createReceiverInVMs(vm2, vm3);
+
+    // create cache in local site
+    createCacheInVMs(lnPort, vm4, vm5, vm6, vm7);
+
+    // create senders with disk store
+    String diskStore1 = (String) vm4.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore2 = (String) vm5.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore3 = (String) vm6.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore4 = (String) vm7.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+
+    LogWriterUtils.getLogWriter()
+        .info("The DS are: " + diskStore1 + "," + diskStore2 + "," + diskStore3 + "," + diskStore4);
+
+    // create PR on remote site
+    vm2.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+    vm3.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+
+    // create PR on local site
+    vm4.invoke(createPartitionedRegionRunnable());
+    vm5.invoke(createPartitionedRegionRunnable());
+    vm6.invoke(createPartitionedRegionRunnable());
+    vm7.invoke(createPartitionedRegionRunnable());
+
+    // start the senders on local site
+    startSenderInVMs("ln", vm4, vm5, vm6, vm7);
+
+    // wait for senders to become running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+    vm7.invoke(waitForSenderRunnable());
+
+    // pause the senders
+    vm4.invoke(pauseSenderRunnable());
+    vm5.invoke(pauseSenderRunnable());
+    vm6.invoke(pauseSenderRunnable());
+    vm7.invoke(pauseSenderRunnable());
+
+    // start puts in region on local site
+    vm4.invoke(() -> WANTestBase.doPuts(getTestMethodName(), 3000));
+    LogWriterUtils.getLogWriter().info("Completed puts in the region");
+
+    // --------------------close and rebuild local site
+    // -------------------------------------------------
+    // stop the senders
+
+    vm4.invoke(() -> WANTestBase.stopSender("ln"));
+    vm5.invoke(() -> WANTestBase.stopSender("ln"));
+    vm6.invoke(() -> WANTestBase.stopSender("ln"));
+    vm7.invoke(() -> WANTestBase.stopSender("ln"));
+
+
+    LogWriterUtils.getLogWriter().info("Stopped all the senders.");
+
+    // start the senders in async mode. This will ensure that the
+    // node of shadow PR that went down last will come up first
+    startSenderwithCleanQueuesInVMsAsync("ln", vm4, vm5, vm6, vm7);
+
+    LogWriterUtils.getLogWriter().info("Waiting for senders running.");
+    // wait for senders running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+    vm7.invoke(waitForSenderRunnable());
+
+    LogWriterUtils.getLogWriter().info("All the senders are now running...");
+
+    // ----------------------------------------------------------------------------------------------------
+
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 0));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 0));
+  }
+
+
+  /**
+   * Enable persistence for GatewaySender. Pause the sender and do some puts in local region. Stop
+   * GatewaySender.
+   * Then start GatewaySender. Check if the remote site receives all the events.
+   */
+  @Test
+  public void testpersistentWanGateway_restartSender_expectAllEventsReceived_scenario2() {
+    // create locator on local site
+    Integer lnPort = (Integer) vm0.invoke(() -> WANTestBase.createFirstLocatorWithDSId(1));
+    // create locator on remote site
+    Integer nyPort = (Integer) vm1.invoke(() -> WANTestBase.createFirstRemoteLocator(2, lnPort));
+
+    // create receiver on remote site
+    createCacheInVMs(nyPort, vm2, vm3);
+    createReceiverInVMs(vm2, vm3);
+
+    // create cache in local site
+    createCacheInVMs(lnPort, vm4, vm5, vm6);
+
+    // create senders with disk store
+    String diskStore1 = (String) vm4.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore2 = (String) vm5.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+    String diskStore3 = (String) vm6.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+
+    LogWriterUtils.getLogWriter()
+        .info("The DS are: " + diskStore1 + "," + diskStore2 + "," + diskStore3);
+
+    // create PR on remote site
+    vm2.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+    vm3.invoke(
+        () -> WANTestBase.createPartitionedRegion(getTestMethodName(), null, 1, 100, isOffHeap()));
+
+    // create PR on local site
+    vm4.invoke(createPartitionedRegionRunnable());
+    vm5.invoke(createPartitionedRegionRunnable());
+    vm6.invoke(createPartitionedRegionRunnable());
+
+    // start the senders on local site
+    startSenderInVMs("ln", vm4, vm5, vm6);
+
+    // wait for senders to become running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+
+    // pause the senders
+    vm4.invoke(pauseSenderRunnable());
+    vm5.invoke(pauseSenderRunnable());
+    vm6.invoke(pauseSenderRunnable());
+
+    // start puts in region on local site
+    vm4.invoke(() -> WANTestBase.doPuts(getTestMethodName(), 3000));
+    LogWriterUtils.getLogWriter().info("Completed puts in the region");
+
+    // --------------------close and rebuild local site
+    // -------------------------------------------------
+    // stop the senders
+
+    vm4.invoke(() -> WANTestBase.stopSender("ln"));
+    vm5.invoke(() -> WANTestBase.stopSender("ln"));
+    vm6.invoke(() -> WANTestBase.stopSender("ln"));
+
+
+    LogWriterUtils.getLogWriter().info("Stopped all the senders.");
+
+
+    vm7.invoke(() -> createCache(lnPort));
+
+    String diskStore4 = (String) vm7.invoke(() -> WANTestBase.createSenderWithDiskStore("ln", 2,
+        true, 100, 10, false, true, null, null, true));
+
+    vm7.invoke(createPartitionedRegionRunnable());
+
+    vm7.invoke(() -> WANTestBase.startSenderwithCleanQueues("ln"));
+
+    vm7.invoke(waitForSenderRunnable());
+
+    // start the senders in async mode. This will ensure that the
+    // node of shadow PR that went down last will come up first
+    startSenderInVMsAsync("ln", vm4, vm5, vm6);
+
+    LogWriterUtils.getLogWriter().info("Waiting for senders running.");
+    // wait for senders running
+    vm4.invoke(waitForSenderRunnable());
+    vm5.invoke(waitForSenderRunnable());
+    vm6.invoke(waitForSenderRunnable());
+
+    LogWriterUtils.getLogWriter().info("All the senders are now running...");
+
+    // ----------------------------------------------------------------------------------------------------
+
+    vm2.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 3000));
+    vm3.invoke(() -> WANTestBase.validateRegionSize(getTestMethodName(), 3000));
+  }
+
 
   /**
    * setIgnoreQueue has lots of callers by reflection

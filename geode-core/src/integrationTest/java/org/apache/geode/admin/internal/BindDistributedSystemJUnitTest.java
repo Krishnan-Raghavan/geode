@@ -61,8 +61,6 @@ public class BindDistributedSystemJUnitTest {
   @Test
   public void testBindToAddressLoopback() throws Exception {
     String bindTo = "127.0.0.1";
-    // make sure bindTo is the loopback... needs to be later in test...
-    assertEquals(true, InetAddressUtil.isLoopback(bindTo));
 
     Properties props = new Properties();
     props.setProperty(BIND_ADDRESS, bindTo);

@@ -25,7 +25,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.LogWriter;
 import org.apache.geode.distributed.DistributedMember;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.security.AuthenticationFailedException;
 import org.apache.geode.security.Authenticator;
 
@@ -89,7 +89,7 @@ public class LdapUserAuthenticator implements Authenticator {
     }
 
     final Properties env = new Properties();
-    env.put(Context.INITIAL_CONTEXT_FACTORY, com.sun.jndi.ldap.LdapCtxFactory.class.getName());
+    env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
     env.put(Context.PROVIDER_URL, this.ldapUrlScheme + this.ldapServer + '/' + this.baseDomainName);
     env.put(Context.SECURITY_PRINCIPAL, "uid=" + userName + "," + this.baseDomainName);
     env.put(Context.SECURITY_CREDENTIALS, password);

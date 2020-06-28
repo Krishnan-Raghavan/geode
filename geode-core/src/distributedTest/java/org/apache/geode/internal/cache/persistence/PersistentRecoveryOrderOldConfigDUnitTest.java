@@ -18,39 +18,37 @@ import java.io.File;
 
 import org.junit.experimental.categories.Category;
 
-import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.DataPolicy;
 import org.apache.geode.cache.DiskWriteAttributesFactory;
 import org.apache.geode.cache.RegionFactory;
 import org.apache.geode.cache.Scope;
-import org.apache.geode.test.dunit.AsyncInvocation;
-import org.apache.geode.test.dunit.SerializableRunnable;
-import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.categories.PersistenceTest;
 
-@Category({PersistenceTest.class})
+@Category(PersistenceTest.class)
+@SuppressWarnings("serial")
 public class PersistentRecoveryOrderOldConfigDUnitTest extends PersistentRecoveryOrderDUnitTest {
 
+  /**
+   * Override to use deprecated APIs for the creation of disk and region. This test class can
+   * probably be deleted.
+   */
   @Override
-  protected AsyncInvocation createPersistentRegionAsync(final VM vm) {
-    SerializableRunnable createRegion = new SerializableRunnable("Create persistent region") {
-      @Override
-      public void run() {
-        Cache cache = getCache();
-        File dir = getDiskDirForVM(vm);
-        dir.mkdirs();
-        RegionFactory rf = new RegionFactory();
-        // rf.setDiskSynchronous(true);
-        rf.setDataPolicy(DataPolicy.PERSISTENT_REPLICATE);
-        rf.setScope(Scope.DISTRIBUTED_ACK);
-        rf.setDiskDirs(new File[] {dir});
-        DiskWriteAttributesFactory dwf = new DiskWriteAttributesFactory();
-        dwf.setMaxOplogSize(1);
-        dwf.setSynchronous(true);
-        rf.setDiskWriteAttributes(dwf.create());
-        rf.create(REGION_NAME);
-      }
-    };
-    return vm.invokeAsync(createRegion);
+  @SuppressWarnings("deprecation")
+  protected void createReplicateRegion(String regionName, File[] diskDirs,
+      boolean diskSynchronous) {
+    getCache();
+
+    DiskWriteAttributesFactory diskWriteAttributesFactory = new DiskWriteAttributesFactory();
+    diskWriteAttributesFactory.setMaxOplogSize(1);
+    diskWriteAttributesFactory.setSynchronous(diskSynchronous);
+
+    RegionFactory regionFactory = new RegionFactory();
+    regionFactory.setDataPolicy(DataPolicy.PERSISTENT_REPLICATE);
+    regionFactory.setScope(Scope.DISTRIBUTED_ACK);
+    regionFactory.setDiskDirs(diskDirs);
+    regionFactory.setDiskWriteAttributes(diskWriteAttributesFactory.create());
+
+    regionFactory.create(regionName);
   }
+
 }

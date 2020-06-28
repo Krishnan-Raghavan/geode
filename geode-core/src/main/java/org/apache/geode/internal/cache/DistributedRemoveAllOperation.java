@@ -35,26 +35,28 @@ import org.apache.geode.cache.persistence.PersistentReplicatesOfflineException;
 import org.apache.geode.cache.query.internal.cq.CqService;
 import org.apache.geode.distributed.internal.DirectReplyProcessor;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.ByteArrayDataInput;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.DistributedPutAllOperation.EntryVersionsList;
 import org.apache.geode.internal.cache.FilterRoutingInfo.FilterInfo;
 import org.apache.geode.internal.cache.ha.ThreadIdentifier;
-import org.apache.geode.internal.cache.partitioned.PutAllPRMessage;
 import org.apache.geode.internal.cache.partitioned.RemoveAllPRMessage;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.VersionedObjectList;
-import org.apache.geode.internal.cache.tx.RemotePutAllMessage;
 import org.apache.geode.internal.cache.tx.RemoteRemoveAllMessage;
 import org.apache.geode.internal.cache.versions.ConcurrentCacheModificationException;
 import org.apache.geode.internal.cache.versions.DiskVersionTag;
 import org.apache.geode.internal.cache.versions.VersionSource;
 import org.apache.geode.internal.cache.versions.VersionTag;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.offheap.annotations.Released;
 import org.apache.geode.internal.offheap.annotations.Retained;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.StaticSerialization;
+import org.apache.geode.internal.serialization.Version;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Handles distribution of a Region.removeAll operation.
@@ -169,10 +171,12 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
     return new Iterator() {
       int position = 0;
 
+      @Override
       public boolean hasNext() {
         return DistributedRemoveAllOperation.this.removeAllDataSize > position;
       };
 
+      @Override
       @Unretained
       public Object next() {
         @Unretained
@@ -181,6 +185,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
         return ev;
       };
 
+      @Override
       public void remove() {
         throw new UnsupportedOperationException();
       };
@@ -314,13 +319,14 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
      * Constructor to use when receiving a putall from someone else
      */
     public RemoveAllEntryData(DataInput in, EventID baseEventID, int idx, Version version,
-        ByteArrayDataInput bytesIn) throws IOException, ClassNotFoundException {
-      this.key = DataSerializer.readObject(in);
+        ByteArrayDataInput bytesIn,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      this.key = context.getDeserializer().readObject(in);
       this.oldValue = null;
       this.op = Operation.fromOrdinal(in.readByte());
       this.flags = in.readByte();
       if ((this.flags & FILTER_ROUTING) != 0) {
-        this.filterRouting = (FilterRoutingInfo) DataSerializer.readObject(in);
+        this.filterRouting = (FilterRoutingInfo) context.getDeserializer().readObject(in);
       }
       if ((this.flags & VERSION_TAG) != 0) {
         boolean persistentTag = (this.flags & PERSISTENT_TAG) != 0;
@@ -367,13 +373,14 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
      * that the callers to this method are backwards compatible by creating toDataPreXX methods for
      * them even if they are not changed. <br>
      * Callers for this method are: <br>
-     * {@link RemoveAllMessage#toData(DataOutput)} <br>
-     * {@link PutAllPRMessage#toData(DataOutput)} <br>
-     * {@link RemotePutAllMessage#toData(DataOutput)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
+     * {@link DataSerializableFixedID#toData(DataOutput, SerializationContext)} <br>
      */
-    public void toData(final DataOutput out) throws IOException {
+    public void serializeTo(final DataOutput out,
+        SerializationContext context) throws IOException {
       Object key = this.key;
-      DataSerializer.writeObject(key, out);
+      context.getSerializer().writeObject(key, out);
 
       out.writeByte(this.op.ordinal);
       byte bits = this.flags;
@@ -392,7 +399,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
       out.writeByte(bits);
 
       if (this.filterRouting != null) {
-        DataSerializer.writeObject(this.filterRouting, out);
+        context.getSerializer().writeObject(this.filterRouting, out);
       }
       if (this.versionTag != null) {
         InternalDataSerializer.invokeToData(this.versionTag, out);
@@ -874,9 +881,9 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
       @Released
       EntryEventImpl ev = RemoveAllMessage.createEntryEvent(entry, getSender(), this.context, rgn,
           this.possibleDuplicate, this.needsRouting, this.callbackArg, true, skipCallbacks);
-      // rgn.getLogWriterI18n().info(LocalizedStrings.DEBUG, "RemoveAllMessage.doEntryRemove
+      // rgn.getLogWriterI18n().info(String.format("%s", "RemoveAllMessage.doEntryRemove
       // sender=" + getSender() +
-      // " event="+ev);
+      // " event="+ev));
       // we don't need to set old value here, because the msg is from remote. local old value will
       // get from next step
       try {
@@ -934,7 +941,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
           InternalDistributedMember id = rgn.getMyId();
           ev.setLocalFilterInfo(entry.filterRouting.getFilterInfo(id));
         }
-        /**
+        /*
          * Setting tailKey for the secondary bucket here. Tail key was update by the primary.
          */
         ev.setTailKey(entry.getTailKey());
@@ -956,6 +963,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
       }
 
       rgn.syncBulkOp(new Runnable() {
+        @Override
         public void run() {
           for (int i = 0; i < removeAllDataSize; ++i) {
             if (logger.isTraceEnabled()) {
@@ -969,22 +977,24 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
       }, ev.getEventId());
     }
 
+    @Override
     public int getDSFID() {
       return REMOVE_ALL_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
 
-      super.fromData(in);
-      this.eventId = (EventID) DataSerializer.readObject(in);
+      super.fromData(in, context);
+      this.eventId = (EventID) context.getDeserializer().readObject(in);
       this.removeAllDataSize = (int) InternalDataSerializer.readUnsignedVL(in);
       this.removeAllData = new RemoveAllEntryData[this.removeAllDataSize];
       if (this.removeAllDataSize > 0) {
-        final Version version = InternalDataSerializer.getVersionForDataStreamOrNull(in);
+        final Version version = StaticSerialization.getVersionForDataStreamOrNull(in);
         final ByteArrayDataInput bytesIn = new ByteArrayDataInput();
         for (int i = 0; i < this.removeAllDataSize; i++) {
-          this.removeAllData[i] = new RemoveAllEntryData(in, eventId, i, version, bytesIn);
+          this.removeAllData[i] = new RemoveAllEntryData(in, eventId, i, version, bytesIn, context);
         }
 
         boolean hasTags = in.readBoolean();
@@ -997,16 +1007,17 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
       }
 
       if ((flags & HAS_BRIDGE_CONTEXT) != 0) {
-        this.context = DataSerializer.readObject(in);
+        this.context = context.getDeserializer().readObject(in);
       }
       this.skipCallbacks = (flags & SKIP_CALLBACKS) != 0;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
 
-      super.toData(out);
-      DataSerializer.writeObject(this.eventId, out);
+      super.toData(out, context);
+      context.getSerializer().writeObject(this.eventId, out);
       InternalDataSerializer.writeUnsignedVL(this.removeAllDataSize, out);
       if (this.removeAllDataSize > 0) {
         EntryVersionsList versionTags = new EntryVersionsList(removeAllDataSize);
@@ -1019,7 +1030,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
           VersionTag<?> tag = removeAllData[i].versionTag;
           versionTags.add(tag);
           removeAllData[i].versionTag = null;
-          this.removeAllData[i].toData(out);
+          this.removeAllData[i].serializeTo(out, context);
           this.removeAllData[i].versionTag = tag;
         }
 
@@ -1029,7 +1040,7 @@ public class DistributedRemoveAllOperation extends AbstractUpdateOperation {
         }
       }
       if (this.context != null) {
-        DataSerializer.writeObject(this.context, out);
+        context.getSerializer().writeObject(this.context, out);
       }
     }
 

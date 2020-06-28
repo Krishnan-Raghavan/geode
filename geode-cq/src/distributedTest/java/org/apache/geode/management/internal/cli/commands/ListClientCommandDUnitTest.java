@@ -18,11 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertNotNull;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
-import org.apache.commons.lang.exception.ExceptionUtils;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -33,7 +34,6 @@ import org.apache.geode.cache.client.ClientRegionFactory;
 import org.apache.geode.cache.client.ClientRegionShortcut;
 import org.apache.geode.cache.client.PoolManager;
 import org.apache.geode.cache.client.internal.PoolImpl;
-import org.apache.geode.management.internal.cli.result.CommandResult;
 import org.apache.geode.test.dunit.rules.ClientVM;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -43,11 +43,11 @@ import org.apache.geode.test.junit.rules.GfshCommandRule;
 
 @Category({GfshTest.class})
 public class ListClientCommandDUnitTest {
-  @ClassRule
-  public static ClusterStartupRule cluster = new ClusterStartupRule(6);
+  @Rule
+  public ClusterStartupRule cluster = new ClusterStartupRule(6);
 
-  @ClassRule
-  public static GfshCommandRule gfsh = new GfshCommandRule();
+  @Rule
+  public GfshCommandRule gfsh = new GfshCommandRule();
 
   private static final String REGION_NAME = "stocks";
 
@@ -57,22 +57,36 @@ public class ListClientCommandDUnitTest {
 
   private static ClientVM client1, client2;
 
-  @BeforeClass
-  public static void setup() throws Exception {
+  @Before
+  public void setup() throws Exception {
     locator = cluster.startLocatorVM(locatorID);
-    int locatorPort = locator.getPort();
-    server1 = cluster.startServerVM(server1ID,
-        r -> r.withRegion(RegionShortcut.REPLICATE, REGION_NAME)
-            .withConnectionToLocator(locatorPort));
-    server2 = cluster.startServerVM(server2ID,
-        r -> r.withRegion(RegionShortcut.REPLICATE, REGION_NAME)
-            .withConnectionToLocator(locatorPort));
 
     gfsh.connectAndVerify(locator);
   }
 
+  private void startServers(MemberVM locator) {
+    server1 = cluster.startServerVM(server1ID,
+        r -> r.withRegion(RegionShortcut.REPLICATE, REGION_NAME)
+            .withConnectionToLocator(locator.getPort()));
+    server2 = cluster.startServerVM(server2ID,
+        r -> r.withRegion(RegionShortcut.REPLICATE, REGION_NAME)
+            .withConnectionToLocator(locator.getPort()));
+  }
+
+  @Test
+  public void noResultIsSuccess() {
+    startServers(locator);
+    gfsh.executeAndAssertThat("list clients").statusIsSuccess();
+  }
+
+  @Test
+  public void noMembersIsSuccess() {
+    gfsh.executeAndAssertThat("list clients").statusIsSuccess();
+  }
+
   @Test
   public void testTwoClientsConnectToOneServer() throws Exception {
+    startServers(locator);
     int server1port = server1.getPort();
     Properties client1props = new Properties();
     client1props.setProperty("name", "client-1");
@@ -100,25 +114,21 @@ public class ListClientCommandDUnitTest {
 
     locator.waitTillClientsAreReadyOnServers("server-1", server1port, 2);
 
-    CommandResult result =
-        gfsh.executeAndAssertThat("list clients").statusIsSuccess().getCommandResult();
+    Map<String, List<String>> clientMap =
+        gfsh.executeAndAssertThat("list clients").statusIsSuccess()
+            .hasTableSection("clientList")
+            .hasRowSize(2).getActual().getContent();
 
-    List<String> clientList =
-        result.getColumnFromTableContent("Client Name / ID", "section1", "TableForClientList");
-    assertThat(clientList).hasSize(2);
     try {
-      assertThat(clientList.get(0)).contains("client-1");
-      assertThat(clientList.get(1)).contains("client-2");
+      assertThat(clientMap.get("Client Name / ID").get(0)).contains("client-1");
+      assertThat(clientMap.get("Client Name / ID").get(1)).contains("client-2");
     } catch (AssertionError e) {
-      assertThat(clientList.get(0)).contains("client-2");
-      assertThat(clientList.get(1)).contains("client-1");
+      assertThat(clientMap.get("Client Name / ID").get(0)).contains("client-2");
+      assertThat(clientMap.get("Client Name / ID").get(1)).contains("client-1");
     }
-
-    assertThat(
-        result.getColumnFromTableContent("Server Name / ID", "section1", "TableForClientList"))
-            .hasSize(2)
-            .containsExactlyInAnyOrder("member=server-1,port=" + server1port,
-                "member=server-1,port=" + server1port);
+    assertThat(clientMap.get("Server Name / ID"))
+        .containsExactlyInAnyOrder("member=server-1,port=" + server1port,
+            "member=server-1,port=" + server1port);
 
     // shutdown the clients
     cluster.stop(client1ID);
@@ -127,6 +137,7 @@ public class ListClientCommandDUnitTest {
 
   @Test
   public void oneClientConnectToTwoServers() throws Exception {
+    startServers(locator);
     int server1port = server1.getPort();
     int server2port = server2.getPort();
     Properties client1props = new Properties();
@@ -140,7 +151,7 @@ public class ListClientCommandDUnitTest {
       String poolName = "new_pool_" + System.currentTimeMillis();
       try {
         PoolImpl p = (PoolImpl) PoolManager.createFactory()
-            .addServer("localhost", server2port).setThreadLocalConnections(true)
+            .addServer("localhost", server2port)
             .setMinConnections(1).setSubscriptionEnabled(true).setPingInterval(1)
             .setStatisticInterval(1).setMinConnections(1).setSubscriptionRedundancy(1)
             .create(poolName);
@@ -164,18 +175,14 @@ public class ListClientCommandDUnitTest {
     locator.waitTillClientsAreReadyOnServers("server-1", server1port, 1);
     locator.waitTillClientsAreReadyOnServers("server-2", server2port, 1);
 
-    CommandResult result =
-        gfsh.executeAndAssertThat("list clients").statusIsSuccess().getCommandResult();
+    Map<String, List<String>> content = gfsh.executeAndAssertThat("list clients").statusIsSuccess()
+        .hasTableSection("clientList").getActual().getContent();
+    assertThat(content.get("Client Name / ID")).hasSize(1);
+    assertThat(content.get("Client Name / ID").get(0)).containsSequence("client-1");
 
-    List<String> clientList =
-        result.getColumnFromTableContent("Client Name / ID", "section1", "TableForClientList");
-    assertThat(clientList).hasSize(1);
-    assertThat(clientList.get(0)).contains("client-1");
-
-    List<String> serverList =
-        result.getColumnFromTableContent("Server Name / ID", "section1", "TableForClientList");
-    assertThat(serverList).hasSize(1);
-    assertThat(serverList.get(0)).contains("server-1").contains("server-2");
+    assertThat(content.get("Server Name / ID")).hasSize(1);
+    assertThat(content.get("Server Name / ID").get(0)).containsSequence("server-2")
+        .containsSequence("server-1");
 
     // shutdown the clients
     cluster.stop(client1ID);

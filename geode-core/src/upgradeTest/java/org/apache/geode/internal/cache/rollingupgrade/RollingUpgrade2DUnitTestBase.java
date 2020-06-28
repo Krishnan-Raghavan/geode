@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache.rollingupgrade;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.apache.geode.test.dunit.Assert.assertFalse;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
@@ -25,6 +27,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -36,10 +39,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
-import org.awaitility.Awaitility;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -81,15 +82,14 @@ import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.distributed.internal.membership.gms.membership.GMSJoinLeave;
 import org.apache.geode.internal.AvailablePortHelper;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CacheServerImpl;
 import org.apache.geode.internal.cache.DiskInitFile;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.Oplog;
 import org.apache.geode.internal.cache.Oplog.OPLOG_TYPE;
+import org.apache.geode.internal.cache.tier.sockets.AcceptorImpl;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.Host;
@@ -97,10 +97,12 @@ import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
+import org.apache.geode.test.dunit.internal.DUnitLauncher;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
-import org.apache.geode.test.dunit.standalone.DUnitLauncher;
-import org.apache.geode.test.dunit.standalone.VersionManager;
+import org.apache.geode.test.dunit.rules.ClusterStartupRule;
+import org.apache.geode.test.dunit.rules.DistributedRule;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.VersionManager;
 
 /**
  * This test will not run properly in eclipse at this point due to having to bounce vms Currently,
@@ -112,7 +114,8 @@ import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactor
  * talk to one another due to one using a magic number and the other not. Also turnOffBounce will
  * need to be set to true so that bouncing a vm doesn't lead to a NPE.
  *
- * @author jhuynh
+ * @deprecated Please use {@link DistributedRule} and Geode User APIs or {@link ClusterStartupRule}
+ *             instead.
  */
 @RunWith(Parameterized.class)
 @Parameterized.UseParametersRunnerFactory(CategoryWithParameterizedRunnerFactory.class)
@@ -246,7 +249,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
     String serverHostName = NetworkUtils.getServerHostName();
     int port = AvailablePortHelper.getRandomAvailableTCPPort();
-    DistributedTestUtils.deleteLocatorStateFile(port);
+    oldServerAndLocator.invoke(() -> DistributedTestUtils.deleteLocatorStateFile(port));
     try {
       Properties props = getSystemProperties();
       props.remove(DistributionConfig.LOCATORS_NAME);
@@ -256,7 +259,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -265,8 +268,10 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
       invokeRunnableInVMs(invokeCreateCache(props), oldServer2, currentServer1, currentServer2);
 
-      currentServer1.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
-      currentServer2.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+      currentServer1
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
+      currentServer2
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
 
       // create region
       invokeRunnableInVMs(invokeCreateRegion(regionName, shortcut), currentServer1, currentServer2,
@@ -275,7 +280,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -316,7 +321,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -324,8 +329,10 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       props.put(DistributionConfig.LOCATORS_NAME, serverHostName + "[" + port + "]");
       invokeRunnableInVMs(invokeCreateCache(props), currentServer1, currentServer2, oldServer);
 
-      currentServer1.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
-      currentServer2.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+      currentServer1
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
+      currentServer2
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
 
       // create region
       invokeRunnableInVMs(invokeCreateRegion(regionName, shortcut), currentServer1, currentServer2,
@@ -334,14 +341,15 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
 
       putDataSerializableAndVerify(currentServer1, regionName, 0, 100, currentServer2, oldServer,
           oldServerAndLocator);
-      query("Select * from /" + regionName + " p where p.timeout > 0L", 99, currentServer1,
+      query("Select * from " + SEPARATOR + regionName + " p where p.timeout > 0L", 99,
+          currentServer1,
           currentServer2, oldServer, oldServerAndLocator);
 
     } finally {
@@ -376,7 +384,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -384,8 +392,10 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       props.put(DistributionConfig.LOCATORS_NAME, serverHostName + "[" + port + "]");
       invokeRunnableInVMs(invokeCreateCache(props), currentServer1, currentServer2, oldServer);
 
-      currentServer1.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
-      currentServer2.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+      currentServer1
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
+      currentServer2
+          .invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
 
       // create region
       invokeRunnableInVMs(invokeCreateRegion(regionName, shortcut), currentServer1, currentServer2,
@@ -394,7 +404,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       // Locators before 1.4 handled configuration asynchronously.
       // We must wait for configuration configuration to be ready, or confirm that it is disabled.
       oldServerAndLocator.invoke(
-          () -> Awaitility.await().atMost(65, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+          () -> await()
               .untilAsserted(() -> assertTrue(
                   !InternalLocator.getLocator().getConfig().getEnableClusterConfiguration()
                       || InternalLocator.getLocator().isSharedConfigurationRunning())));
@@ -402,9 +412,9 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
       putDataSerializableAndVerify(currentServer1, regionName, 0, 100, currentServer2, oldServer,
           oldServerAndLocator);
       if (createMultiIndexes) {
-        doCreateIndexes("/" + regionName, currentServer1);
+        doCreateIndexes(SEPARATOR + regionName, currentServer1);
       } else {
-        doCreateIndex("/" + regionName, oldServer);
+        doCreateIndex(SEPARATOR + regionName, oldServer);
       }
     } finally {
       invokeRunnableInVMs(invokeCloseCache(), currentServer1, currentServer2, oldServer,
@@ -553,7 +563,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
     VM rollServer = Host.getHost(0).getVM(VersionManager.CURRENT_VERSION, oldServer.getId());
     rollServer.invoke(invokeCreateCache(locatorPorts == null ? getSystemPropertiesPost71()
         : getSystemPropertiesPost71(locatorPorts)));
-    rollServer.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+    rollServer.invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
     return rollServer;
   }
 
@@ -563,7 +573,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
     VM rollClient = Host.getHost(0).getVM(VersionManager.CURRENT_VERSION, oldClient.getId());
     rollClient.invoke(invokeCreateClientCache(getClientSystemProperties(), hostNames, locatorPorts,
         subscriptionEnabled));
-    rollClient.invoke(invokeAssertVersion(Version.CURRENT_ORDINAL));
+    rollClient.invoke(invokeAssertVersion(VersionManager.getInstance().getCurrentVersionOrdinal()));
     return rollClient;
   }
 
@@ -674,6 +684,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeStartLocator(final String serverHostName, final int port,
       final String testName, final Properties props, boolean fastStart) {
     return new CacheSerializableRunnable("execute: startLocator") {
+      @Override
       public void run2() {
         try {
           startLocator(serverHostName, port, props, fastStart);
@@ -687,6 +698,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeStartLocatorAndServer(final String serverHostName,
       final int port, final Properties systemProperties) {
     return new CacheSerializableRunnable("execute: startLocator") {
+      @Override
       public void run2() {
         try {
           systemProperties.put(DistributionConfig.START_LOCATOR_NAME,
@@ -703,6 +715,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeCreateCache(final Properties systemProperties) {
     return new CacheSerializableRunnable("execute: createCache") {
+      @Override
       public void run2() {
         try {
           RollingUpgrade2DUnitTestBase.cache = createCache(systemProperties);
@@ -716,6 +729,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeCreateClientCache(final Properties systemProperties,
       final String[] hosts, final int[] ports, boolean subscriptionEnabled) {
     return new CacheSerializableRunnable("execute: createClientCache") {
+      @Override
       public void run2() {
         try {
           RollingUpgrade2DUnitTestBase.cache =
@@ -729,6 +743,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeStartCacheServer(final int port) {
     return new CacheSerializableRunnable("execute: startCacheServer") {
+      @Override
       public void run2() {
         try {
           startCacheServer(RollingUpgrade2DUnitTestBase.cache, port);
@@ -741,6 +756,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeAssertVersion(final short version) {
     return new CacheSerializableRunnable("execute: assertVersion") {
+      @Override
       public void run2() {
         try {
           assertVersion(RollingUpgrade2DUnitTestBase.cache, version);
@@ -754,6 +770,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeCreateRegion(final String regionName,
       final RegionShortcut shortcut) {
     return new CacheSerializableRunnable("execute: createRegion") {
+      @Override
       public void run2() {
         try {
           createRegion(RollingUpgrade2DUnitTestBase.cache, regionName, shortcut);
@@ -767,6 +784,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeCreatePersistentReplicateRegion(final String regionName,
       final File diskstore) {
     return new CacheSerializableRunnable("execute: createPersistentReplicateRegion") {
+      @Override
       public void run2() {
         try {
           createPersistentReplicateRegion(RollingUpgrade2DUnitTestBase.cache, regionName,
@@ -781,6 +799,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   CacheSerializableRunnable invokeCreateClientRegion(final String regionName,
       final ClientRegionShortcut shortcut) {
     return new CacheSerializableRunnable("execute: createClientRegion") {
+      @Override
       public void run2() {
         try {
           createClientRegion(RollingUpgrade2DUnitTestBase.cache, regionName, shortcut);
@@ -794,6 +813,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   private CacheSerializableRunnable invokePut(final String regionName, final Object key,
       final Object value) {
     return new CacheSerializableRunnable("execute: put(" + key + "," + value + ")") {
+      @Override
       public void run2() {
         try {
           put(RollingUpgrade2DUnitTestBase.cache, regionName, key, value);
@@ -807,6 +827,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   private CacheSerializableRunnable invokeAssertEntriesCorrect(final String regionName,
       final int start, final int end) {
     return new CacheSerializableRunnable("execute: assertEntriesCorrect") {
+      @Override
       public void run2() {
         try {
           assertEntriesCorrect(RollingUpgrade2DUnitTestBase.cache, regionName, start, end);
@@ -820,6 +841,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   private CacheSerializableRunnable invokeAssertEntriesExist(final String regionName,
       final int start, final int end) {
     return new CacheSerializableRunnable("execute: assertEntryExists") {
+      @Override
       public void run2() {
         try {
           assertEntryExists(RollingUpgrade2DUnitTestBase.cache, regionName, start, end);
@@ -832,6 +854,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeStopLocator() {
     return new CacheSerializableRunnable("execute: stopLocator") {
+      @Override
       public void run2() {
         try {
           stopLocator();
@@ -844,6 +867,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeCloseCache() {
     return new CacheSerializableRunnable("execute: closeCache") {
+      @Override
       public void run2() {
         try {
           closeCache(RollingUpgrade2DUnitTestBase.cache);
@@ -856,6 +880,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   private CacheSerializableRunnable invokeRebalance() {
     return new CacheSerializableRunnable("execute: rebalance") {
+      @Override
       public void run2() {
         try {
           rebalance(RollingUpgrade2DUnitTestBase.cache);
@@ -869,6 +894,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
   private CacheSerializableRunnable invokeAssertQueryResults(final String queryString,
       final int numExpected) {
     return new CacheSerializableRunnable("execute: assertQueryResults") {
+      @Override
       public void run2() {
         try {
           assertQueryResults(RollingUpgrade2DUnitTestBase.cache, queryString, numExpected);
@@ -881,6 +907,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   private CacheSerializableRunnable invokeCreateIndexes(final String regionPath) {
     return new CacheSerializableRunnable("invokeCreateIndexes") {
+      @Override
       public void run2() {
         try {
           createIndexes(regionPath, RollingUpgrade2DUnitTestBase.cache);
@@ -893,6 +920,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   private CacheSerializableRunnable invokeCreateIndex(final String regionPath) {
     return new CacheSerializableRunnable("invokeCreateIndexes") {
+      @Override
       public void run2() {
         try {
           createIndex(regionPath, RollingUpgrade2DUnitTestBase.cache);
@@ -905,6 +933,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   CacheSerializableRunnable invokeRegisterFunction(final Function function) {
     return new CacheSerializableRunnable("invokeRegisterFunction") {
+      @Override
       public void run2() {
         try {
           registerFunction(function);
@@ -925,7 +954,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   private static Cache createCache(Properties systemProperties) {
     systemProperties.setProperty(DistributionConfig.USE_CLUSTER_CONFIGURATION_NAME, "false");
-    if (Version.CURRENT_ORDINAL < 75) {
+    if (VersionManager.getInstance().getCurrentVersionOrdinal() < 75) {
       systemProperties.remove("validate-serializable-objects");
       systemProperties.remove("serializable-object-filter");
     }
@@ -1082,8 +1111,7 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
         Assert.assertTrue("Index creation should have been failed with IndexCreationException ",
             ex instanceof IndexCreationException);
         Assert.assertEquals("Incorrect exception message ",
-            LocalizedStrings.PartitionedRegion_INDEX_CREATION_FAILED_ROLLING_UPGRADE
-                .toLocalizedString(),
+            "Indexes should not be created when there are older versions of gemfire in the cluster.",
             ex.getMessage());
       }
     } catch (Exception e) {
@@ -1157,6 +1185,8 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
     props.setProperty(DistributionConfig.LOCATORS_NAME, locatorsString);
     props.setProperty(DistributionConfig.LOG_LEVEL_NAME, DUnitLauncher.logLevel);
     props.setProperty(DistributionConfig.ENABLE_CLUSTER_CONFIGURATION_NAME, enableCC + "");
+    // do not start http service to avoid port conflict between upgrade tests
+    props.setProperty(DistributionConfig.HTTP_SERVICE_PORT_NAME, "0");
     return props;
   }
 
@@ -1184,7 +1214,9 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
         System.getProperties().remove(GMSJoinLeave.BYPASS_DISCOVERY_PROPERTY);
       }
     }
-    if (Version.CURRENT == Version.GFE_90) {
+    // note: 45 is Version.GFE_90 - can't refer to Version class in backward-compatibility
+    // distributed tests
+    if (VersionManager.getInstance().getCurrentVersionOrdinal() == 45) {
       Thread.sleep(5000); // bug in 1.0 - cluster config service not immediately available
     }
   }
@@ -1203,15 +1235,24 @@ public abstract class RollingUpgrade2DUnitTestBase extends JUnit4DistributedTest
 
   String getHARegionName() {
     InternalCache internalCache = (InternalCache) cache;
-    Awaitility.await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
+    await().untilAsserted(() -> {
       assertEquals(1, internalCache.getCacheServers().size());
       CacheServerImpl bs = (CacheServerImpl) (internalCache.getCacheServers().iterator().next());
-      assertEquals(1, bs.getAcceptor().getCacheClientNotifier().getClientProxies().size());
+      assertEquals(1, getAcceptorImpl(bs).getCacheClientNotifier().getClientProxies().size());
     });
     CacheServerImpl bs = (CacheServerImpl) internalCache.getCacheServers().iterator().next();
     CacheClientProxy ccp =
-        bs.getAcceptor().getCacheClientNotifier().getClientProxies().iterator().next();
+        getAcceptorImpl(bs).getCacheClientNotifier().getClientProxies().iterator().next();
     return ccp.getHARegion().getName();
+  }
+
+  private AcceptorImpl getAcceptorImpl(CacheServerImpl server) {
+    try {
+      Method getAcceptor = server.getClass().getMethod("getAcceptor");
+      return (AcceptorImpl) getAcceptor.invoke(server);
+    } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   public static class GetDataSerializableFunction implements Function, DataSerializable {

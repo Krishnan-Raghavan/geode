@@ -29,6 +29,7 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientRegionShortcut;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.test.dunit.rules.ClientVM;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.junit.categories.SecurityTest;
@@ -44,7 +45,7 @@ public class ClientDestroyInvalidateAuthDUnitTest {
   @Rule
   public ServerStarterRule server =
       new ServerStarterRule().withProperty(SECURITY_MANAGER, TestSecurityManager.class.getName())
-          .withSecurityManager(SimpleTestSecurityManager.class).withAutoStart();
+          .withSecurityManager(SimpleSecurityManager.class).withAutoStart();
 
   @Before
   public void before() throws Exception {
@@ -57,7 +58,10 @@ public class ClientDestroyInvalidateAuthDUnitTest {
 
   @Test
   public void testDestroyInvalidate() throws Exception {
-    client1 = lsRule.startClientVM(1, "data", "data", true, server.getPort());
+    int serverPort = server.getPort();
+    client1 = lsRule.startClientVM(1, c1 -> c1.withCredential("data", "data")
+        .withPoolSubscription(true)
+        .withServerConnection(serverPort));
     // Delete one key and invalidate another key with an authorized user.
     client1.invoke(() -> {
       ClientCache cache = ClusterStartupRule.getClientCache();
@@ -76,7 +80,9 @@ public class ClientDestroyInvalidateAuthDUnitTest {
       cache.close();
     });
 
-    client2 = lsRule.startClientVM(2, "dataRead", "dataRead", true, server.getPort());
+    client2 = lsRule.startClientVM(2, c -> c.withCredential("dataRead", "dataRead")
+        .withPoolSubscription(true)
+        .withServerConnection(serverPort));
     // Delete one key and invalidate another key with an unauthorized user.
     client2.invoke(() -> {
       ClientCache cache = ClusterStartupRule.getClientCache();

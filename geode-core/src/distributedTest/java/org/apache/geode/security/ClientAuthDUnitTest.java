@@ -14,13 +14,11 @@
  */
 package org.apache.geode.security;
 
-import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_MANAGER;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Properties;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -34,14 +32,14 @@ import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientRegionFactory;
 import org.apache.geode.cache.client.ClientRegionShortcut;
 import org.apache.geode.cache.client.ServerOperationException;
-import org.apache.geode.security.templates.UserPasswordAuthInit;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.rules.ClientVM;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.SecurityTest;
 import org.apache.geode.test.junit.rules.ServerStarterRule;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.VersionManager;
 
 @Category({SecurityTest.class})
 @RunWith(Parameterized.class)
@@ -61,16 +59,16 @@ public class ClientAuthDUnitTest {
 
   @Rule
   public ServerStarterRule server = new ServerStarterRule()
-      .withProperty(SECURITY_MANAGER, SimpleTestSecurityManager.class.getName())
+      .withProperty(SECURITY_MANAGER, SimpleSecurityManager.class.getName())
       .withRegion(RegionShortcut.REPLICATE, "region");
 
   @Test
   public void authWithCorrectPasswordShouldPass() throws Exception {
     int serverPort = server.getPort();
-    ClientVM clientVM = lsRule.startClientVM(0, getClientAuthProperties("data", "data"), ccf -> {
-      ccf.setPoolSubscriptionEnabled(true);
-      ccf.addPoolServer("localhost", serverPort);
-    }, clientVersion);
+    ClientVM clientVM = lsRule.startClientVM(0, clientVersion,
+        c -> c.withCredential("data", "data")
+            .withPoolSubscription(true)
+            .withServerConnection(serverPort));
 
     clientVM.invoke(() -> {
       ClientCache clientCache = ClusterStartupRule.getClientCache();
@@ -88,21 +86,21 @@ public class ClientAuthDUnitTest {
 
     // for older version of client when we did not implement lazy initialization of the pool, the
     // authentication error will happen at this step.
-    if (Arrays.asList("100", "110", "111", "120", "130", "140").contains(clientVersion)) {
+    if (Arrays.asList("1.0.0-incubating", "1.1.0", "1.1.1", "1.2.0", "1.3.0", "1.4.0")
+        .contains(clientVersion)) {
       assertThatThrownBy(
-          () -> lsRule.startClientVM(0, getClientAuthProperties("test", "invalidPassword"), ccf -> {
-            ccf.setPoolSubscriptionEnabled(true);
-            ccf.addPoolServer("localhost", serverPort);
-          }, clientVersion))
-              .isInstanceOf(AuthenticationFailedException.class);
+          () -> lsRule.startClientVM(0, clientVersion,
+              c -> c.withCredential("test", "invalidPassword")
+                  .withPoolSubscription(true)
+                  .withServerConnection(serverPort)))
+                      .isInstanceOf(AuthenticationFailedException.class);
       return;
     }
 
     ClientVM clientVM =
-        lsRule.startClientVM(0, getClientAuthProperties("test", "invalidPassword"), ccf -> {
-          ccf.setPoolSubscriptionEnabled(true);
-          ccf.addPoolServer("localhost", serverPort);
-        }, clientVersion);
+        lsRule.startClientVM(0, clientVersion, c -> c.withCredential("test", "invalidPassword")
+            .withPoolSubscription(true)
+            .withServerConnection(serverPort));
 
     clientVM.invoke(() -> {
       ClientCache clientCache = ClusterStartupRule.getClientCache();
@@ -118,10 +116,9 @@ public class ClientAuthDUnitTest {
     int serverPort = server.getPort();
     IgnoredException.addIgnoredException(AuthenticationFailedException.class.getName());
     ClientVM clientVM =
-        lsRule.startClientVM(0, getClientAuthProperties("test", "invalidPassword"), ccf -> {
-          ccf.setPoolSubscriptionEnabled(false);
-          ccf.addPoolServer("localhost", serverPort);
-        }, clientVersion);
+        lsRule.startClientVM(0, clientVersion, c -> c.withCredential("test", "invalidPassword")
+            .withPoolSubscription(false)
+            .withServerConnection(serverPort));
 
     clientVM.invoke(() -> {
       ClientCache clientCache = ClusterStartupRule.getClientCache();
@@ -131,13 +128,5 @@ public class ClientAuthDUnitTest {
       assertThatThrownBy(() -> region.put("A", "A")).isInstanceOf(ServerOperationException.class)
           .hasCauseInstanceOf(AuthenticationFailedException.class);
     });
-  }
-
-  private Properties getClientAuthProperties(String username, String password) {
-    Properties props = new Properties();
-    props.setProperty(UserPasswordAuthInit.USER_NAME, username);
-    props.setProperty(UserPasswordAuthInit.PASSWORD, password);
-    props.setProperty(SECURITY_CLIENT_AUTH_INIT, UserPasswordAuthInit.class.getName());
-    return props;
   }
 }

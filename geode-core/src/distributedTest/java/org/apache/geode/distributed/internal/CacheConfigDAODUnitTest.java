@@ -17,6 +17,7 @@
 
 package org.apache.geode.distributed.internal;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.Rule;
@@ -24,6 +25,7 @@ import org.junit.Test;
 
 import org.apache.geode.cache.configuration.RegionConfig;
 import org.apache.geode.distributed.ConfigurationPersistenceService;
+import org.apache.geode.management.configuration.RegionType;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 
@@ -45,7 +47,7 @@ public class CacheConfigDAODUnitTest {
       ccService.updateCacheConfig("cluster", cc -> {
         RegionConfig regionConfig = new RegionConfig();
         regionConfig.setName("regionB");
-        regionConfig.setRefid("REPLICATE");
+        regionConfig.setType(RegionType.REPLICATE);
         cc.getRegions().add(regionConfig);
         return cc;
       });
@@ -54,7 +56,7 @@ public class CacheConfigDAODUnitTest {
     MemberVM server = cluster.startServerVM(1, locator.getPort());
 
     server.invoke(() -> {
-      assertThat(ClusterStartupRule.getCache().getRegion("/regionB")).isNotNull();
+      assertThat(ClusterStartupRule.getCache().getRegion(SEPARATOR + "regionB")).isNotNull();
     });
 
   }

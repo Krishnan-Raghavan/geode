@@ -42,8 +42,7 @@ import org.apache.geode.cache.query.QueryService;
 import org.apache.geode.cache.query.RegionNotFoundException;
 import org.apache.geode.cache.query.internal.cq.ClientCQ;
 import org.apache.geode.cache.query.internal.cq.InternalCqQuery;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A wrapper class over an actual QueryService instance. This is used when the
@@ -64,6 +63,7 @@ public class ProxyQueryService implements QueryService {
     this.realQueryService = realQueryService;
   }
 
+  @Override
   public void closeCqs() {
     closeCqs(false);
   }
@@ -81,6 +81,7 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public Index createHashIndex(String indexName, String indexedExpression, String fromClause)
       throws IndexInvalidException, IndexNameConflictException, IndexExistsException,
       RegionNotFoundException, UnsupportedOperationException {
@@ -88,6 +89,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createHashIndex(String indexName, String indexedExpression, String fromClause,
       String imports) throws IndexInvalidException, IndexNameConflictException,
       IndexExistsException, RegionNotFoundException, UnsupportedOperationException {
@@ -95,6 +97,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createIndex(String indexName, IndexType indexType, String indexedExpression,
       String fromClause) throws IndexInvalidException, IndexNameConflictException,
       IndexExistsException, RegionNotFoundException, UnsupportedOperationException {
@@ -102,6 +105,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createIndex(String indexName, IndexType indexType, String indexedExpression,
       String fromClause, String imports) throws IndexInvalidException, IndexNameConflictException,
       IndexExistsException, RegionNotFoundException, UnsupportedOperationException {
@@ -109,6 +113,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createIndex(String indexName, String indexedExpression, String fromClause)
       throws IndexInvalidException, IndexNameConflictException, IndexExistsException,
       RegionNotFoundException, UnsupportedOperationException {
@@ -116,6 +121,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createIndex(String indexName, String indexedExpression, String fromClause,
       String imports) throws IndexInvalidException, IndexNameConflictException,
       IndexExistsException, RegionNotFoundException, UnsupportedOperationException {
@@ -123,6 +129,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public Index createKeyIndex(String indexName, String indexedExpression, String fromClause)
       throws IndexInvalidException, IndexNameConflictException, IndexExistsException,
       RegionNotFoundException, UnsupportedOperationException {
@@ -178,6 +185,7 @@ public class ProxyQueryService implements QueryService {
         "Index creation on the server is not supported from the client.");
   }
 
+  @Override
   public void executeCqs() throws CqException {
     preOp();
     try {
@@ -190,6 +198,7 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public void executeCqs(String regionName) throws CqException {
     preOp();
     try {
@@ -203,6 +212,7 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public CqQuery getCq(String cqName) {
     preOp();
     if (this.cqNames.contains(cqName)) {
@@ -212,10 +222,12 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public CqServiceStatistics getCqStatistics() {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public ClientCQ[] getCqs() {
     preOp();
     ClientCQ[] cqs = null;
@@ -234,6 +246,7 @@ public class ProxyQueryService implements QueryService {
     return cqs;
   }
 
+  @Override
   public ClientCQ[] getCqs(String regionName) throws CqException {
     preOp();
     Collection<? extends InternalCqQuery> cqs = null;
@@ -256,26 +269,31 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public Index getIndex(Region<?, ?> region, String indexName) {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public Collection<Index> getIndexes() {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public Collection<Index> getIndexes(Region<?, ?> region) {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public Collection<Index> getIndexes(Region<?, ?> region, IndexType indexType) {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public CqQuery newCq(String queryString, CqAttributes cqAttributes)
       throws QueryInvalidException, CqException {
     preOp(true);
@@ -296,6 +314,7 @@ public class ProxyQueryService implements QueryService {
     return cq;
   }
 
+  @Override
   public CqQuery newCq(String queryString, CqAttributes cqAttributes, boolean isDurable)
       throws QueryInvalidException, CqException {
     preOp(true);
@@ -316,13 +335,14 @@ public class ProxyQueryService implements QueryService {
     return cq;
   }
 
+  @Override
   public CqQuery newCq(String cqName, String queryString, CqAttributes cqAttributes)
       throws QueryInvalidException, CqExistsException, CqException {
     preOp(true);
     try {
       if (cqName == null) {
         throw new IllegalArgumentException(
-            LocalizedStrings.DefaultQueryService_CQNAME_MUST_NOT_BE_NULL.toLocalizedString());
+            "cqName must not be null");
       }
       ClientCQ cq = ((DefaultQueryService) realQueryService).getCqService().newCq(cqName,
           queryString, cqAttributes, ((DefaultQueryService) realQueryService).getPool(), false);
@@ -334,13 +354,14 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public CqQuery newCq(String cqName, String queryString, CqAttributes cqAttributes,
       boolean isDurable) throws QueryInvalidException, CqExistsException, CqException {
     preOp(true);
     try {
       if (cqName == null) {
         throw new IllegalArgumentException(
-            LocalizedStrings.DefaultQueryService_CQNAME_MUST_NOT_BE_NULL.toLocalizedString());
+            "cqName must not be null");
       }
       ClientCQ cq = ((DefaultQueryService) realQueryService).getCqService().newCq(cqName,
           queryString, cqAttributes, ((DefaultQueryService) realQueryService).getPool(), isDurable);
@@ -352,26 +373,31 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public Query newQuery(String queryString) {
     preOp();
     return ((DefaultQueryService) realQueryService).newQuery(queryString, this.proxyCache);
   }
 
+  @Override
   public void removeIndex(Index index) {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public void removeIndexes() {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public void removeIndexes(Region<?, ?> region) {
     throw new UnsupportedOperationException(
         "Index operation on the server is not supported from the client.");
   }
 
+  @Override
   public void stopCqs() throws CqException {
     preOp();
     try {
@@ -383,6 +409,7 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public void stopCqs(String regionName) throws CqException {
     preOp();
     try {
@@ -396,6 +423,7 @@ public class ProxyQueryService implements QueryService {
     }
   }
 
+  @Override
   public List<String> getAllDurableCqsFromServer() throws CqException {
     preOp();
     try {

@@ -16,7 +16,8 @@ package org.apache.geode.cache.wan;
 
 import java.util.List;
 
-import org.apache.geode.distributed.internal.DistributionConfig;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.util.internal.GeodeGlossary;
 
 /**
  *
@@ -49,7 +50,7 @@ public interface GatewaySender {
    */
   int DEFAULT_SOCKET_READ_TIMEOUT = Integer
       .getInteger(
-          DistributionConfig.GEMFIRE_PREFIX + "cache.gatewaySender.default-socket-read-timeout", 0)
+          GeodeGlossary.GEMFIRE_PREFIX + "cache.gatewaySender.default-socket-read-timeout", 0)
       .intValue();
 
   /**
@@ -61,7 +62,7 @@ public interface GatewaySender {
    * Size of the oplog file used for the persistent queue in bytes
    */
   int QUEUE_OPLOG_SIZE =
-      Integer.getInteger(DistributionConfig.GEMFIRE_PREFIX + "cache.gatewaySender.queueOpLogSize",
+      Integer.getInteger(GeodeGlossary.GEMFIRE_PREFIX + "cache.gatewaySender.queueOpLogSize",
           1024 * 1024 * 100).intValue();
 
 
@@ -91,7 +92,7 @@ public interface GatewaySender {
    */
   int DEFAULT_ALERT_THRESHOLD = 0;
 
-  int DEFAULT_PARALLELISM_REPLICATED_REGION = Integer.getInteger(DistributionConfig.GEMFIRE_PREFIX
+  int DEFAULT_PARALLELISM_REPLICATED_REGION = Integer.getInteger(GeodeGlossary.GEMFIRE_PREFIX
       + "cache.gatewaySender.defaultParallelismForReplicatedRegion", 113).intValue();
 
   int DEFAULT_DISTRIBUTED_SYSTEM_ID = -1;
@@ -100,6 +101,7 @@ public interface GatewaySender {
 
   boolean DEFAULT_FORWARD_EXPIRATION_DESTROY = false;
 
+  @Immutable
   OrderPolicy DEFAULT_ORDER_POLICY = OrderPolicy.KEY;
   /**
    * The default maximum amount of memory (MB) to allow in the queue before overflowing entries to
@@ -112,7 +114,7 @@ public interface GatewaySender {
    * aborted
    */
   long GATEWAY_SENDER_TIMEOUT = Integer
-      .getInteger(DistributionConfig.GEMFIRE_PREFIX + "GATEWAY_SENDER_TIMEOUT", 30).intValue();
+      .getInteger(GeodeGlossary.GEMFIRE_PREFIX + "GATEWAY_SENDER_TIMEOUT", 30).intValue();
 
 
   /**
@@ -120,26 +122,28 @@ public interface GatewaySender {
    * property, it is used to log a warning.
    */
   String GATEWAY_CONNECTION_READ_TIMEOUT_PROPERTY =
-      DistributionConfig.GEMFIRE_PREFIX + "GatewaySender.GATEWAY_CONNECTION_READ_TIMEOUT";
+      GeodeGlossary.GEMFIRE_PREFIX + "GatewaySender.GATEWAY_CONNECTION_READ_TIMEOUT";
 
   int GATEWAY_CONNECTION_IDLE_TIMEOUT = Integer
       .getInteger(
-          DistributionConfig.GEMFIRE_PREFIX + "GatewaySender.GATEWAY_CONNECTION_IDLE_TIMEOUT", -1)
+          GeodeGlossary.GEMFIRE_PREFIX + "GatewaySender.GATEWAY_CONNECTION_IDLE_TIMEOUT", -1)
       .intValue();
 
   /**
    * If the System property is set, use it. Otherwise, set default to 'true'.
    */
   boolean REMOVE_FROM_QUEUE_ON_EXCEPTION = (System.getProperty(
-      DistributionConfig.GEMFIRE_PREFIX + "GatewaySender.REMOVE_FROM_QUEUE_ON_EXCEPTION") != null)
+      GeodeGlossary.GEMFIRE_PREFIX + "GatewaySender.REMOVE_FROM_QUEUE_ON_EXCEPTION") != null)
           ? Boolean.getBoolean(
-              DistributionConfig.GEMFIRE_PREFIX + "GatewaySender.REMOVE_FROM_QUEUE_ON_EXCEPTION")
+              GeodeGlossary.GEMFIRE_PREFIX + "GatewaySender.REMOVE_FROM_QUEUE_ON_EXCEPTION")
           : true;
 
   boolean EARLY_ACK =
-      Boolean.getBoolean(DistributionConfig.GEMFIRE_PREFIX + "GatewaySender.EARLY_ACK");
+      Boolean.getBoolean(GeodeGlossary.GEMFIRE_PREFIX + "GatewaySender.EARLY_ACK");
 
   boolean DEFAULT_IS_PARALLEL = false;
+
+  boolean DEFAULT_MUST_GROUP_TRANSACTION_EVENTS = false;
 
   boolean DEFAULT_IS_FOR_INTERNAL_USE = false;
 
@@ -148,8 +152,27 @@ public interface GatewaySender {
    * case receiver is not up and running. Default is set to 1000 milliseconds i.e. 1 second.
    */
   int CONNECTION_RETRY_INTERVAL = Integer
-      .getInteger(DistributionConfig.GEMFIRE_PREFIX + "gateway-connection-retry-interval", 1000)
+      .getInteger(GeodeGlossary.GEMFIRE_PREFIX + "gateway-connection-retry-interval", 1000)
       .intValue();
+
+  /**
+   * Number of times to retry to get events for a transaction from the gateway sender queue when
+   * group-transaction-events is set to true.
+   * When group-transaction-events is set to true and a batch ready to be sent does not contain
+   * all the events for all the transactions to which the events belong, the gateway sender will try
+   * to get the missing events of the transactions from the queue to add them to the batch
+   * before sending it.
+   * If the missing events are not in the queue when the gateway sender tries to get them
+   * it will retry for a maximum of times equal to the value set in this parameter before
+   * delivering the batch without the missing events and logging an error.
+   * Setting this parameter to a very low value could cause that under heavy load and
+   * group-transaction-events set to true, batches are sent with incomplete transactions. Setting it
+   * to a high value could cause that under heavy load and group-transaction-events set to true,
+   * batches are held for some time before being sent.
+   */
+  int GET_TRANSACTION_EVENTS_FROM_QUEUE_RETRIES =
+      Integer.getInteger(GeodeGlossary.GEMFIRE_PREFIX + "get-transaction-events-from-queue-retries",
+          10);
 
   /**
    * The order policy. This enum is applicable only when concurrency-level is > 1.
@@ -178,6 +201,12 @@ public interface GatewaySender {
    * changed.
    */
   void start();
+
+  /**
+   * Starts this GatewaySender and discards previous queue content. Once the GatewaySender is
+   * running, its configuration cannot be changed.
+   */
+  void startWithCleanQueue();
 
   /**
    * Stops this GatewaySender. The scope of this operation is the VM on which it is invoked. In case
@@ -382,6 +411,13 @@ public interface GatewaySender {
    */
   boolean isParallel();
 
+  /**
+   * Returns groupTransactionEvents boolean property for this GatewaySender.
+   *
+   * @return groupTransactionEvents boolean property for this GatewaySender
+   *
+   */
+  boolean mustGroupTransactionEvents();
 
   /**
    * Returns the number of dispatcher threads working for this <code>GatewaySender</code>. Default

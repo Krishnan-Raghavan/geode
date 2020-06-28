@@ -14,11 +14,18 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static java.lang.Thread.yield;
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.internal.cache.ha.HARegionQueue.NON_BLOCKING_HA_QUEUE;
+import static org.apache.geode.internal.cache.ha.HARegionQueue.getHARegionQueueInstance;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.dunit.Assert.assertEquals;
 import static org.apache.geode.test.dunit.Assert.assertNotNull;
 import static org.apache.geode.test.dunit.Assert.assertNull;
 import static org.apache.geode.test.dunit.Assert.assertTrue;
 import static org.apache.geode.test.dunit.Assert.fail;
+import static org.apache.geode.test.dunit.ThreadUtils.join;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -28,9 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -53,11 +58,11 @@ import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.HARegion;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.SerializableCallable;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
@@ -216,7 +221,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
             hrqa.setExpiryTime(300);
             try {
               hrq = HARegionQueue.getHARegionQueueInstance("testregion1", cache, hrqa,
-                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
               // Do 1000 putand 100 take in a separate thread
               hrq.put(new ConflatableObject(new Long(1), new Long(1),
                   new EventID(new byte[] {0}, 1, 1), false, "dummy"));
@@ -246,7 +251,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
         WaitCriterion ev = new WaitCriterion() {
           @Override
           public boolean done() {
-            Thread.yield(); // TODO is this necessary?
+            yield(); // TODO is this necessary?
             return hrq.size() == 0;
           }
 
@@ -255,7 +260,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
             return null;
           }
         };
-        Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
       }
     });
 
@@ -278,7 +283,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
         .thenAnswer(AdditionalAnswers.returnsSecondArg());
 
     HARegion.getInstance("HARegionQueueDUnitTest_region", (GemFireCacheImpl) cache, harq,
-        factory.create());
+        factory.create(), disabledClock());
   }
 
   private static void createRegionQueue() throws Exception {
@@ -289,7 +294,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
      * factory.setDataPolicy(DataPolicy.REPLICATE);
      */
     hrq = HARegionQueue.getHARegionQueueInstance("HARegionQueueDUnitTest_region", cache,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
     EventID id1 = new EventID(new byte[] {1}, 1, 1);
     EventID id2 = new EventID(new byte[] {1}, 1, 2);
     ConflatableObject c1 =
@@ -310,7 +315,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
     HARegionQueueAttributes harqAttr = new HARegionQueueAttributes();
     harqAttr.setExpiryTime(3);
     hrq = HARegionQueue.getHARegionQueueInstance("HARegionQueueDUnitTest_region", cache, harqAttr,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
   }
 
   private static void clearRegion() {
@@ -338,7 +343,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
       WaitCriterion ev = new WaitCriterion() {
         @Override
         public boolean done() {
-          Thread.yield(); // TODO is this necessary?
+          yield(); // TODO is this necessary?
           return region.get(new Long(0)) == null;
         }
 
@@ -347,7 +352,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
           return null;
         }
       };
-      Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+      GeodeAwaitility.await().untilAsserted(ev);
 
       /*
        * if (region.get(new Long(0)) != null) { fail("Expected message to have been deleted but it
@@ -378,7 +383,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   private static void putValue1() {
     try {
-      Region r1 = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region r1 = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       r1.put("key-1", "value-1");
     } catch (Exception ex) {
       fail("failed while region.put()", ex);
@@ -475,7 +480,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   private static void putValue2() {
     try {
-      Region r1 = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region r1 = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       r1.put("key-1", "value-2");
     } catch (Exception ex) {
       fail("failed while region.put()", ex);
@@ -487,7 +492,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   private static void getValue1() {
     try {
-      Region r = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region r = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       if (!(r.get("key-1").equals("value-1"))) {
         fail("expected value to be value-1 but it is not so");
       }
@@ -502,7 +507,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   private static void getNull() {
     try {
-      Region r = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region r = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       if (!(r.get("key-1") == (null))) {
         fail("expected value to be null but it is not so");
       }
@@ -517,7 +522,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void getValue2() {
     try {
-      Region r = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region r = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       if (!(r.get("key-1").equals("value-2"))) {
         fail("expected value to be value-2 but it is not so");
       }
@@ -532,7 +537,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
    */
   public static void destroy() {
     try {
-      Region region1 = cache.getRegion("/HARegionQueueDUnitTest_region");
+      Region region1 = cache.getRegion(SEPARATOR + "HARegionQueueDUnitTest_region");
       region1.localDestroy("key-1");
     } catch (Exception e) {
       fail("test failed due to exception in destroy", e);
@@ -589,10 +594,10 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
         try {
           if (createBlockingQueue) {
             hrq = HARegionQueue.getHARegionQueueInstance("testregion1", cache, hrqa,
-                HARegionQueue.BLOCKING_HA_QUEUE, false);
+                HARegionQueue.BLOCKING_HA_QUEUE, false, disabledClock());
           } else {
             hrq = HARegionQueue.getHARegionQueueInstance("testregion1", cache, hrqa,
-                HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+                HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
           }
         } catch (Exception e) {
           throw new AssertionError(e);
@@ -675,6 +680,9 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
         new SerializableCallable("Check Ops Occurred") {
           @Override
           public Object call() throws CacheException {
+            if (opThreads == null) {
+              return false;
+            }
             for (int i = 0; i < opThreads.length; ++i) {
               if (((RunOp) opThreads[i]).getNumOpsPerformed() == 0) {
                 return false;
@@ -684,13 +692,13 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
           }
         };
 
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertTrue((Boolean) vm0.invoke(guaranteeOperationsOccured)));
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertTrue((Boolean) vm1.invoke(guaranteeOperationsOccured)));
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertTrue((Boolean) vm2.invoke(guaranteeOperationsOccured)));
-    Awaitility.waitAtMost(30, TimeUnit.SECONDS)
+    await()
         .untilAsserted(() -> assertTrue((Boolean) vm3.invoke(guaranteeOperationsOccured)));
 
     // In case of blocking HARegionQueue do some extra puts so that the
@@ -705,7 +713,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
               try {
                 for (int i = 0; i < 100; ++i) {
                   hrq.put(new ConflatableObject("1", "1", new EventID(new byte[] {1}, 100, i),
-                      false, "/x"));
+                      false, SEPARATOR + "x"));
                 }
               } catch (Exception e) {
                 throw new AssertionError(e);
@@ -771,7 +779,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
             try {
               hrq = HARegionQueue.getHARegionQueueInstance(
                   "testNPEDueToHARegionQueueEscapeInConstructor", cache, hrqa,
-                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
               // changing OP_COUNT to 20 makes no difference in test time
               final int OP_COUNT = 200;
               // Do 1000 putand 100 take in a separate thread
@@ -818,7 +826,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
             try {
               hrq = HARegionQueue.getHARegionQueueInstance(
                   "testNPEDueToHARegionQueueEscapeInConstructor", cache, hrqa,
-                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+                  HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
             } catch (Exception e) {
               throw new AssertionError(e);
             }
@@ -840,8 +848,8 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
                 return null;
               }
             };
-            Wait.waitForCriterion(ev, 30 * 1000, 200, true);
-            ThreadUtils.join(createQueuesThread, 300 * 1000);
+            GeodeAwaitility.await().untilAsserted(ev);
+            join(createQueuesThread, 300 * 1000);
           }
         };
 
@@ -948,8 +956,8 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
     cache = test.createCache();
     HARegionQueueAttributes attrs = new HARegionQueueAttributes();
     attrs.setExpiryTime(1);
-    hrq = HARegionQueue.getHARegionQueueInstance("HARegionQueueDUnitTest_region", cache, attrs,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+    hrq = getHARegionQueueInstance("HARegionQueueDUnitTest_region", cache, attrs,
+        NON_BLOCKING_HA_QUEUE, false, disabledClock());
     // wait until we have a dead
     // server
     WaitCriterion ev = new WaitCriterion() {
@@ -963,7 +971,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     // assertIndexDetailsEquals(0, hrq.getAvailableIds().size());
   }
 
@@ -981,7 +989,7 @@ public class HARegionQueueDUnitTest extends JUnit4DistributedTestCase {
     cache = test.createCache();
 
     hrq = HARegionQueue.getHARegionQueueInstance("HARegionQueueDUnitTest_region", cache,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, false);
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, false, disabledClock());
 
     assertEquals(2, hrq.size());
 

@@ -50,7 +50,6 @@ import org.apache.geode.cache.query.types.CollectionType;
 import org.apache.geode.cache.query.types.ObjectType;
 import org.apache.geode.internal.cache.LocalDataSet;
 import org.apache.geode.internal.cache.PartitionedRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * @since GemFire 4.0
@@ -67,7 +66,7 @@ public class QRegion implements SelectResults {
   public QRegion(Region region, boolean includeKeys) {
     if (region == null)
       throw new IllegalArgumentException(
-          LocalizedStrings.QRegion_REGION_CAN_NOT_BE_NULL.toLocalizedString());
+          "Region can not be NULL");
     this.region = region;
     Class constraint = this.region.getAttributes().getValueConstraint();
     if (constraint == null)
@@ -90,7 +89,7 @@ public class QRegion implements SelectResults {
 
     if (region == null)
       throw new IllegalArgumentException(
-          LocalizedStrings.QRegion_REGION_CAN_NOT_BE_NULL.toLocalizedString());
+          "Region can not be NULL");
 
     Class constraint = region.getAttributes().getValueConstraint();
     if (constraint == null)
@@ -98,8 +97,9 @@ public class QRegion implements SelectResults {
 
     ResultsCollectionWrapper res = null;
     if (context.getBucketList() != null && region instanceof PartitionedRegion) {
+      PartitionedRegion partitionedRegion = (PartitionedRegion) region;
       LocalDataSet localData =
-          new LocalDataSet(((PartitionedRegion) region), new HashSet(context.getBucketList()));
+          new LocalDataSet(partitionedRegion, new HashSet(context.getBucketList()));
       this.region = localData;
       if (includeKeys) {
         res = new ResultsCollectionWrapper(TypeUtils.getObjectType(constraint),
@@ -140,6 +140,7 @@ public class QRegion implements SelectResults {
     return TypeUtils.getObjectType(constraint);
   }
 
+  @Override
   public void setElementType(ObjectType elementType) {
     this.values.setElementType(elementType);
   }
@@ -206,10 +207,12 @@ public class QRegion implements SelectResults {
    *
    * @return Value of property modifiable.
    */
+  @Override
   public boolean isModifiable() {
     return false;
   }
 
+  @Override
   public int occurrences(Object element) {
     // expensive!!
     int count = 0;
@@ -222,50 +225,60 @@ public class QRegion implements SelectResults {
     return count;
   }
 
+  @Override
   public List asList() {
     return new ArrayList(this.values);
   }
 
+  @Override
   public Set asSet() {
     return new HashSet(this.values);
   }
 
+  @Override
   public CollectionType getCollectionType() {
     return new CollectionTypeImpl(QRegion.class, this.values.getCollectionType().getElementType());
   }
 
   //////////// Set methods ///////////////////////////////////
+  @Override
   public boolean add(Object obj) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
+  @Override
   public boolean addAll(Collection collection) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
+  @Override
   public void clear() {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
   // to be sure, we need to iterate to make sure the region isn't full of
   // invalid values
   // @todo in the future calling this.region.values().isEmpty()
   // might be more efficient, but it isn't at the time this was written
+  @Override
   public boolean isEmpty() {
     return this.values.isEmpty();
   }
 
+  @Override
   public boolean contains(Object obj) {
     return this.values.contains(obj);
   }
 
+  @Override
   public boolean containsAll(Collection collection) {
     return this.values.containsAll(collection);
   }
 
+  @Override
   public Iterator iterator() {
     return this.values.iterator();
   }
@@ -274,21 +287,25 @@ public class QRegion implements SelectResults {
     // no need to do anything
   }
 
+  @Override
   public boolean remove(Object obj) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
+  @Override
   public boolean removeAll(Collection collection) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
+  @Override
   public boolean retainAll(Collection collection) {
     throw new UnsupportedOperationException(
-        LocalizedStrings.QRegion_REGION_VALUES_IS_NOT_MODIFIABLE.toLocalizedString());
+        "Region values is not modifiable");
   }
 
+  @Override
   public int size() {
     // must call getValuesSet() to get the correct size -- expensive.
     // this size must reflect the dropping of null values (invalid entries),
@@ -296,10 +313,12 @@ public class QRegion implements SelectResults {
     return this.values.size();
   }
 
+  @Override
   public Object[] toArray() {
     return this.values.toArray();
   }
 
+  @Override
   public Object[] toArray(Object[] obj) {
     return this.values.toArray(obj);
   }
@@ -500,7 +519,7 @@ public class QRegion implements SelectResults {
   public Set subregions(boolean recursive) {
     // return this.region.subregions(recursive);
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void loadSnapshot(InputStream inputStream)
@@ -514,44 +533,44 @@ public class QRegion implements SelectResults {
 
   public void registerInterest(Object key) throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void registerInterestRegex(String regex) throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void registerInterest(Object key, InterestResultPolicy policy)
       throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void registerInterestRegex(String regex, InterestResultPolicy policy)
       throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void unregisterInterest(Object key) throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public void unregisterInterestRegex(String regex) throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public List getInterestList() throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   public List getInterestListRegex() throws CacheWriterException {
     throw new UnsupportedOperationException(
-        LocalizedStrings.UNSUPPORTED_AT_THIS_TIME.toLocalizedString());
+        "Unsupported at this time");
   }
 
   // Object methods
@@ -562,6 +581,9 @@ public class QRegion implements SelectResults {
 
   @Override
   public boolean equals(Object obj) {
+    if (!(obj instanceof SelectResults)) {
+      return false;
+    }
     return this.values.equals(obj);
   }
 

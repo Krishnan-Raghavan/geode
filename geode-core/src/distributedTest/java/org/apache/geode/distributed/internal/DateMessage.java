@@ -23,7 +23,9 @@ import java.util.Date;
 
 import org.apache.geode.DataSerializer;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.Version;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 
 /**
  * This message simply contains a date
@@ -57,6 +59,7 @@ public class DateMessage extends SerialDistributionMessage {
   /**
    * Just prints out the date
    */
+  @Override
   public void process(ClusterDistributionManager dm) {
     // Make sure that message state is what we expect
     Assert.assertTrue(this.date != null);
@@ -64,24 +67,30 @@ public class DateMessage extends SerialDistributionMessage {
     System.out.println(format.format(this.date));
   }
 
+  @Override
   public void reset() {
     this.date = null;
   }
 
   ////////////////// Externalizable Methods //////////////////
 
+  @Override
   public int getDSFID() {
     return NO_FIXED_ID;
   }
 
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     DataSerializer.writeObject(this.date, out);
   }
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
 
-    super.fromData(in);
+    super.fromData(in, context);
     this.date = (Date) DataSerializer.readObject(in);
   }
 

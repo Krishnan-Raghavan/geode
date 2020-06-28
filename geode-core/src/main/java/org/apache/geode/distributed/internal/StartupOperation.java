@@ -16,7 +16,6 @@ package org.apache.geode.distributed.internal;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -24,9 +23,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.admin.remote.RemoteTransportConfig;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class StartupOperation {
   private static final Logger logger = LogService.getLogger();
@@ -49,7 +46,7 @@ public class StartupOperation {
    * @return whether all recipients could be contacted. The failure set can be fetched with
    *         getFailureSet??
    */
-  boolean sendStartupMessage(Set recipients, long timeout, Set<InetAddress> interfaces,
+  boolean sendStartupMessage(Set recipients, Set<InetAddress> interfaces,
       String redundancyZone,
       boolean enforceUniqueZone)
       throws InterruptedException, ReplyException, java.net.UnknownHostException, IOException {
@@ -82,52 +79,15 @@ public class StartupOperation {
       for (Iterator it = this.newlyDeparted.iterator(); it.hasNext();) {
         InternalDistributedMember id = (InternalDistributedMember) it.next();
         this.dm.handleManagerDeparture(id, false,
-            LocalizedStrings.StartupOperation_LEFT_THE_MEMBERSHIP_VIEW.toLocalizedString());
+            "left the membership view");
         proc.memberDeparted(this.dm, id, true);
       }
     }
 
     if (proc.stillWaiting() && logger.isDebugEnabled()) {
-      logger.debug("Waiting {} milliseconds to receive startup responses", timeout);
+      logger.debug("Waiting to receive startup responses");
     }
-    boolean timedOut = true;
-    Set<InternalDistributedMember> unresponsive = null;
-    try {
-      timedOut = !proc.waitForReplies(timeout);
-    } finally {
-      if (timedOut) {
-        unresponsive = new HashSet<>();
-        proc.collectUnresponsiveMembers(unresponsive);
-        if (!unresponsive.isEmpty()) {
-          for (Iterator it = unresponsive.iterator(); it.hasNext();) {
-            InternalDistributedMember um = (InternalDistributedMember) it.next();
-            if (!dm.getViewMembers().contains(um)) {
-              // Member slipped away and we didn't notice.
-              it.remove();
-              dm.handleManagerDeparture(um, true,
-                  LocalizedStrings.StartupOperation_DISAPPEARED_DURING_STARTUP_HANDSHAKE
-                      .toLocalizedString());
-            } else if (dm.isCurrentMember(um)) {
-              // the member must have connected back to us and now we just
-              // need to get its startup response
-              logger.warn(LocalizedMessage.create(
-                  LocalizedStrings.StartupOperation_MEMBERSHIP_RECEIVED_CONNECTION_FROM_0_BUT_RECEIVED_NO_STARTUP_RESPONSE_AFTER_1_MS,
-                  new Object[] {um, Long.valueOf(timeout)}));
-            }
-          } // for
-
-          // Tell the dm who we expect to be waiting for...
-          this.dm.setUnfinishedStartups(unresponsive);
-
-          // Re-examine list now that we have elided the startup problems....
-          if (!unresponsive.isEmpty()) {
-            logger.warn(LocalizedMessage.create(
-                LocalizedStrings.StartupOperation_MEMBERSHIP_STARTUP_TIMED_OUT_AFTER_WAITING_0_MILLISECONDS_FOR_RESPONSES_FROM_1,
-                new Object[] {Long.valueOf(timeout), unresponsive}));
-          }
-        } // !isEmpty
-      } // timedOut
-    } // finally
+    proc.waitForReplies();
 
     boolean problems;
     problems = this.newlyDeparted != null && this.newlyDeparted.size() > 0;

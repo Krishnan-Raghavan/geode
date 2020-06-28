@@ -47,11 +47,12 @@ public class JdbcLoader<K, V> extends AbstractJdbcCallback implements CacheLoade
    *         parameter is set to.
    */
   @Override
+  @SuppressWarnings("unchecked")
   public V load(LoaderHelper<K, V> helper) throws CacheLoaderException {
-    // The following cast to V is to keep the compiler happy
-    // but is erased at runtime and no actual cast happens.
-    checkInitialized((InternalCache) helper.getRegion().getRegionService());
+    checkInitialized(helper.getRegion());
     try {
+      // The following cast to V is to keep the compiler happy
+      // but is erased at runtime and no actual cast happens.
       return (V) getSqlHandler().read(helper.getRegion(), helper.getKey());
     } catch (SQLException e) {
       throw JdbcConnectorException.createException(e);

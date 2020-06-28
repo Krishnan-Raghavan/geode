@@ -16,15 +16,17 @@ package org.apache.geode.test.dunit.rules;
 
 import static org.apache.geode.test.dunit.VM.getAllVMs;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 import org.hamcrest.Matcher;
 import org.junit.rules.ErrorCollector;
 
 import org.apache.geode.test.dunit.VM;
+import org.apache.geode.test.junit.rules.accessible.AccessibleErrorCollector;
 
 /**
  * JUnit Rule that provides a shared ErrorCollector in all DistributedTest VMs. In particular, this
@@ -53,10 +55,11 @@ import org.apache.geode.test.dunit.VM;
  * For a more thorough example, please see
  * {@code org.apache.geode.cache.ReplicateCacheListenerDistributedTest} in the tests of geode-core.
  */
-@SuppressWarnings("serial,unused")
 public class SharedErrorCollector extends AbstractDistributedRule {
 
-  private static volatile ProtectedErrorCollector errorCollector;
+  private static volatile AccessibleErrorCollector errorCollector;
+
+  private final Map<Integer, List<Throwable>> beforeBounceErrors = new HashMap<>();
 
   public SharedErrorCollector() {
     // nothing
@@ -64,16 +67,15 @@ public class SharedErrorCollector extends AbstractDistributedRule {
 
   @Override
   protected void before() {
-    invoker().invokeInEveryVMAndController(() -> errorCollector = new ProtectedErrorCollector());
+    invoker().invokeInEveryVMAndController(() -> invokeBefore());
   }
 
   @Override
   protected void after() throws Throwable {
-    ProtectedErrorCollector allErrors = errorCollector;
+    AccessibleErrorCollector allErrors = errorCollector;
     try {
       for (VM vm : getAllVMs()) {
-        List<Throwable> remoteFailures = new ArrayList<>();
-        remoteFailures.addAll(vm.invoke(() -> errorCollector.errors()));
+        List<Throwable> remoteFailures = new ArrayList<>(vm.invoke(() -> errorCollector.errors()));
         for (Throwable t : remoteFailures) {
           allErrors.addError(t);
         }
@@ -82,6 +84,25 @@ public class SharedErrorCollector extends AbstractDistributedRule {
     } finally {
       allErrors.verify();
     }
+  }
+
+  @Override
+  protected void afterCreateVM(VM vm) {
+    vm.invoke(() -> invokeBefore());
+  }
+
+  @Override
+  protected void beforeBounceVM(VM vm) {
+    beforeBounceErrors.put(vm.getId(), vm.invoke(() -> errorCollector.errors()));
+  }
+
+  @Override
+  protected void afterBounceVM(VM vm) {
+    List<Throwable> beforeBounceErrorsForVM = beforeBounceErrors.remove(vm.getId());
+    vm.invoke(() -> {
+      invokeBefore();
+      errorCollector.addErrors(beforeBounceErrorsForVM);
+    });
   }
 
   /**
@@ -112,31 +133,8 @@ public class SharedErrorCollector extends AbstractDistributedRule {
     return errorCollector.checkSucceeds(callable);
   }
 
-  /**
-   * Uses reflection to acquire access to the {@code List} of {@code Throwable}s in
-   * {@link ErrorCollector}.
-   */
-  private static class ProtectedErrorCollector extends ErrorCollector {
-
-    private final List<Throwable> protectedErrors;
-
-    ProtectedErrorCollector() {
-      try {
-        Field superErrors = ErrorCollector.class.getDeclaredField("errors");
-        superErrors.setAccessible(true);
-        protectedErrors = (List<Throwable>) superErrors.get(this);
-      } catch (IllegalAccessException | NoSuchFieldException e) {
-        throw new RuntimeException(e);
-      }
-    }
-
-    List<Throwable> errors() {
-      return protectedErrors;
-    }
-
-    @Override
-    public void verify() throws Throwable {
-      super.verify();
-    }
+  private void invokeBefore() {
+    errorCollector = new AccessibleErrorCollector();
   }
+
 }

@@ -20,6 +20,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -33,7 +34,7 @@ import jline.console.ConsoleReader;
 import org.springframework.shell.core.ExitShellRequest;
 import org.springframework.shell.event.ShellStatus.Status;
 
-import org.apache.geode.management.internal.cli.result.ResultBuilder;
+import org.apache.geode.management.internal.cli.result.CommandResult;
 import org.apache.geode.management.internal.cli.shell.Gfsh;
 import org.apache.geode.management.internal.cli.shell.GfshConfig;
 import org.apache.geode.management.internal.cli.shell.jline.GfshUnsupportedTerminal;
@@ -46,23 +47,22 @@ import org.apache.geode.management.internal.cli.shell.jline.GfshUnsupportedTermi
  * Provide constructor for optionally specifying GfshConfig to provide logDirectory and logLevel
  *
  */
-@SuppressWarnings("rawtypes")
 public class HeadlessGfsh implements ResultHandler {
 
   public static final String ERROR_RESULT = "_$_ERROR_RESULT";
 
-  private HeadlessGfshShell shell = null;
-  private LinkedBlockingQueue queue = new LinkedBlockingQueue<>();
-  private long timeout = 20;
+  private HeadlessGfshShell shell;
+  private LinkedBlockingQueue<Object> queue = new LinkedBlockingQueue<>();
+  private long timeout;
   public String outputString = null;
 
   public HeadlessGfsh(String name, int timeout, String parentDir)
-      throws ClassNotFoundException, IOException {
+      throws IOException {
     this(name, timeout, null, parentDir);
   }
 
   public HeadlessGfsh(String name, int timeout, Properties envProps, String parentDir)
-      throws ClassNotFoundException, IOException {
+      throws IOException {
     this.timeout = timeout;
     System.setProperty("jline.terminal", GfshUnsupportedTerminal.class.getName());
     this.shell = new HeadlessGfshShell(name, this, parentDir);
@@ -113,28 +113,29 @@ public class HeadlessGfsh implements ResultHandler {
     return shell.getCommandExecutionStatus();
   }
 
-  @SuppressWarnings("unchecked")
   @Override
   public void handleExecutionResult(Object result, String sysout) {
     queue.add(result);
     outputString = sysout;
   }
 
-  public Object getResult() throws InterruptedException {
+  public CommandResult getResult() throws InterruptedException {
     // Don't wait for when some command calls gfsh.stop();
     if (shell.stopCalledThroughAPI)
       return null;
     try {
       Object result = queue.poll(timeout, TimeUnit.SECONDS);
       queue.clear();
-      if (!(result instanceof org.apache.geode.management.internal.cli.result.CommandResult)) {
-        if (result == null) {
-          return ResultBuilder.createBadResponseErrorResult("command response was null");
-        } else {
-          return ResultBuilder.createBadResponseErrorResult(result.toString());
-        }
+      if (result instanceof CommandResult) {
+        return (CommandResult) result;
       }
-      return result;
+
+      if (result == null) {
+        return CommandResult.createError(outputString);
+      } else {
+        return CommandResult.createError(result.toString());
+      }
+
     } catch (InterruptedException e) {
       e.printStackTrace();
       throw e;
@@ -183,13 +184,13 @@ public class HeadlessGfsh implements ResultHandler {
    * Method for tests to access the results queue
    *
    */
-  LinkedBlockingQueue getQueue() {
+  LinkedBlockingQueue<Object> getQueue() {
     return queue;
   }
 
   public static class HeadlessGfshShell extends Gfsh {
 
-    private ResultHandler handler = null;
+    private ResultHandler handler;
     private final Lock lock = new ReentrantLock();
     private final Condition endOfShell = lock.newCondition();
     private ByteArrayOutputStream output = null;
@@ -198,11 +199,12 @@ public class HeadlessGfsh implements ResultHandler {
     boolean stopCalledThroughAPI = false;
 
     protected HeadlessGfshShell(String testName, ResultHandler handler, String parentDir)
-        throws ClassNotFoundException, IOException {
+        throws IOException {
       super(false, new String[] {}, new HeadlessGfshConfig(testName, parentDir));
       this.handler = handler;
     }
 
+    @Override
     protected void handleExecutionResult(Object result) {
       if (!result.equals(ERROR_RESULT)) {
         super.handleExecutionResult(result);
@@ -225,6 +227,7 @@ public class HeadlessGfsh implements ResultHandler {
       stop();
     }
 
+    @Override
     public void stop() {
       super.stop();
       stopCalledThroughAPI = true;
@@ -256,16 +259,12 @@ public class HeadlessGfsh implements ResultHandler {
     public void promptLoop() {
       lock.lock();
       try {
-        while (true) {
-          try {
-            endOfShell.await();
-          } catch (InterruptedException e) {
-            // e.printStackTrace();
-          }
-          this.exitShellRequest = ExitShellRequest.NORMAL_EXIT;
-          setShellStatus(Status.SHUTTING_DOWN);
-          break;
+        try {
+          endOfShell.await();
+        } catch (InterruptedException ignore) {
         }
+        this.exitShellRequest = ExitShellRequest.NORMAL_EXIT;
+        setShellStatus(Status.SHUTTING_DOWN);
       } finally {
         lock.unlock();
       }
@@ -325,20 +324,18 @@ public class HeadlessGfsh implements ResultHandler {
   static class HeadlessGfshConfig extends GfshConfig {
     private File parentDir;
     private String fileNamePrefix;
-    private String name;
     private String generatedHistoryFileName = null;
 
-    public HeadlessGfshConfig(String name, String parentDir) {
-      this.name = name;
+    public HeadlessGfshConfig(String name, String parentDir) throws IOException {
 
-      if (isDUnitTest(this.name)) {
-        fileNamePrefix = this.name;
+      if (isDUnitTest(name)) {
+        fileNamePrefix = name;
       } else {
         fileNamePrefix = "non-hydra-client";
       }
 
       this.parentDir = new File(parentDir);
-      this.parentDir.mkdirs();
+      Files.createDirectories(this.parentDir.toPath());
     }
 
     private static boolean isDUnitTest(String name) {

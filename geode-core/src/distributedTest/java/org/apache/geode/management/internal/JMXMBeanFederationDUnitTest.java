@@ -15,6 +15,7 @@
 package org.apache.geode.management.internal;
 
 import static java.util.stream.Collectors.toList;
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -38,8 +39,8 @@ import org.junit.experimental.categories.Category;
 
 import org.apache.geode.cache.Region;
 import org.apache.geode.distributed.ConfigurationProperties;
-import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.test.dunit.internal.InternalBlackboard;
@@ -55,7 +56,7 @@ import org.apache.geode.test.junit.rules.serializable.SerializableTestName;
 public class JMXMBeanFederationDUnitTest {
   private static final String LOCATOR_1_NAME = "locator-one";
   private static final String LOCATOR_2_NAME = "locator-two";
-  private static final String REGION_PATH = "/test-region-1";
+  private static final String REGION_PATH = SEPARATOR + "test-region-1";
   private static final int LOCATOR_1_VM_INDEX = 0;
   private static final int LOCATOR_2_VM_INDEX = 4;
   private static final int LOCATOR_COUNT = 1;
@@ -111,7 +112,7 @@ public class JMXMBeanFederationDUnitTest {
     locator1.waitUntilRegionIsReadyOnExactlyThisManyServers(REGION_PATH, SERVER_COUNT);
     List keyset = server3.invoke(() -> {
       InternalCache cache = ClusterStartupRule.getCache();
-      DistributedMember member =
+      InternalDistributedMember member =
           InternalDistributedSystem.getConnectedInstance().getDistributedMember();
       String appender = MBeanJMXAdapter.getUniqueIDForMember(member);
       Region monitoringRegion =

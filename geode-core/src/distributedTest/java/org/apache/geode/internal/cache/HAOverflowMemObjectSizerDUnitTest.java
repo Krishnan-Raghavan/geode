@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
@@ -146,7 +147,7 @@ public class HAOverflowMemObjectSizerDUnitTest extends JUnit4DistributedTestCase
      * storing capacity controller reference
      */
     cc = ((VMLRURegionMap) ((LocalRegion) cache.getRegion(
-        Region.SEPARATOR + CacheServerImpl.generateNameForClientMsgsRegion(port))).entries)
+        SEPARATOR + CacheServerImpl.generateNameForClientMsgsRegion(port))).entries)
             .getEvictionController();
     return new Integer(server1.getPort());
   }
@@ -162,8 +163,9 @@ public class HAOverflowMemObjectSizerDUnitTest extends JUnit4DistributedTestCase
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setDataPolicy(DataPolicy.NORMAL);
-    ClientServerTestCase.configureConnectionPool(factory, host, port1.intValue(), -1, true, -1, 2,
-        null, -1, -1, false);
+    int[] ports = {port1};
+    ClientServerTestCase.configureConnectionPool(factory, host, ports, true, -1,
+        2, (String) null);
     RegionAttributes attrs = factory.create();
     Region region = cache.createRegion(regionName, attrs);
     assertNotNull(region);
@@ -224,7 +226,7 @@ public class HAOverflowMemObjectSizerDUnitTest extends JUnit4DistributedTestCase
    */
   public static void sizerTestForMemCapacityController(Integer port) {
     region = cache.getRegion(
-        Region.SEPARATOR + CacheServerImpl.generateNameForClientMsgsRegion(port.intValue()));
+        SEPARATOR + CacheServerImpl.generateNameForClientMsgsRegion(port.intValue()));
     assertNotNull(region);
     Set entries = region.entrySet();
     assertTrue(entries.size() > 0);
@@ -277,7 +279,7 @@ public class HAOverflowMemObjectSizerDUnitTest extends JUnit4DistributedTestCase
   public static void performPut(Long lowerLimit, Long higerlimit) {
     assertNotNull(lowerLimit);
     assertNotNull(higerlimit);
-    LocalRegion region = (LocalRegion) cache.getRegion(Region.SEPARATOR + regionName);
+    LocalRegion region = (LocalRegion) cache.getRegion(SEPARATOR + regionName);
     assertNotNull(region);
     for (long i = lowerLimit.longValue(); i < higerlimit.longValue(); i++) {
       region.put(new Long(i), new Long(i));

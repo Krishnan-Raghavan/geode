@@ -24,9 +24,8 @@ import org.apache.geode.cache.execute.FunctionInvocationTargetException;
 import org.apache.geode.cache.execute.ResultCollector;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
-public class LocalResultCollectorImpl implements LocalResultCollector {
+public class LocalResultCollectorImpl implements CachedResultCollector, LocalResultCollector {
 
   private final ResultCollector userRC;
 
@@ -44,12 +43,16 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
 
   private AbstractExecution execution = null;
 
+  private final ResultCollectorHolder rcHolder;
+
   public LocalResultCollectorImpl(Function function, ResultCollector rc, Execution execution) {
     this.function = function;
     this.userRC = rc;
     this.execution = (AbstractExecution) execution;
+    rcHolder = new ResultCollectorHolder(this);
   }
 
+  @Override
   public synchronized void addResult(DistributedMember memberID, Object resultOfSingleExecution) {
     if (resultsCleared) {
       return;
@@ -87,12 +90,14 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     }
   }
 
+  @Override
   public void endResults() {
     this.endResultReceived = true;
     this.userRC.endResults();
     this.latch.countDown();
   }
 
+  @Override
   public synchronized void clearResults() {
     this.latch = new CountDownLatch(1);
     this.endResultReceived = false;
@@ -101,10 +106,17 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     resultsCleared = true;
   }
 
-  public Object getResult() throws FunctionException {
+  @Override
+  public Object getResult()
+      throws FunctionException {
+    return rcHolder.getResult();
+  }
+
+  @Override
+  public Object getResultInternal() throws FunctionException {
     if (this.resultCollected) {
       throw new FunctionException(
-          LocalizedStrings.ExecuteFunction_RESULTS_ALREADY_COLLECTED.toLocalizedString());
+          "Function results already collected");
     }
     this.resultCollected = true;
     try {
@@ -136,13 +148,20 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     }
   }
 
+  @Override
   public Object getResult(long timeout, TimeUnit unit)
+      throws FunctionException, InterruptedException {
+    return rcHolder.getResult(timeout, unit);
+  }
+
+  @Override
+  public Object getResultInternal(long timeout, TimeUnit unit)
       throws FunctionException, InterruptedException {
 
     boolean resultReceived = false;
     if (this.resultCollected) {
       throw new FunctionException(
-          LocalizedStrings.ExecuteFunction_RESULTS_ALREADY_COLLECTED.toLocalizedString());
+          "Function results already collected");
     }
     this.resultCollected = true;
     try {
@@ -153,8 +172,7 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     }
     if (!resultReceived) {
       throw new FunctionException(
-          LocalizedStrings.ExecuteFunction_RESULTS_NOT_COLLECTED_IN_TIME_PROVIDED
-              .toLocalizedString());
+          "All results not received in time provided");
     }
     this.latch = new CountDownLatch(1);
     if (this.functionException != null && !this.execution.isIgnoreDepartedMembers()) {
@@ -179,6 +197,7 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     }
   }
 
+  @Override
   public void setException(Throwable exception) {
     if (exception instanceof FunctionException) {
       this.functionException = (FunctionException) exception;
@@ -187,11 +206,13 @@ public class LocalResultCollectorImpl implements LocalResultCollector {
     }
   }
 
+  @Override
   public ReplyProcessor21 getProcessor() {
     // not expected to be invoked
     return null;
   }
 
+  @Override
   public void setProcessor(ReplyProcessor21 processor) {
     // nothing to be done here since FunctionStreamingResultCollector that
     // wraps this itself implements ReplyProcessor21 and is returned as

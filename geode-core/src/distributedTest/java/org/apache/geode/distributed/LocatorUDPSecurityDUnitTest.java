@@ -14,55 +14,42 @@
  */
 package org.apache.geode.distributed;
 
-import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
-import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.MEMBER_TIMEOUT;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_UDP_DHALGO;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 import java.util.Properties;
 
-import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import org.apache.geode.GemFireConfigException;
-import org.apache.geode.distributed.internal.InternalDistributedSystem;
-import org.apache.geode.internal.AvailablePort;
-import org.apache.geode.test.dunit.DistributedTestUtils;
-import org.apache.geode.test.dunit.NetworkUtils;
-import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.junit.categories.MembershipTest;
 
-@Category({MembershipTest.class})
+@Category(MembershipTest.class)
 public class LocatorUDPSecurityDUnitTest extends LocatorDUnitTest {
+
   @Override
   protected void addDSProps(Properties p) {
+    super.addDSProps(p);
     p.setProperty(SECURITY_UDP_DHALGO, "AES:128");
   }
 
+
   @Test
-  public void testLocatorWithUDPSecurityButServer() throws Exception {
-    disconnectAllFromDS();
-    VM vm0 = VM.getVM(0);
+  public void testLocatorWithUDPSecurityButServer() {
+    String locators = hostName + "[" + port1 + "]";
 
-    final int port = AvailablePort.getRandomAvailablePort(AvailablePort.SOCKET);
-    DistributedTestUtils.deleteLocatorStateFile(port1);
-    final String locators = NetworkUtils.getServerHostName() + "[" + port + "]";
+    startLocatorWithSomeBasicProperties(vm0, port1);
 
-    vm0.invoke("Start locator " + locators, () -> startLocator(port));
     try {
-
-      Properties props = new Properties();
-      props.setProperty(MCAST_PORT, "0");
-      props.setProperty(LOCATORS, locators);
+      Properties props = getBasicProperties(locators);
       props.setProperty(MEMBER_TIMEOUT, "1000");
-      // addDSProps(props);
-      system = (InternalDistributedSystem) DistributedSystem.connect(props);
-
-    } catch (GemFireConfigException gce) {
-      Assert.assertTrue(gce.getMessage().contains("Rejecting findCoordinatorRequest"));
-    } finally {
-      vm0.invoke(() -> stopLocator());
+      system = getConnectedDistributedSystem(props);
+      fail("Should not have reached this line, it should have caught the exception.");
+    } catch (GemFireConfigException e) {
+      assertThat(e.getMessage()).contains("Rejecting findCoordinatorRequest");
     }
   }
 }

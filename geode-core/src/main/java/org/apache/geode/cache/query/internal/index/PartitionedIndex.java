@@ -43,7 +43,6 @@ import org.apache.geode.internal.cache.PartitionedRegion;
 import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.internal.cache.RegionEntry;
 import org.apache.geode.internal.cache.execute.BucketMovedException;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  * This class implements a Partitioned index over a group of partitioned region buckets.
@@ -59,6 +58,10 @@ public class PartitionedIndex extends AbstractIndex {
   private Map<Region, List<Index>> bucketIndexes =
       Collections.synchronizedMap(new HashMap<Region, List<Index>>());
 
+  // An arbitrary bucket index from this PartiionedIndex that is used as a representative
+  // index for the entire PartitionIndex. Usually used for scoring/sizing of an index when
+  // selecting which index to use
+  private volatile Index arbitraryBucketIndex;
   /**
    * Type on index represented by this partitioned index.
    *
@@ -97,8 +100,7 @@ public class PartitionedIndex extends AbstractIndex {
     if (iType == IndexType.HASH) {
       if (!getRegion().getAttributes().getIndexMaintenanceSynchronous()) {
         throw new UnsupportedOperationException(
-            LocalizedStrings.DefaultQueryService_HASH_INDEX_CREATION_IS_NOT_SUPPORTED_FOR_ASYNC_MAINTENANCE
-                .toLocalizedString());
+            "Hash index is currently not supported for regions with Asynchronous index maintenance.");
       }
     }
   }
@@ -110,6 +112,7 @@ public class PartitionedIndex extends AbstractIndex {
    */
   public void addToBucketIndexes(Region r, Index index) {
     synchronized (this.bucketIndexes) {
+      setArbitraryBucketIndex(index);
       List<Index> indexes = this.bucketIndexes.get(r);
       if (indexes == null) {
         indexes = new ArrayList<Index>();
@@ -127,6 +130,9 @@ public class PartitionedIndex extends AbstractIndex {
         if (indexes.isEmpty()) {
           this.bucketIndexes.remove(r);
         }
+      }
+      if (index == arbitraryBucketIndex) {
+        setArbitraryBucketIndex(retrieveArbitraryBucketIndex());
       }
     }
   }
@@ -153,7 +159,7 @@ public class PartitionedIndex extends AbstractIndex {
    */
   public List getBucketIndexes() {
     synchronized (this.bucketIndexes) {
-      List indexes = new ArrayList();
+      List<Index> indexes = new ArrayList<>();
       for (List<Index> indexList : bucketIndexes.values()) {
         indexes.addAll(indexList);
       }
@@ -172,10 +178,13 @@ public class PartitionedIndex extends AbstractIndex {
     }
   }
 
-  /**
-   * Returns one of the bucket index. To get all bucket index use getBucketIndexes()
-   */
-  public Index getBucketIndex() {
+  public void setArbitraryBucketIndex(Index index) {
+    if (arbitraryBucketIndex == null) {
+      arbitraryBucketIndex = index;
+    }
+  }
+
+  public Index retrieveArbitraryBucketIndex() {
     Index index = null;
     synchronized (this.bucketIndexes) {
       if (this.bucketIndexes.size() > 0) {
@@ -186,6 +195,10 @@ public class PartitionedIndex extends AbstractIndex {
       }
     }
     return index;
+  }
+
+  public Index getBucketIndex() {
+    return arbitraryBucketIndex;
   }
 
   protected Map.Entry<Region, List<Index>> getFirstBucketIndex() {
@@ -203,6 +216,7 @@ public class PartitionedIndex extends AbstractIndex {
    *
    * @return indexType type of partitioned index.
    */
+  @Override
   public IndexType getType() {
     return type;
   }
@@ -276,7 +290,6 @@ public class PartitionedIndex extends AbstractIndex {
   }
 
 
-
   @Override
   protected boolean isCompactRangeIndex() {
     return false;
@@ -316,7 +329,7 @@ public class PartitionedIndex extends AbstractIndex {
   @Override
   void addMapping(RegionEntry entry) throws IMQException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
   }
 
   /**
@@ -326,17 +339,18 @@ public class PartitionedIndex extends AbstractIndex {
   @Override
   public void initializeIndex(boolean loadEntries) throws IMQException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
   }
 
   /**
    * Not supported on partitioned index.
    */
+  @Override
   void lockedQuery(Object key, int operator, Collection results, CompiledValue iterOps,
       RuntimeIterator indpndntItr, ExecutionContext context, List projAttrib,
       SelectResults intermediateResults, boolean isIntersection) {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 
@@ -346,16 +360,17 @@ public class PartitionedIndex extends AbstractIndex {
   @Override
   void recreateIndexData() throws IMQException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 
   /**
    * Not supported on partitioned index.
    */
+  @Override
   void removeMapping(RegionEntry entry, int opCode) {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 
@@ -363,22 +378,24 @@ public class PartitionedIndex extends AbstractIndex {
    * Returns false, clear is not supported on partitioned index.
    */
 
+  @Override
   public boolean clear() throws QueryException {
     return false;
   }
 
-  /**
+  /*
    * Not supported on partitioned index.
    */
   /*
    * public void destroy() { throw new
-   * RuntimeException(LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.
+   * RuntimeException("Not supported on partitioned index".
    * toLocalizedString()); }
    */
 
   /**
    * Not supported on partitioned index.
    */
+  @Override
   public IndexStatistics getStatistics() {
     return this.internalIndexStats;
   }
@@ -401,6 +418,7 @@ public class PartitionedIndex extends AbstractIndex {
     return st.toString();
   }
 
+  @Override
   protected InternalIndexStatistics createStats(String indexName) {
     if (this.internalIndexStats == null) {
       this.internalIndexStats = new PartitionedIndexStatistics(this.indexName);
@@ -419,7 +437,6 @@ public class PartitionedIndex extends AbstractIndex {
 
   /**
    * Internal class for partitioned index statistics. Statistics are not supported right now.
-   *
    */
   class PartitionedIndexStatistics extends InternalIndexStatistics {
     private IndexStats vsdStats;
@@ -431,58 +448,72 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Return the total number of times this index has been updated
      */
+    @Override
     public long getNumUpdates() {
       return this.vsdStats.getNumUpdates();
     }
 
+    @Override
     public void incNumValues(int delta) {
       this.vsdStats.incNumValues(delta);
     }
 
+    @Override
     public void incNumUpdates() {
       this.vsdStats.incNumUpdates();
     }
 
+    @Override
     public void incNumUpdates(int delta) {
       this.vsdStats.incNumUpdates(delta);
     }
 
+    @Override
     public void updateNumKeys(long numKeys) {
       this.vsdStats.updateNumKeys(numKeys);
     }
 
+    @Override
     public void incNumKeys(long numKeys) {
       this.vsdStats.incNumKeys(numKeys);
     }
 
+    @Override
     public void incNumMapIndexKeys(long numKeys) {
       this.vsdStats.incNumMapIndexKeys(numKeys);
     }
 
+    @Override
     public void incUpdateTime(long delta) {
       this.vsdStats.incUpdateTime(delta);
     }
 
+    @Override
     public void incUpdatesInProgress(int delta) {
       this.vsdStats.incUpdatesInProgress(delta);
     }
 
+    @Override
     public void incNumUses() {
       this.vsdStats.incNumUses();
     }
 
+    @Override
     public void incUseTime(long delta) {
       this.vsdStats.incUseTime(delta);
     }
 
+    @Override
     public void incUsesInProgress(int delta) {
       this.vsdStats.incUsesInProgress(delta);
     }
 
+    @Override
     public void incReadLockCount(int delta) {
       this.vsdStats.incReadLockCount(delta);
     }
 
+    @Override
     public void incNumBucketIndexes(int delta) {
       this.vsdStats.incNumBucketIndexes(delta);
     }
@@ -490,6 +521,7 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Returns the number of keys in this index at the highest level
      */
+    @Override
     public long getNumberOfMapIndexKeys() {
       return this.vsdStats.getNumberOfMapIndexKeys();
     }
@@ -497,6 +529,7 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Returns the total amount of time (in nanoseconds) spent updating this index.
      */
+    @Override
     public long getTotalUpdateTime() {
       return this.vsdStats.getTotalUpdateTime();
     }
@@ -504,6 +537,7 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Returns the total number of times this index has been accessed by a query.
      */
+    @Override
     public long getTotalUses() {
       return this.vsdStats.getTotalUses();
     }
@@ -511,6 +545,7 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Returns the number of keys in this index.
      */
+    @Override
     public long getNumberOfKeys() {
       return this.vsdStats.getNumberOfKeys();
     }
@@ -518,6 +553,7 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Returns the number of values in this index.
      */
+    @Override
     public long getNumberOfValues() {
       return this.vsdStats.getNumberOfValues();
     }
@@ -525,14 +561,17 @@ public class PartitionedIndex extends AbstractIndex {
     /**
      * Return the number of read locks taken on this index
      */
+    @Override
     public int getReadLockCount() {
       return this.vsdStats.getReadLockCount();
     }
 
+    @Override
     public int getNumberOfBucketIndexes() {
       return vsdStats.getNumberOfBucketIndexes();
     }
 
+    @Override
     public void close() {
       this.vsdStats.close();
     }
@@ -564,18 +603,21 @@ public class PartitionedIndex extends AbstractIndex {
    */
   @Override
   void lockedQuery(Object lowerBoundKey, int lowerBoundOperator, Object upperBoundKey,
-      int upperBoundOperator, Collection results, Set keysToRemove, ExecutionContext context)
+      int upperBoundOperator, Collection results, Set keysToRemove,
+      ExecutionContext context)
       throws TypeMismatchException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 
+  @Override
   public int getSizeEstimate(Object key, int op, int matchLevel) {
     throw new UnsupportedOperationException("This method should not have been invoked");
   }
 
 
+  @Override
   void lockedQuery(Object key, int operator, Collection results, Set keysToRemove,
       ExecutionContext context) throws TypeMismatchException {
     throw new RuntimeException("Not supported on partitioned index");
@@ -585,14 +627,14 @@ public class PartitionedIndex extends AbstractIndex {
   @Override
   void addMapping(Object key, Object value, RegionEntry entry) throws IMQException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 
   @Override
   void saveMapping(Object key, Object value, RegionEntry entry) throws IMQException {
     throw new RuntimeException(
-        LocalizedStrings.PartitionedIndex_NOT_SUPPORTED_ON_PARTITIONED_INDEX.toLocalizedString());
+        "Not supported on partitioned index");
 
   }
 

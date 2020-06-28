@@ -15,16 +15,30 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+apply from: "${rootDir}/${scriptDir}/warnings.gradle"
 
 dependencies {
+  compile(platform(project(':boms:geode-all-bom')))
+  implementation('org.awaitility:awaitility')
+  implementation('junit:junit')
+  implementation('org.eclipse.jetty:jetty-server')
+  implementation('commons-io:commons-io')
+  implementation('org.apache.commons:commons-lang3')
+  implementation('mx4j:mx4j')
+  implementation('mx4j:mx4j-remote') {
+    ext.optional = true
+  }
 
-  compileOnly project(':geode-core')
-  compileOnly project(':geode-junit')
-  compileOnly project(':geode-pulse')
+  compile(project(':geode-core'))
+  compile(project(':geode-http-service'))
+  compile(project(':geode-junit')) {
+    exclude module: 'geode-core'
+  }
+  compileOnly(project(':geode-pulse'))
 
-  compile 'org.seleniumhq.selenium:selenium-api:' + project.'selenium.version'
-  compile 'org.seleniumhq.selenium:selenium-chrome-driver:' + project.'selenium.version'
-  compile 'org.seleniumhq.selenium:selenium-support:' + project.'selenium.version'
+  implementation('org.seleniumhq.selenium:selenium-api')
+  implementation('org.seleniumhq.selenium:selenium-chrome-driver')
+  implementation('org.seleniumhq.selenium:selenium-support')
 }
 
-disableMavenPublishing()

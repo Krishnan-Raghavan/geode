@@ -15,14 +15,15 @@
 
 package org.apache.geode.internal.cache.xmlcache;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.logging.log4j.Logger;
 
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Helper class for CacheXmlPropertyResolver. Helps in parsing ${...${}..}..${} strings.
@@ -41,12 +42,15 @@ public class CacheXmlPropertyResolverHelper {
    * This <code>HashMap </code> contains valid suffixes and prefixes to be parsed by
    * {@link CacheXmlPropertyResolverHelper} like {}, [] or ().
    */
-  private static HashMap<String, String> validSuffixAndPrefixes = new HashMap<String, String>();
+  @Immutable
+  private static final Map<String, String> validSuffixAndPrefixes;
 
   static {
-    validSuffixAndPrefixes.put("}", "{");
-    validSuffixAndPrefixes.put("]", "[");
-    validSuffixAndPrefixes.put(")", "(");
+    Map<String, String> map = new HashMap<>();
+    map.put("}", "{");
+    map.put("]", "[");
+    map.put(")", "(");
+    validSuffixAndPrefixes = Collections.unmodifiableMap(map);
   }
   /* String specifying the suffice for property key prefix */
   private String propertyPrefix = DEFAULT_PROPERTY_STRING_PREFIX;
@@ -87,19 +91,19 @@ public class CacheXmlPropertyResolverHelper {
             buf.substring(prefixIndex + propertyPrefix.length(), suffixIndex);
         // Check for circular references
         if (!visitedReplaceableStrings.add(replaceableString)) {
-          logger.info(LocalizedMessage.create(
-              LocalizedStrings.CacheXmlPropertyResolverHelper_SOME_UNRESOLVED_STRING_REPLACED_CIRCULAR_ERROR__0,
-              replaceableString));
+          logger.info(
+              "Some still unresolved string {} was replaced by resolver, leading to circular references.",
+              replaceableString);
           throw new IllegalArgumentException("Some still unresolved string " + replaceableString
               + " was replaced by resolver, leading to circular references.");
         }
-        /** Find the replacement using given <code>resolver</code> */
+        /* Find the replacement using given <code>resolver</code> */
         replaceableString =
             parseResolvablePropString(replaceableString, resolver, visitedReplaceableStrings);
         String replacement = resolver.resolveReplaceString(replaceableString);
 
         if (replacement != null) {
-          /**
+          /*
            * put replacement in <code>unparsedString</code> and call
            * <code>parseResolvablePropString</code> recursively to find more unparsedStrings in the
            * replaced value of given unparsedString.
@@ -108,7 +112,7 @@ public class CacheXmlPropertyResolverHelper {
           buf.replace(prefixIndex, suffixIndex + propertySuffix.length(), replacement);
           prefixIndex = buf.indexOf(propertyPrefix, prefixIndex + replacement.length());
         } else if (resolver.isIgnoreUnresolvedProperties()) {
-          /** Look for more replaceable strings in given <code>unparsedString</code>. */
+          /* Look for more replaceable strings in given <code>unparsedString</code>. */
           prefixIndex = buf.indexOf(propertyPrefix, suffixIndex + propertySuffix.length());
         } else {
           throw new IllegalArgumentException(

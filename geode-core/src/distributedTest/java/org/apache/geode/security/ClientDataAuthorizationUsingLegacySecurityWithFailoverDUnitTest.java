@@ -19,9 +19,9 @@ import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIE
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTHENTICATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_CLIENT_AUTH_INIT;
 import static org.apache.geode.distributed.ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -47,7 +47,7 @@ import org.apache.geode.cache.client.ClientRegionShortcut;
 import org.apache.geode.cache.client.internal.PoolImpl;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.distributed.ConfigurationProperties;
-import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.security.templates.SimpleAccessController;
 import org.apache.geode.security.templates.SimpleAuthenticator;
 import org.apache.geode.security.templates.UserPasswordAuthInit;
@@ -55,9 +55,10 @@ import org.apache.geode.security.templates.UsernamePrincipal;
 import org.apache.geode.test.dunit.rules.ClientVM;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.SecurityTest;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.TestVersion;
+import org.apache.geode.test.version.VersionManager;
 
 /**
  * This test class reproduces the tests present in
@@ -131,8 +132,7 @@ public class ClientDataAuthorizationUsingLegacySecurityWithFailoverDUnitTest {
   @Before
   public void setup() throws Exception {
     Properties clusterMemberProperties = getVMPropertiesWithPermission("cluster,data");
-    int version = Integer.parseInt(clientVersion);
-    if (version == 0 || version >= 140) {
+    if (TestVersion.compare(clientVersion, "1.4.0") >= 0) {
       clusterMemberProperties.setProperty(ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER,
           "org.apache.geode.security.templates.UsernamePrincipal");
     }
@@ -317,8 +317,7 @@ public class ClientDataAuthorizationUsingLegacySecurityWithFailoverDUnitTest {
   @Test
   public void dataWriterCannotRegisterInterestAcrossFailover() throws Exception {
     Properties props = getVMPropertiesWithPermission("dataWrite");
-    int version = Integer.parseInt(clientVersion);
-    if (version == 0 || version >= 140) {
+    if (TestVersion.compare(clientVersion, "1.4.0") >= 0) {
       props.setProperty(ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER,
           "org.apache.geode.security.templates.UsernamePrincipal");
     }
@@ -326,9 +325,9 @@ public class ClientDataAuthorizationUsingLegacySecurityWithFailoverDUnitTest {
     int server1Port = this.server1.getPort();
     int server2Port = this.server2.getPort();
 
-    ClientVM client1 = csRule.startClientVM(3, props, cf -> cf
+    ClientVM client1 = csRule.startClientVM(3, clientVersion, props, cf -> cf
         .addPoolServer("localhost", server1Port).addPoolServer("localhost", server2Port)
-        .setPoolSubscriptionEnabled(true).setPoolSubscriptionRedundancy(2), clientVersion);
+        .setPoolSubscriptionEnabled(true).setPoolSubscriptionRedundancy(2));
 
     // Initialize cache
     client1.invoke(() -> {
@@ -378,15 +377,14 @@ public class ClientDataAuthorizationUsingLegacySecurityWithFailoverDUnitTest {
 
     Properties props = getVMPropertiesWithPermission(withPermission);
 
-    int version = Integer.parseInt(clientVersion);
-    if (version == 0 || version >= 140) {
+    if (TestVersion.compare(clientVersion, "1.4.0") >= 0) {
       props.setProperty(ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER,
           "org.apache.geode.security.templates.UsernamePrincipal");
     }
 
-    ClientVM client = csRule.startClientVM(3, props, cf -> cf
+    ClientVM client = csRule.startClientVM(3, clientVersion, props, cf -> cf
         .addPoolServer("localhost", server1Port).addPoolServer("localhost", server2Port)
-        .setPoolSubscriptionEnabled(true).setPoolSubscriptionRedundancy(2), clientVersion);
+        .setPoolSubscriptionEnabled(true).setPoolSubscriptionRedundancy(2));
 
     // Initialize cache
     client.invoke(() -> {
@@ -428,7 +426,7 @@ public class ClientDataAuthorizationUsingLegacySecurityWithFailoverDUnitTest {
     // We can't sent the object filter property versions before 1.4.0 because
     // it's not a valid property, but we must set it in 140 and above to allow
     // serialization of UsernamePrincipal
-    if (clientVersion.compareTo("140") >= 0) {
+    if (clientVersion.compareTo("1.4.0") >= 0) {
       props.setProperty(SERIALIZABLE_OBJECT_FILTER, UsernamePrincipal.class.getCanonicalName());
     }
     return props;

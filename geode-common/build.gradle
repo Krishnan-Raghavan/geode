@@ -15,6 +15,14 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+apply from: "${project.projectDir}/../gradle/warnings.gradle"
+
 dependencies {
-  testCompile project(':geode-junit')
+  implementation(platform(project(':boms:geode-all-bom')))
+  implementation('com.fasterxml.jackson.core:jackson-databind')
+  testImplementation('junit:junit')
+  testImplementation('org.assertj:assertj-core')
 }

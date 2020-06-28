@@ -39,7 +39,6 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.HeapDataOutputStream;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.ForceReattemptException;
 import org.apache.geode.internal.cache.InitialImageOperation;
 import org.apache.geode.internal.cache.PartitionedRegion;
@@ -47,11 +46,12 @@ import org.apache.geode.internal.cache.PartitionedRegionDataStore;
 import org.apache.geode.internal.cache.TXManagerImpl;
 import org.apache.geode.internal.cache.TXStateProxy;
 import org.apache.geode.internal.cache.tier.InterestType;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.ObjectIntProcedure;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 
 public class FetchKeysMessage extends PartitionMessage {
@@ -118,7 +118,7 @@ public class FetchKeysMessage extends PartitionMessage {
       Set failures = r.getDistributionManager().putOutgoing(m);
       if (failures != null && failures.size() > 0) {
         throw new ForceReattemptException(
-            LocalizedStrings.FetchKeysMessage_FAILED_SENDING_0.toLocalizedString(m));
+            String.format("Failed sending < %s >", m));
       }
       return p;
     } finally {
@@ -151,7 +151,7 @@ public class FetchKeysMessage extends PartitionMessage {
     Set failures = r.getDistributionManager().putOutgoing(m);
     if (failures != null && failures.size() > 0) {
       throw new ForceReattemptException(
-          LocalizedStrings.FetchKeysMessage_FAILED_SENDING_0.toLocalizedString(m));
+          String.format("Failed sending < %s >", m));
     }
 
     return p;
@@ -189,13 +189,11 @@ public class FetchKeysMessage extends PartitionMessage {
           logger.debug("FetchKeysMessage Encountered PRLocallyDestroyedException");
         }
         throw new ForceReattemptException(
-            LocalizedStrings.FetchKeysMessage_ENCOUNTERED_PRLOCALLYDESTROYEDEXCEPTION
-                .toLocalizedString(),
+            "Encountered PRLocallyDestroyedException",
             pde);
       }
     } else {
-      logger.warn(LocalizedMessage.create(
-          LocalizedStrings.FetchKeysMessage_FETCHKEYSMESSAGE_DATA_STORE_NOT_CONFIGURED_FOR_THIS_MEMBER));
+      logger.warn("FetchKeysMessage: data store not configured for this member");
     }
 
     // Unless there was an exception thrown, this message handles sending the response
@@ -208,6 +206,7 @@ public class FetchKeysMessage extends PartitionMessage {
     buff.append("; bucketId=").append(this.bucketId);
   }
 
+  @Override
   public int getDSFID() {
     return PR_FETCH_KEYS_MESSAGE;
   }
@@ -217,13 +216,15 @@ public class FetchKeysMessage extends PartitionMessage {
    */
   public Version[] serializationVersions = null;
 
+  @Override
   public Version[] getSerializationVersions() {
     return serializationVersions;
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
     this.bucketId = Integer.valueOf(in.readInt());
     this.interestType = in.readInt();
     this.interestArg = DataSerializer.readObject(in);
@@ -231,8 +232,9 @@ public class FetchKeysMessage extends PartitionMessage {
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
     out.writeInt(this.bucketId.intValue());
     out.writeInt(interestType);
     DataSerializer.writeObject(interestArg, out);
@@ -312,10 +314,11 @@ public class FetchKeysMessage extends PartitionMessage {
                * @param b positive if last chunk
                * @return true to continue to next chunk
                */
+              @Override
               public boolean executeWith(Object a, int b) {
                 // if (this.last)
                 // throw new
-                // InternalGemFireError(LocalizedStrings.FetchKeysMessage_ALREADY_PROCESSED_LAST_CHUNK.toLocalizedString());
+                // InternalGemFireError(LocalizedStrings.FetchKeysMessage_ALREADY_PROCESSED_LAST_CHUNK));
                 HeapDataOutputStream chunk = (HeapDataOutputStream) a;
                 this.last = b > 0;
                 try {
@@ -333,8 +336,7 @@ public class FetchKeysMessage extends PartitionMessage {
         }
       } catch (IOException io) {
         throw new ForceReattemptException(
-            LocalizedStrings.FetchKeysMessage_UNABLE_TO_SEND_RESPONSE_TO_FETCH_KEYS_REQUEST
-                .toLocalizedString(),
+            "Unable to send response to fetch keys request",
             io);
       }
       // TODO [bruce] pass a reference to the cache or region down here so we can do this test
@@ -432,8 +434,9 @@ public class FetchKeysMessage extends PartitionMessage {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.seriesNum);
       out.writeInt(this.msgNum);
       out.writeInt(this.numSeries);
@@ -447,8 +450,9 @@ public class FetchKeysMessage extends PartitionMessage {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.seriesNum = in.readInt();
       this.msgNum = in.readInt();
       this.numSeries = in.readInt();
@@ -560,7 +564,7 @@ public class FetchKeysMessage extends PartitionMessage {
           }
         } catch (Exception e) {
           processException(new ReplyException(
-              LocalizedStrings.FetchKeysMessage_ERROR_DESERIALIZING_KEYS.toLocalizedString(), e));
+              "Error deserializing keys", e));
           checkIfDone(); // fix for hang in 41202
         }
 
@@ -584,21 +588,20 @@ public class FetchKeysMessage extends PartitionMessage {
           logger.debug("FetchKeysResponse got remote CacheClosedException; forcing reattempt. {}",
               t.getMessage(), t);
           throw new ForceReattemptException(
-              LocalizedStrings.FetchKeysMessage_FETCHKEYSRESPONSE_GOT_REMOTE_CACHECLOSEDEXCEPTION_FORCING_REATTEMPT
-                  .toLocalizedString(),
+              "FetchKeysResponse got remote CacheClosedException; forcing reattempt.",
               t);
         }
         if (t instanceof ForceReattemptException) {
           logger.debug("FetchKeysResponse got remote ForceReattemptException; rethrowing. {}",
               e.getMessage(), e);
           throw new ForceReattemptException(
-              LocalizedStrings.FetchKeysMessage_PEER_REQUESTS_REATTEMPT.toLocalizedString(), t);
+              "Peer requests reattempt", t);
         }
         e.handleCause();
       }
       if (!this.lastChunkReceived) {
         throw new ForceReattemptException(
-            LocalizedStrings.FetchKeysMessage_NO_REPLIES_RECEIVED.toLocalizedString());
+            "No replies received");
       }
       return this.returnValue;
     }

@@ -15,39 +15,68 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+apply from: "${project.projectDir}/../gradle/publish-java.gradle"
+
+
 dependencies {
-  compile project(':geode-core')
-  compile project(':geode-common')
-  compile 'org.apache.lucene:lucene-analyzers-common:' + project.'lucene.version'
-  compile ('org.apache.lucene:lucene-queryparser:' + project.'lucene.version') {
+  compile(platform(project(':boms:geode-all-bom')))
+
+  api(project(':geode-core'))
+  api('org.apache.lucene:lucene-core')
+
+  implementation(project(':geode-gfsh'))
+  implementation(project(':geode-logging'))
+  implementation(project(':geode-membership'))
+  implementation(project(':geode-serialization'))
+  implementation('org.apache.lucene:lucene-analyzers-common')
+  implementation('org.apache.lucene:lucene-queryparser') {
     exclude module: 'lucene-sandbox'
   }
+  implementation('org.apache.commons:commons-lang3')
+  implementation('mx4j:mx4j')
+  implementation('org.apache.logging.log4j:log4j-api')
 
-  runtimeOnly 'org.apache.lucene:lucene-analyzers-phonetic:' + project.'lucene.version'
+  compileOnly(platform(project(':boms:geode-all-bom')))
+  compileOnly('com.fasterxml.jackson.core:jackson-annotations')
 
-  testCompile project(':geode-junit')
-  testCompile project(':geode-lucene:geode-lucene-test')
-  testCompile 'org.apache.lucene:lucene-test-framework:' + project.'lucene.version'
-  testCompile 'com.pholser:junit-quickcheck-generators:' + project.'junit-quickcheck.version'
-
-
-  integrationTestCompile project(":geode-dunit")
-  integrationTestCompile project(':geode-lucene:geode-lucene-test')
-  integrationTestCompile 'org.apache.lucene:lucene-analyzers-phonetic:' + project.'lucene.version'
-  integrationTestCompile 'pl.pragmatists:JUnitParams:' + project.'JUnitParams.version'
+  runtimeOnly('org.apache.lucene:lucene-analyzers-phonetic')
 
 
-  distributedTestCompile project(':geode-lucene:geode-lucene-test')
-  distributedTestCompile 'pl.pragmatists:JUnitParams:' + project.'JUnitParams.version'
+  testImplementation(project(':geode-junit'))
+  testImplementation(project(':geode-lucene:geode-lucene-test'))
+  testImplementation('org.apache.lucene:lucene-test-framework')
+  testImplementation('com.pholser:junit-quickcheck-generators')
+  testImplementation('pl.pragmatists:JUnitParams')
+  testImplementation('com.pholser:junit-quickcheck-core')
+  testImplementation('com.carrotsearch.randomizedtesting:randomizedtesting-runner')
+  testImplementation('org.powermock:powermock-core')
+  testImplementation('org.powermock:powermock-module-junit4')
+  testImplementation('org.powermock:powermock-api-mockito2')
 
 
-  upgradeTestCompile (project(":geode-dunit")) {
-    exclude module: 'geode-core'
-  }
+  distributedTestImplementation(project(':geode-junit'))
+  distributedTestImplementation(project(':geode-dunit'))
+  distributedTestImplementation(project(':geode-lucene:geode-lucene-test'))
+  distributedTestImplementation('pl.pragmatists:JUnitParams')
+  distributedTestImplementation('org.hamcrest:hamcrest-core')
+  distributedTestImplementation('org.hamcrest:hamcrest-library')
 
 
-  performanceTestCompile project(":geode-junit")
-  performanceTestCompile project(':geode-lucene:geode-lucene-test')
+  integrationTestImplementation(project(':geode-dunit'))
+  integrationTestImplementation(project(':geode-lucene:geode-lucene-test'))
+  integrationTestImplementation('org.apache.lucene:lucene-analyzers-phonetic')
+  integrationTestImplementation('pl.pragmatists:JUnitParams')
+
+
+  upgradeTestImplementation(project(':geode-dunit'))
+  upgradeTestImplementation('commons-io:commons-io')
+  upgradeTestRuntimeOnly(project(path: ':geode-old-versions', configuration: 'testOutput'))
+
+
+  performanceTestImplementation(project(':geode-junit'))
+  performanceTestImplementation(project(':geode-lucene:geode-lucene-test'))
 }
 
 //The lucene integration tests don't have any issues that requiring forking

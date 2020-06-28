@@ -14,6 +14,11 @@
  */
 package org.apache.geode.cache.query.internal.index;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.cache.query.internal.DefaultQuery.QUERY_VERBOSE;
+import static org.apache.geode.cache.query.internal.QueryObserverHolder.getInstance;
+import static org.apache.geode.cache.query.internal.QueryObserverHolder.hasObserver;
+import static org.apache.geode.test.dunit.LogWriterUtils.getLogWriter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -38,13 +43,12 @@ import org.apache.geode.cache.query.internal.IndexTrackingQueryObserver;
 import org.apache.geode.cache.query.internal.IndexTrackingQueryObserver.IndexInfo;
 import org.apache.geode.cache.query.internal.QueryObserver;
 import org.apache.geode.cache.query.internal.QueryObserverHolder;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.Host;
-import org.apache.geode.test.dunit.LogWriterUtils;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
 import org.apache.geode.test.junit.categories.OQLIndexTest;
@@ -53,7 +57,7 @@ import org.apache.geode.test.junit.categories.OQLIndexTest;
 public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
   private final int NUM_BKTS = 10;
-  private static final String queryStr = "select * from /portfolio where ID >= 0";
+  private static final String queryStr = "select * from " + SEPARATOR + "portfolio where ID >= 0";
   protected static final int TOTAL_OBJECTS = 1000;
 
   public IndexTrackingQueryObserverDUnitTest() {
@@ -69,11 +73,13 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
     VM ds1 = host.getVM(1);
 
     ds0.invoke(new SerializableRunnable("Set system property") {
+      @Override
       public void run() {
         DefaultQuery.QUERY_VERBOSE = true;
       }
     });
     ds1.invoke(new SerializableRunnable("Set system property") {
+      @Override
       public void run() {
         DefaultQuery.QUERY_VERBOSE = true;
       }
@@ -99,6 +105,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
     async2.join();
 
     ds0.invoke(new SerializableRunnable("Test Query Verbose Data") {
+      @Override
       public void run() {
         // Reset the observer.
         QueryObserverHolder.reset();
@@ -108,6 +115,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
     });
     ds1.invoke(new SerializableRunnable("Test Query Verbose Data") {
 
+      @Override
       public void run() {
         // Reset the observer.
         QueryObserverHolder.reset();
@@ -133,6 +141,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable createDS = new SerializableRunnable("Creating PR Datastore") {
 
+      @Override
       public void run() {
 
         QueryObserver observer = QueryObserverHolder.setInstance(new IndexTrackingQueryObserver());
@@ -155,6 +164,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable initRegion = new SerializableRunnable("Initialize the PR") {
 
+      @Override
       public void run() {
 
         Region region = getCache().getRegion("portfolio");
@@ -175,6 +185,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable createIndex = new SerializableRunnable("Create index on PR") {
 
+      @Override
       public void run() {
 
         // Query VERBOSE has to be true for the test
@@ -187,7 +198,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
           if (create) {
             keyIndex1 = (IndexProtocol) qs.createIndex(IndexTrackingTestHook.INDEX_NAME,
                 IndexType.FUNCTIONAL, "ID",
-                "/portfolio ");
+                SEPARATOR + "portfolio ");
             assertNotNull(keyIndex1);
             assertTrue(keyIndex1 instanceof PartitionedIndex);
           }
@@ -211,6 +222,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable runQuery = new SerializableRunnable("Run Query on PR") {
 
+      @Override
       public void run() {
 
         QueryService qs = getCache().getQueryService();
@@ -235,19 +247,21 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
 
     SerializableRunnable testQueryVerbose = new SerializableRunnable("Test Query Verbose Data") {
 
+      @Override
       public void run() {
         // Query VERBOSE has to be true for the test
-        assertTrue(DefaultQuery.QUERY_VERBOSE);
+        assertTrue(QUERY_VERBOSE);
 
         // Get TestHook from observer.
-        QueryObserver observer = QueryObserverHolder.getInstance();
-        assertTrue(QueryObserverHolder.hasObserver());
+        QueryObserver observer = getInstance();
+        assertTrue(hasObserver());
 
         final IndexTrackingTestHook th =
             (IndexTrackingTestHook) ((IndexTrackingQueryObserver) observer).getTestHook();
 
-        Wait.waitForCriterion(new WaitCriterion() {
+        GeodeAwaitility.await().untilAsserted(new WaitCriterion() {
 
+          @Override
           public boolean done() {
             if (th.getRegionMap() != null) {
               return th.getRegionMap().getResults() != null;
@@ -255,10 +269,11 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
             return false;
           }
 
+          @Override
           public String description() {
             return null;
           }
-        }, 60 * 1000, 200, true);
+        });
 
         IndexInfo regionMap = th.getRegionMap();
 
@@ -268,7 +283,7 @@ public class IndexTrackingQueryObserverDUnitTest extends JUnit4CacheTestCase {
           totalResults += i.intValue();
         }
 
-        LogWriterUtils.getLogWriter().fine("Index Info result size is " + totalResults);
+        getLogWriter().fine("Index Info result size is " + totalResults);
         assertEquals(results, totalResults);
       }
     };

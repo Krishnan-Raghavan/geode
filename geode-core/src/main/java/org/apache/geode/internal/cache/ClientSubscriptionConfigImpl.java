@@ -15,7 +15,6 @@
 package org.apache.geode.internal.cache;
 
 import org.apache.geode.cache.server.ClientSubscriptionConfig;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 
 /**
  *
@@ -57,6 +56,7 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @see #DEFAULT_CAPACITY
    * @since GemFire 5.7
    */
+  @Override
   public int getCapacity() {
     return this.haQueueCapacity;
   }
@@ -68,6 +68,7 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @see #DEFAULT_CAPACITY
    * @since GemFire 5.7
    */
+  @Override
   public void setCapacity(int capacity) {
     this.haQueueCapacity = capacity;
   }
@@ -79,6 +80,7 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @see #DEFAULT_EVICTION_POLICY
    * @since GemFire 5.7
    */
+  @Override
   public String getEvictionPolicy() {
     return this.haEvictionPolicy;
   }
@@ -89,6 +91,7 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @see #DEFAULT_EVICTION_POLICY
    * @since GemFire 5.7
    */
+  @Override
   public void setEvictionPolicy(String policy) {
     this.haEvictionPolicy = policy;
   }
@@ -100,12 +103,13 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @since GemFire 5.7
    * @deprecated as of prPersistSprint2
    */
+  @Override
   @Deprecated
   public void setOverflowDirectory(String overflowDirectory) {
     if (this.getDiskStoreName() != null) {
       throw new IllegalStateException(
-          LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString(new Object[] {"setOverflowDirectory", this.getDiskStoreName()}));
+          String.format("Deprecated API %s cannot be used with DiskStore %s",
+              new Object[] {"setOverflowDirectory", this.getDiskStoreName()}));
     }
     this.overflowDirectory = overflowDirectory;
     setHasOverflowDirectory(true);
@@ -118,12 +122,13 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    * @since GemFire 5.7
    * @deprecated as of prPersistSprint2
    */
+  @Override
   @Deprecated
   public String getOverflowDirectory() {
     if (this.getDiskStoreName() != null) {
       throw new IllegalStateException(
-          LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString(new Object[] {"getOverflowDirectory", this.getDiskStoreName()}));
+          String.format("Deprecated API %s cannot be used with DiskStore %s",
+              new Object[] {"getOverflowDirectory", this.getDiskStoreName()}));
     }
     return this.overflowDirectory;
   }
@@ -144,6 +149,7 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    *
    * @since GemFire prPersistSprint2
    */
+  @Override
   public String getDiskStoreName() {
     return diskStoreName;
   }
@@ -153,11 +159,12 @@ public class ClientSubscriptionConfigImpl implements ClientSubscriptionConfig {
    *
    * @since GemFire prPersistSprint2
    */
+  @Override
   public void setDiskStoreName(String diskStoreName) {
     if (hasOverflowDirectory()) {
       throw new IllegalStateException(
-          LocalizedStrings.DiskStore_Deprecated_API_0_Cannot_Mix_With_DiskStore_1
-              .toLocalizedString(new Object[] {"setDiskStoreName", this.getDiskStoreName()}));
+          String.format("Deprecated API %s cannot be used with DiskStore %s",
+              new Object[] {"setDiskStoreName", this.getDiskStoreName()}));
     }
     this.diskStoreName = diskStoreName;
   }

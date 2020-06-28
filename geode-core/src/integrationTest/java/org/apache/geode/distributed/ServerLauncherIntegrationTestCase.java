@@ -14,15 +14,14 @@
  */
 package org.apache.geode.distributed;
 
-import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.geode.distributed.ConfigurationProperties.CACHE_XML_FILE;
-import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
+import static org.apache.geode.distributed.ConfigurationProperties.DISABLE_AUTO_RECONNECT;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
-import static org.apache.geode.distributed.internal.DistributionConfig.GEMFIRE_PREFIX;
 import static org.apache.geode.internal.AvailablePortHelper.getRandomAvailableTCPPorts;
 import static org.apache.geode.internal.cache.AbstractCacheServer.TEST_OVERRIDE_DEFAULT_PORT_PROPERTY;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
+import static org.apache.geode.util.internal.GeodeGlossary.GEMFIRE_PREFIX;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertNotNull;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -52,6 +51,9 @@ import org.apache.geode.internal.process.ProcessType;
  * @since GemFire 8.0
  */
 public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrationTestCase {
+
+  protected static final boolean DEFAULT_SERVER_NOT_NEEDED = true;
+  protected static final boolean DEFAULT_SERVER_IS_NEEDED = false;
 
   protected volatile int defaultServerPort;
   protected volatile int nonDefaultServerPort;
@@ -89,7 +91,7 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
   }
 
   protected ServerLauncher awaitStart(final ServerLauncher launcher) {
-    await().atMost(2, MINUTES).untilAsserted(() -> assertThat(isLauncherOnline()).isTrue());
+    await().untilAsserted(() -> assertThat(isLauncherOnline()).isTrue());
     return launcher;
   }
 
@@ -104,9 +106,11 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
    * without any of these defaults then simply use {@code new Builder()} instead.
    */
   protected Builder newBuilder() {
-    return new Builder().setMemberName(getUniqueName()).setRedirectOutput(true)
-        .setWorkingDirectory(getWorkingDirectoryPath()).set(LOG_LEVEL, "config")
-        .set(MCAST_PORT, "0");
+    return new Builder()
+        .setDisableDefaultServer(DEFAULT_SERVER_NOT_NEEDED)
+        .setMemberName(getUniqueName())
+        .setWorkingDirectory(getWorkingDirectoryPath())
+        .set(DISABLE_AUTO_RECONNECT, "true");
   }
 
   protected ServerLauncher givenServerLauncher() {
@@ -182,8 +186,8 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
   private File writeCacheXml(final int serverPort) throws IOException {
     CacheCreation creation = new CacheCreation();
     RegionAttributesCreation attrs = new RegionAttributesCreation(creation);
-    attrs.setScope(Scope.DISTRIBUTED_ACK);
     attrs.setDataPolicy(DataPolicy.REPLICATE);
+    attrs.setScope(Scope.DISTRIBUTED_ACK);
     creation.createRegion(getUniqueName(), attrs);
     creation.addCacheServer().setPort(serverPort);
 
@@ -201,17 +205,17 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
       throws IOException {
     CacheCreation creation = new CacheCreation();
     RegionAttributesCreation attrs = new RegionAttributesCreation(creation);
-    attrs.setScope(Scope.DISTRIBUTED_ACK);
     attrs.setDataPolicy(DataPolicy.REPLICATE);
+    attrs.setScope(Scope.DISTRIBUTED_ACK);
     creation.createRegion(getUniqueName(), attrs);
     CacheServer server = creation.addCacheServer();
-    server.setPort(serverPort);
     server.setBindAddress(bindAddress);
     server.setHostnameForClients(hostnameForClients);
     server.setMaxConnections(maxConnections);
     server.setMaxThreads(maxThreads);
     server.setMaximumMessageCount(maximumMessageCount);
     server.setMessageTimeToLive(messageTimeToLive);
+    server.setPort(serverPort);
     server.setSocketBufferSize(socketBufferSize);
 
     File cacheXmlFile = new File(getWorkingDirectory(), getUniqueName() + ".xml");
@@ -225,8 +229,8 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
   private File writeCacheXml() throws IOException {
     CacheCreation creation = new CacheCreation();
     RegionAttributesCreation attrs = new RegionAttributesCreation(creation);
-    attrs.setScope(Scope.DISTRIBUTED_ACK);
     attrs.setDataPolicy(DataPolicy.REPLICATE);
+    attrs.setScope(Scope.DISTRIBUTED_ACK);
     creation.createRegion(getUniqueName(), attrs);
     creation.addCacheServer();
 
@@ -240,7 +244,7 @@ public abstract class ServerLauncherIntegrationTestCase extends LauncherIntegrat
 
   private boolean isLauncherOnline() {
     ServerState serverState = launcher.status();
-    assertNotNull(serverState);
+    assertThat(serverState).isNotNull();
     return Status.ONLINE.equals(serverState.getStatus());
   }
 }

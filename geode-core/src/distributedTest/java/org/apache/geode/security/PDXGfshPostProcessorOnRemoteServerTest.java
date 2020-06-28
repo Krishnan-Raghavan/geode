@@ -14,15 +14,15 @@
  */
 package org.apache.geode.security;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_MANAGER;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_POST_PROCESSOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 
 import java.util.Properties;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -33,7 +33,7 @@ import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.management.ManagementService;
-import org.apache.geode.management.internal.cli.i18n.CliStrings;
+import org.apache.geode.management.internal.i18n.CliStrings;
 import org.apache.geode.pdx.SimpleClass;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
@@ -86,11 +86,11 @@ public class PDXGfshPostProcessorOnRemoteServerTest {
 
     // wait until the region bean is visible
     locatorVM.invoke(() -> {
-      Awaitility.await().pollInterval(500, TimeUnit.MICROSECONDS).atMost(2, TimeUnit.MINUTES)
+      await()
           .until(() -> {
             Cache cache = CacheFactory.getAnyInstance();
             Object bean = ManagementService.getManagementService(cache)
-                .getDistributedRegionMXBean("/" + REGION_NAME);
+                .getDistributedRegionMXBean(SEPARATOR + REGION_NAME);
             return bean != null;
           });
     });
@@ -102,7 +102,8 @@ public class PDXGfshPostProcessorOnRemoteServerTest {
     gfsh.executeAndAssertThat("get --key=key1 --region=AuthRegion").statusIsSuccess()
         .containsOutput(SimpleClass.class.getName());
 
-    gfsh.executeAndAssertThat("query --query=\"select * from /AuthRegion\"").statusIsSuccess();
+    gfsh.executeAndAssertThat("query --query=\"select * from " + SEPARATOR + "AuthRegion\"")
+        .statusIsSuccess();
 
     serverVM.invoke(() -> {
       PDXPostProcessor pp =

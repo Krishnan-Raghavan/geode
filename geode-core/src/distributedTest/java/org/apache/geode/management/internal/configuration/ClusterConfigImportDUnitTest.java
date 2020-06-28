@@ -20,22 +20,13 @@ import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
-import java.nio.file.Path;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
-import org.apache.commons.io.FileUtils;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.RegionShortcut;
-import org.apache.geode.management.cli.Result;
-import org.apache.geode.management.internal.cli.result.CommandResult;
 import org.apache.geode.test.dunit.rules.ClusterStartupRule;
 import org.apache.geode.test.dunit.rules.MemberVM;
 import org.apache.geode.test.junit.rules.GfshCommandRule;
@@ -74,11 +65,11 @@ public class ClusterConfigImportDUnitTest extends ClusterConfigTestBase {
       cache.createRegionFactory(RegionShortcut.REPLICATE).create(regionName);
     });
 
-    CommandResult result = gfshConnector
-        .executeCommand("import cluster-configuration --zip-file-name=" + clusterConfigZipPath);
-
-    assertThat(result.getStatus()).isEqualTo(Result.Status.ERROR);
-    assertThat(result.getMessageFromContent()).contains("existing regions: " + regionName);
+    gfshConnector
+        .executeAndAssertThat(
+            "import cluster-configuration --zip-file-name=" + clusterConfigZipPath)
+        .statusIsError()
+        .containsOutput("existing regions: " + regionName);
   }
 
   @Test
@@ -105,8 +96,8 @@ public class ClusterConfigImportDUnitTest extends ClusterConfigTestBase {
   public void importFailWithExistingDiskStore() {
     lsRule.startServerVM(1, locatorVM.getPort());
     gfshConnector.executeAndAssertThat("create disk-store --name=diskStore1 --dir=testStore")
-        .statusIsSuccess();
-    locatorVM.waitUntilDiskStoreIsReadyOnExactlyThisManyServers("diskStore1", 1);
+        .statusIsSuccess()
+        .doesNotContainOutput("Did not complete waiting");
     gfshConnector
         .executeAndAssertThat(
             "import cluster-configuration --zip-file-name=" + clusterConfigZipPath)
@@ -171,55 +162,4 @@ public class ClusterConfigImportDUnitTest extends ClusterConfigTestBase {
     REPLICATED_CONFIG_FROM_ZIP.verify(locator1);
     REPLICATED_CONFIG_FROM_ZIP.verify(locator2);
   }
-
-  @Test
-  public void testExportWithAbsolutePath() throws Exception {
-    Path exportedZipPath =
-        temporaryFolder.getRoot().toPath().resolve("exportedCC.zip").toAbsolutePath();
-
-    testExportClusterConfig(exportedZipPath.toString());
-  }
-
-  @Test
-  public void testExportWithRelativePath() throws Exception {
-    testExportClusterConfig("mytemp/exportedCC.zip");
-    FileUtils.deleteQuietly(new File("mytemp"));
-  }
-
-  public void testExportClusterConfig(String zipFilePath) throws Exception {
-    MemberVM server1 = lsRule.startServerVM(1, serverProps, locatorVM.getPort());
-
-    gfshConnector.executeAndAssertThat("create region --name=myRegion --type=REPLICATE")
-        .statusIsSuccess();
-
-    ConfigGroup cluster = new ConfigGroup("cluster").regions("myRegion");
-    ClusterConfig expectedClusterConfig = new ClusterConfig(cluster);
-    expectedClusterConfig.verify(server1);
-    expectedClusterConfig.verify(locatorVM);
-
-    gfshConnector
-        .executeAndAssertThat("export cluster-configuration --zip-file-name=" + zipFilePath)
-        .statusIsSuccess();
-
-    File exportedZip = new File(zipFilePath);
-    assertThat(exportedZip).exists();
-
-    Set<String> actualZipEnries =
-        new ZipFile(exportedZip).stream().map(ZipEntry::getName).collect(Collectors.toSet());
-
-    ConfigGroup exportedClusterGroup = cluster.configFiles("cluster.xml", "cluster.properties");
-    ClusterConfig expectedExportedClusterConfig = new ClusterConfig(exportedClusterGroup);
-
-    Set<String> expectedZipEntries = new HashSet<>();
-    for (ConfigGroup group : expectedExportedClusterConfig.getGroups()) {
-      String groupDir = group.getName() + File.separator;
-
-      for (String jarOrXmlOrPropFile : group.getAllFiles()) {
-        expectedZipEntries.add(groupDir + jarOrXmlOrPropFile);
-      }
-    }
-
-    assertThat(actualZipEnries).isEqualTo(expectedZipEntries);
-  }
-
 }

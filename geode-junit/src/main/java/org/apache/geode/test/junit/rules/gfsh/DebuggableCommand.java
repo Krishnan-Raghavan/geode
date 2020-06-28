@@ -19,8 +19,7 @@ public class DebuggableCommand {
   final String command;
 
   public DebuggableCommand(String command) {
-    this.command = command;
-    this.debugPort = -1;
+    this(command, -1);
   }
 
   public DebuggableCommand(String command, int debugPort) {

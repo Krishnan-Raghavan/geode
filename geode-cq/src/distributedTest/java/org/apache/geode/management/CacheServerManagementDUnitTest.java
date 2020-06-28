@@ -14,11 +14,15 @@
  */
 package org.apache.geode.management;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.ENABLE_CLUSTER_CONFIGURATION;
 import static org.apache.geode.distributed.ConfigurationProperties.JMX_MANAGER_HTTP_PORT;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_LEVEL;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
+import static org.apache.geode.internal.cache.GemFireCacheImpl.getInstance;
+import static org.apache.geode.management.ManagementService.getManagementService;
+import static org.apache.geode.management.internal.MBeanJMXAdapter.getClientServiceMBeanName;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -60,6 +64,7 @@ import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.management.internal.JmxManagerLocatorRequest;
 import org.apache.geode.management.internal.MBeanJMXAdapter;
 import org.apache.geode.management.internal.SystemManagementService;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Assert;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.LogWriterUtils;
@@ -188,7 +193,7 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
     client.invoke("Start BridgeClient", () -> startBridgeClient(null,
         NetworkUtils.getServerHostName(locator.getHost()), locatorPort));
 
-    // stop the client and make sure the bridge server notifies
+    // stop the client and make sure the cache server notifies
     stopBridgeMemberVM(client);
     helper.closeCache(locator);
     helper.closeCache(server);
@@ -280,6 +285,7 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
   protected void checkNavigation(final VM vm, final DistributedMember cacheServerMember,
       final int serverPort) {
     SerializableRunnable checkNavigation = new SerializableRunnable("Check Navigation") {
+      @Override
       public void run() {
 
         final ManagementService service = helper.getManagementService();
@@ -314,30 +320,33 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
   protected void addClientNotifListener(final VM vm, final int serverPort) throws Exception {
     SerializableRunnable addClientNotifListener =
         new SerializableRunnable("Add Client Notif Listener") {
+          @Override
           public void run() {
-            GemFireCacheImpl cache = GemFireCacheImpl.getInstance();
-            ManagementService service = ManagementService.getManagementService(cache);
+            GemFireCacheImpl cache = getInstance();
+            ManagementService service = getManagementService(cache);
             final CacheServerMXBean bean = service.getLocalCacheServerMXBean(serverPort);
             assertNotNull(bean);
             WaitCriterion ev = new WaitCriterion() {
+              @Override
               public boolean done() {
                 if (bean.isRunning())
                   return true;
                 return false;
               }
 
+              @Override
               public String description() {
                 return null;
               }
             };
-            Wait.waitForCriterion(ev, 10 * 1000, 200, true);
+            GeodeAwaitility.await().untilAsserted(ev);
             assertTrue(bean.isRunning());
             TestCacheServerNotif nt = new TestCacheServerNotif();
             try {
-              mbeanServer.addNotificationListener(MBeanJMXAdapter.getClientServiceMBeanName(
+              mbeanServer.addNotificationListener(getClientServiceMBeanName(
                   serverPort, cache.getDistributedSystem().getMemberId()), nt, null, null);
             } catch (InstanceNotFoundException e) {
-              fail("Failed With Exception " + e);
+              throw new RuntimeException("Failed With Exception ", e);
             }
 
           }
@@ -352,12 +361,14 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
   @SuppressWarnings("serial")
   protected void verifyIndex(final VM vm, final int serverPort) throws Exception {
     SerializableRunnable verifyIndex = new SerializableRunnable("Verify Index ") {
+      @Override
       public void run() {
         GemFireCacheImpl cache = GemFireCacheImpl.getInstance();
         ManagementService service = ManagementService.getManagementService(cache);
         QueryService qs = cache.getQueryService();
         try {
-          qs.createIndex(indexName, "p.ID", "/root/" + cqDUnitTest.regions[0]);
+          qs.createIndex(indexName, "p.ID",
+              SEPARATOR + "root" + SEPARATOR + cqDUnitTest.regions[0]);
         } catch (RegionNotFoundException e) {
           fail("Failed With Exception " + e);
         } catch (IndexInvalidException e) {
@@ -394,6 +405,7 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
   @SuppressWarnings("serial")
   protected void verifyClosedCQ(final VM vm) throws Exception {
     SerializableRunnable verifyClosedCQ = new SerializableRunnable("Verify Closed CQ") {
+      @Override
       public void run() {
         CqService cqService = GemFireCacheImpl.getInstance().getCqService();
         if (cqService != null) {
@@ -412,23 +424,26 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
   @SuppressWarnings("serial")
   protected void verifyCacheServer(final VM vm, final int serverPort) throws Exception {
     SerializableRunnable verifyCacheServer = new SerializableRunnable("Verify Cache Server") {
+      @Override
       public void run() {
-        GemFireCacheImpl cache = GemFireCacheImpl.getInstance();
-        ManagementService service = ManagementService.getManagementService(cache);
+        GemFireCacheImpl cache = getInstance();
+        ManagementService service = getManagementService(cache);
         final CacheServerMXBean bean = service.getLocalCacheServerMXBean(serverPort);
         assertNotNull(bean);
         WaitCriterion ev = new WaitCriterion() {
+          @Override
           public boolean done() {
             if (bean.isRunning())
               return true;
             return false;
           }
 
+          @Override
           public String description() {
             return null;
           }
         };
-        Wait.waitForCriterion(ev, 10 * 1000, 200, true);
+        GeodeAwaitility.await().untilAsserted(ev);
         assertTrue(bean.isRunning());
         assertCacheServerConfig(bean);
 
@@ -461,6 +476,7 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
       final int serverPort) {
     SerializableRunnable verifyCacheServerRemote =
         new SerializableRunnable("Verify Cache Server Remote") {
+          @Override
           public void run() {
             GemFireCacheImpl cache = GemFireCacheImpl.getInstance();
             try {
@@ -483,10 +499,6 @@ public class CacheServerManagementDUnitTest extends LocatorTestBase {
               assertTrue(bean.showAllClientStats()[0].getClientCQCount() == 1);
               int numQueues = bean.getNumSubscriptions();
               assertEquals(numQueues, 1);
-              // test for client connection Count
-
-              /* @TODO */
-              // assertTrue(bean.getClientConnectionCount() > 0);
 
               bean.getContinuousQueryList();
               // Only temporarily stops the query

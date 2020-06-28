@@ -14,6 +14,7 @@
  */
 package org.apache.geode.cache.query.dunit;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -64,17 +65,18 @@ import org.apache.geode.test.junit.categories.OQLIndexTest;
 @Category({OQLIndexTest.class})
 public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
 
-  /** The port on which the bridge server was started in this VM */
+  /** The port on which the cache server was started in this VM */
   private static int bridgeServerPort;
 
   private String region = "regionA";
   private final int KEYS = 1;
   private final int REGEX = 2;
 
-  private String rootQ = "SELECT ALL * FROM /root p where p.ID > 0";
-  private String incompleteQ = "SELECT ALL * FROM /root/" + region + " p where "; // User needs to
-                                                                                  // append where
-                                                                                  // cond.
+  private String rootQ = "SELECT ALL * FROM " + SEPARATOR + "root p where p.ID > 0";
+  private String incompleteQ =
+      "SELECT ALL * FROM " + SEPARATOR + "root" + SEPARATOR + region + " p where "; // User needs to
+  // append where
+  // cond.
 
   public static final String KEY = "key-";
   public static final String REGULAR_EXPRESSION = ".*1+?.*";
@@ -115,7 +117,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     cqDUnitTest.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Register Interest in all Keys on server
     this.registerInterestList(client, cqDUnitTest.regions[0], 4, KEYS);
@@ -158,7 +161,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     cqDUnitTest.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     final int size = 10;
     // Init values at client
@@ -214,7 +218,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     cqDUnitTest.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Register Interest in all Keys on server
     cqDUnitTest.registerInterestListCQ(client, cqDUnitTest.regions[0], size, true);
@@ -256,7 +261,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     cqDUnitTest.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Register Interest in all Keys on server
     this.registerInterestList(client, cqDUnitTest.regions[0], 2, REGEX);
@@ -303,7 +309,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     cqDUnitTest.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root/regionA p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID",
+        SEPARATOR + "root" + SEPARATOR + "regionA p");
 
     // Create entries on client to clear region later
     this.createValues(client, cqDUnitTest.regions[0], size);
@@ -362,7 +369,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     this.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", SEPARATOR + "root p");
 
     // Register Interest in all Keys on server
     this.registerInterestList(client, ROOT, size, 0);
@@ -404,7 +411,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     this.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", SEPARATOR + "root p");
 
     // Register Interest in all Keys on server
     this.registerInterestList(client, ROOT, 4, KEYS);
@@ -446,7 +453,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     // Create client.
     this.createClient(client, port, host0);
     // Create Index on client
-    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", "/root p");
+    cqDUnitTest.createFunctionalIndex(client, "IdIndex", "p.ID", SEPARATOR + "root p");
 
     // Register Interest in all Keys on server
     this.registerInterestList(client, "root", 2, REGEX);
@@ -474,6 +481,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   public void registerInterestList(VM vm, final String regionName, final int keySize,
       final int policy, final int start) {
     vm.invoke(new CacheSerializableRunnable("Register InterestList") {
+      @Override
       public void run2() throws CacheException {
 
         // Get Query Service.
@@ -485,7 +493,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
             region = getRootRegion().getSubregion(regionName);
           }
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         } catch (Exception cqe) {
           AssertionError err = new AssertionError("Failed to get Region.");
           err.initCause(cqe);
@@ -519,6 +527,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   public void asyncRegisterInterestList(VM vm, final String regionName, final int keySize,
       final int policy, final int start) {
     vm.invokeAsync(new CacheSerializableRunnable("Register InterestList") {
+      @Override
       public void run2() throws CacheException {
 
         // Get Query Service.
@@ -530,7 +539,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
             region = getRootRegion().getSubregion(regionName);
           }
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         } catch (Exception cqe) {
           AssertionError err = new AssertionError("Failed to get Region.");
           err.initCause(cqe);
@@ -562,6 +571,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
 
   public void createServer(VM server, final int thePort, final boolean partitioned) {
     SerializableRunnable createServer = new CacheSerializableRunnable("Create Cache Server") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create Cache Server. ###");
         AttributesFactory factory = new AttributesFactory();
@@ -596,7 +606,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   }
 
   /**
-   * Starts a bridge server on the given port, using the given deserializeValues and
+   * Starts a cache server on the given port, using the given deserializeValues and
    * notifyBySubscription to serve up the given region.
    *
    * @since GemFire 6.6
@@ -623,6 +633,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
    */
   public void createValues(VM vm, final String regionName, final int size, final int start) {
     vm.invoke(new CacheSerializableRunnable("Create values") {
+      @Override
       public void run2() throws CacheException {
         Region region1;
         if (!"root".equals(regionName)) {
@@ -655,6 +666,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   public void createClient(VM client, final int[] serverPorts, final String serverHost,
       final String redundancyLevel, final String poolName) {
     SerializableRunnable createQService = new CacheSerializableRunnable("Create Client") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Create Client. ###");
         // Region region1 = null;
@@ -700,6 +712,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   public void validateQueryOnIndexWithRegion(VM vm, final String query, final int resultSize,
       final String region) {
     vm.invoke(new CacheSerializableRunnable("Validate Query") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Validating Query. ###");
         QueryService qs = getCache().getQueryService();
@@ -718,7 +731,8 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
               assertEquals(resultSize, rSize);
             } else {
               Region reg;
-              if (region != null && (reg = getCache().getRegion("/root/" + region)) != null) {
+              if (region != null && (reg =
+                  getCache().getRegion(SEPARATOR + "root" + SEPARATOR + region)) != null) {
                 assertEquals(rSize, reg.size());
                 for (Object value : reg.values()) {
                   if (!((SelectResults) r).asSet().contains((Portfolio) value)) {
@@ -740,6 +754,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
 
   public void asyncClearRegion(VM vm, final String regionName) {
     vm.invokeAsync(new CacheSerializableRunnable("Destroy entries") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Clearing Region. ###");
         Region region1;
@@ -757,6 +772,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
 
   private SerializableRunnable getSRClearRegion(final String regionName) {
     SerializableRunnable sr = new CacheSerializableRunnable("Destroy entries") {
+      @Override
       public void run2() throws CacheException {
         LogWriterUtils.getLogWriter().info("### Clearing Region. ###");
         Region region1;
@@ -776,6 +792,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
   private SerializableRunnable getSRRegisterInterestList(final String regionName, final int keySize,
       final int policy, final int start) {
     SerializableRunnable sr = new CacheSerializableRunnable("Register InterestList") {
+      @Override
       public void run2() throws CacheException {
 
         // Get Query Service.
@@ -787,7 +804,7 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
             region = getRootRegion().getSubregion(regionName);
           }
           region.getAttributesMutator()
-              .addCacheListener(new CertifiableTestCacheListener(LogWriterUtils.getLogWriter()));
+              .addCacheListener(new CertifiableTestCacheListener());
         } catch (Exception cqe) {
           AssertionError err = new AssertionError("Failed to get Region.");
           err.initCause(cqe);
@@ -822,10 +839,12 @@ public class QueryIndexUpdateRIDUnitTest extends JUnit4CacheTestCase {
     boolean isIndexesUsed = false;
     ArrayList indexesUsed = new ArrayList();
 
+    @Override
     public void beforeIndexLookup(Index index, int oper, Object key) {
       indexesUsed.add(index.getName());
     }
 
+    @Override
     public void afterIndexLookup(Collection results) {
       if (results != null) {
         isIndexesUsed = true;

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.pdx;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -54,12 +55,12 @@ import org.apache.geode.cache.CacheFactory;
 import org.apache.geode.cache.DiskStoreFactory;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
-import org.apache.geode.internal.DSCODE;
 import org.apache.geode.internal.HeapDataOutputStream;
 import org.apache.geode.internal.PdxSerializerObject;
 import org.apache.geode.internal.SystemAdmin;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.GemFireCacheImpl;
+import org.apache.geode.internal.serialization.DSCODE;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.tcp.ByteBufferInputStream.ByteSourceFactory;
 import org.apache.geode.internal.util.ArrayUtils;
 import org.apache.geode.pdx.internal.DataSize;
@@ -164,8 +165,8 @@ public class PdxSerializableJUnitTest {
       pw.close();
       byte[] bytes = baos.toByteArray();
       this.cache.loadCacheXml(new ByteArrayInputStream(bytes));
-      r1 = this.cache.getRegion("/r1");
-      r2 = this.cache.getRegion("/r2");
+      r1 = this.cache.getRegion(SEPARATOR + "r1");
+      r2 = this.cache.getRegion(SEPARATOR + "r2");
       assertEquals(true, r1.containsKey(new SimpleClass(1, (byte) 1)));
       assertEquals(true, r1.containsKey(new SimpleClass(2, (byte) 2)));
       assertEquals(true, r2.containsKey(new SimpleClass(1, (byte) 1)));
@@ -250,8 +251,8 @@ public class PdxSerializableJUnitTest {
       pw.close();
       byte[] bytes = baos.toByteArray();
       this.cache.loadCacheXml(new ByteArrayInputStream(bytes));
-      r1 = this.cache.getRegion("/r1");
-      r2 = this.cache.getRegion("/r2");
+      r1 = this.cache.getRegion(SEPARATOR + "r1");
+      r2 = this.cache.getRegion(SEPARATOR + "r2");
       assertEquals(true, r1.containsKey(new SimpleClass(1, (byte) 1)));
       assertEquals(true, r1.containsKey(new SimpleClass(2, (byte) 2)));
       assertEquals(true, r2.containsKey(new SimpleClass(1, (byte) 1)));
@@ -1260,10 +1261,12 @@ public class PdxSerializableJUnitTest {
       return this.v;
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       writer.writeLong("f1", this.v);
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       this.v = reader.readLong("f1");
     }
@@ -1283,10 +1286,12 @@ public class PdxSerializableJUnitTest {
       return this.v;
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       writer.writeObject("f1", this.v);
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       this.v = reader.readObject("f1");
     }
@@ -1306,10 +1311,12 @@ public class PdxSerializableJUnitTest {
       return this.v;
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       writer.writeObjectArray("f1", this.v);
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       this.v = reader.readObjectArray("f1");
     }
@@ -1352,10 +1359,12 @@ public class PdxSerializableJUnitTest {
       return this.v;
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       writer.writeLong("f1", this.v);
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       this.v = (Long) reader.readField("f1");
     }
@@ -1697,6 +1706,7 @@ public class PdxSerializableJUnitTest {
       this.fieldType = fieldType;
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       ((PdxWriterImpl) writer).setDoExtraValidation(true);
       writer.writeInt("fieldCount", this.fieldCount);
@@ -1705,6 +1715,7 @@ public class PdxSerializableJUnitTest {
       }
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       throw new IllegalStateException("should never be called");
     }
@@ -1725,6 +1736,7 @@ public class PdxSerializableJUnitTest {
      *
      * @see org.apache.geode.pdx.PdxSerializable#toData(org.apache.geode. pdx.PdxWriter)
      */
+    @Override
     public void toData(PdxWriter out) {
       new BasicAllFieldTypesPdxSerializer().toData(this, out);
     }
@@ -1734,6 +1746,7 @@ public class PdxSerializableJUnitTest {
      *
      * @see org.apache.geode.pdx.PdxSerializable#fromData(org.apache.geode .pdx.PdxReader)
      */
+    @Override
     public void fromData(PdxReader in) {
       new BasicAllFieldTypesPdxSerializer().fillInData(in, this);
     }
@@ -1741,6 +1754,7 @@ public class PdxSerializableJUnitTest {
 
   public static class BasicAllFieldTypesPdxSerializer implements PdxSerializer {
 
+    @Override
     public boolean toData(Object o, PdxWriter out) {
       if (o instanceof BasicAllFieldTypes) {
         BasicAllFieldTypes pdx = (BasicAllFieldTypes) o;
@@ -1775,6 +1789,7 @@ public class PdxSerializableJUnitTest {
       }
     }
 
+    @Override
     public Object fromData(Class<?> clazz, PdxReader in) {
       if (BasicAllFieldTypes.class.isAssignableFrom(clazz)) {
         BasicAllFieldTypes pdx = new BasicAllFieldTypes();
@@ -2196,6 +2211,7 @@ public class PdxSerializableJUnitTest {
       // need for pdx deserialization
     }
 
+    @Override
     public void toData(PdxWriter writer) {
       if (getVersion() == 3) {
         writer.writeInt("f2", this.f2);
@@ -2206,6 +2222,7 @@ public class PdxSerializableJUnitTest {
       }
     }
 
+    @Override
     public void fromData(PdxReader reader) {
       if (getVersion() == 3) {
         this.f2 = reader.readInt("f2");

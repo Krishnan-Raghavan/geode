@@ -14,19 +14,20 @@
  */
 package org.apache.geode.internal.cache.tier.sockets;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.net.ConnectException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -43,16 +44,16 @@ import org.apache.geode.cache.query.CqListener;
 import org.apache.geode.cache.query.CqQuery;
 import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.LocalRegion;
 import org.apache.geode.test.dunit.Host;
+import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.standalone.VersionManager;
 import org.apache.geode.test.junit.categories.BackwardCompatibilityTest;
 import org.apache.geode.test.junit.categories.ClientServerTest;
 import org.apache.geode.test.junit.runners.CategoryWithParameterizedRunnerFactory;
+import org.apache.geode.test.version.VersionManager;
 
 @Category({ClientServerTest.class, BackwardCompatibilityTest.class})
 @RunWith(Parameterized.class)
@@ -78,7 +79,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
   void createClientCacheAndVerifyPingIntervalIsSet(String host, int port) throws Exception {
     // this functionality was introduced in 1.5. If we let the test run in older
     // clients it will throw a NoSuchMethodError
-    if (Version.CURRENT_ORDINAL >= 80 /* GEODE_150 */) {
+    if (VersionManager.getInstance().getCurrentVersionOrdinal() >= 80 /* GEODE_1_5_0 */) {
       super.createClientCacheAndVerifyPingIntervalIsSet(host, port);
     }
   }
@@ -105,7 +106,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     client1.invoke(() -> {
       Region r2 = getCache().getRegion(REGION_NAME2);
       MemberIDVerifier verifier = (MemberIDVerifier) ((LocalRegion) r2).getCacheListener();
-      Awaitility.await().atMost(60, TimeUnit.SECONDS).until(() -> verifier.eventReceived);
+      await().until(() -> verifier.eventReceived);
     });
 
     // client2's update should have included a memberID - GEODE-2954
@@ -168,7 +169,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     interestClient.invoke("verification 1", () -> {
       Region r2 = getCache().getRegion(REGION_NAME2);
       MemberIDVerifier verifier = (MemberIDVerifier) ((LocalRegion) r2).getCacheListener();
-      Awaitility.await().atMost(60, TimeUnit.SECONDS).until(() -> verifier.eventReceived);
+      await().until(() -> verifier.eventReceived);
       verifier.reset();
     });
 
@@ -179,7 +180,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     server2.invoke("wait for failover queue to drain", () -> {
       CacheClientProxy proxy =
           CacheClientNotifier.getInstance().getClientProxies().iterator().next();
-      Awaitility.await().atMost(30, TimeUnit.SECONDS)
+      await()
           .until(() -> proxy.getHARegionQueue().isEmpty());
     });
 
@@ -203,7 +204,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     server3.invoke("wait for failover queue to drain", () -> {
       CacheClientProxy proxy =
           CacheClientNotifier.getInstance().getClientProxies().iterator().next();
-      Awaitility.await().atMost(30, TimeUnit.SECONDS)
+      await()
           .until(() -> proxy.getHARegionQueue().isEmpty());
     });
 
@@ -227,8 +228,10 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
 
   @Test
   public void giiEventQueueFromCurrentToOldMemberShouldSucceed() {
+    final IgnoredException expectedEx =
+        IgnoredException.addIgnoredException(ConnectException.class.getName());
     giiEventQueueShouldSucceedWithMixedVersions(VersionManager.CURRENT_VERSION, testVersion);
-
+    expectedEx.remove();
   }
 
   public void giiEventQueueShouldSucceedWithMixedVersions(String server1Version,
@@ -264,7 +267,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
 
     // Make sure server 2 copies the queue
     server2.invoke(() -> {
-      Awaitility.await().atMost(30, TimeUnit.SECONDS).untilAsserted(() -> {
+      await().untilAsserted(() -> {
         final Collection<CacheClientProxy> clientProxies =
             CacheClientNotifier.getInstance().getClientProxies();
         assertFalse(clientProxies.isEmpty());
@@ -277,7 +280,7 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     interestClient.invoke("verification 1", () -> {
       Region r2 = getCache().getRegion(REGION_NAME2);
       MemberIDVerifier verifier = (MemberIDVerifier) ((LocalRegion) r2).getCacheListener();
-      Awaitility.await().atMost(60, TimeUnit.SECONDS).until(() -> verifier.eventReceived);
+      await().until(() -> verifier.eventReceived);
       verifier.reset();
     });
 
@@ -288,14 +291,14 @@ public class ClientServerMiscBCDUnitTest extends ClientServerMiscDUnitTestBase {
     server2.invoke("wait for failover queue to drain", () -> {
       CacheClientProxy proxy =
           CacheClientNotifier.getInstance().getClientProxies().iterator().next();
-      Awaitility.await().atMost(60, TimeUnit.SECONDS)
+      await()
           .until(() -> proxy.getHARegionQueue().isEmpty());
     });
   }
 
   public static void registerCQ() throws Exception {
     Cache cache = new ClientServerMiscDUnitTestBase().getCache();
-    Region r = cache.getRegion(Region.SEPARATOR + REGION_NAME2);
+    Region r = cache.getRegion(SEPARATOR + REGION_NAME2);
     assertNotNull(r);
     CqAttributesFactory cqAttributesFactory = new CqAttributesFactory();
     cqAttributesFactory.addCqListener(Mockito.mock(CqListener.class));

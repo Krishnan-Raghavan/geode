@@ -21,7 +21,8 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.geode.distributed.internal.DistributionManager;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 
 /**
  * A message that is sent to a particular distribution manager to get its current information
@@ -36,7 +37,7 @@ public class FetchHostRequest extends AdminRequest {
   }
 
   public FetchHostRequest() {
-    friendlyName = LocalizedStrings.FetchHostRequest_FETCH_REMOTE_HOST.toLocalizedString();
+    friendlyName = "Fetch remote host";
   }
 
   /**
@@ -47,23 +48,26 @@ public class FetchHostRequest extends AdminRequest {
     return FetchHostResponse.create(dm, this.getSender());
   }
 
+  @Override
   public int getDSFID() {
     return FETCH_HOST_REQUEST;
   }
 
   @Override
-  public void toData(DataOutput out) throws IOException {
-    super.toData(out);
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
+    super.toData(out, context);
   }
 
   @Override
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-    super.fromData(in);
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
+    super.fromData(in, context);
   }
 
   @Override
   public String toString() {
-    return LocalizedStrings.FetchHostRequest_FETCHHOSTREQUEST_FOR_0
-        .toLocalizedString(this.getRecipient());
+    return String.format("FetchHostRequest for %s",
+        this.getRecipient());
   }
 }

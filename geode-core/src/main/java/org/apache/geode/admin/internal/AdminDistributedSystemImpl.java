@@ -14,6 +14,7 @@
  */
 package org.apache.geode.admin.internal;
 
+import static org.apache.geode.admin.internal.InetAddressUtilsWithLogging.toInetAddress;
 import static org.apache.geode.distributed.ConfigurationProperties.DISABLE_TCP;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_ADDRESS;
@@ -40,6 +41,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 
 import org.apache.logging.log4j.Logger;
+import org.jgroups.annotations.GuardedBy;
 
 import org.apache.geode.CancelException;
 import org.apache.geode.SystemFailure;
@@ -64,6 +66,7 @@ import org.apache.geode.admin.SystemMember;
 import org.apache.geode.admin.SystemMemberCacheListener;
 import org.apache.geode.admin.SystemMembershipEvent;
 import org.apache.geode.admin.SystemMembershipListener;
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.persistence.PersistentID;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.FutureCancelledException;
@@ -73,7 +76,6 @@ import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.InternalLocator;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.Banner;
 import org.apache.geode.internal.admin.ApplicationVM;
 import org.apache.geode.internal.admin.GemFireVM;
 import org.apache.geode.internal.admin.GfManagerAgent;
@@ -90,15 +92,14 @@ import org.apache.geode.internal.admin.remote.RevokePersistentIDRequest;
 import org.apache.geode.internal.admin.remote.ShutdownAllRequest;
 import org.apache.geode.internal.cache.backup.BackupOperation;
 import org.apache.geode.internal.cache.persistence.PersistentMemberPattern;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.internal.logging.Banner;
 import org.apache.geode.internal.logging.InternalLogWriter;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.logging.LogWriterFactory;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
-import org.apache.geode.internal.logging.log4j.LogWriterAppender;
-import org.apache.geode.internal.logging.log4j.LogWriterAppenders;
 import org.apache.geode.internal.util.concurrent.FutureResult;
+import org.apache.geode.logging.internal.LoggingSession;
+import org.apache.geode.logging.internal.NullLoggingSession;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * Represents a GemFire distributed system for remote administration/management.
@@ -153,8 +154,6 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   private volatile Set<AlertListener> alertListeners = Collections.emptySet();
   private final Object alertLock = new Object();
 
-  private LogWriterAppender logWriterAppender;
-
   private InternalLogWriter logWriter;
 
   /** The membership listeners registered on this distributed system */
@@ -165,6 +164,8 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   // for feature requests #32887
   private volatile List cacheListeners = Collections.EMPTY_LIST;
   private final Object cacheListLock = new Object();
+
+  private final LoggingSession loggingSession;
 
   /**
    * reference to AdminDistributedSystemImpl instance for feature requests #32887.
@@ -177,8 +178,9 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * This is volatile to allow SystemFailure to deliver fatal poison-pill to thisAdminDS without
    * waiting on synchronization.
    *
-   * @guarded.By CONNECTION_SYNC
    */
+  @GuardedBy("CONNECTION_SYNC")
+  @MakeNotStatic
   private static volatile AdminDistributedSystemImpl thisAdminDS;
 
   /**
@@ -193,12 +195,17 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   // Constructor(s)
   // -------------------------------------------------------------------------
 
+  private static LoggingSession createLoggingSession() {
+    return NullLoggingSession.create();
+  }
+
   /**
    * Constructs new DistributedSystemImpl with the given configuration.
    *
    * @param config configuration defining this distributed system
    */
   public AdminDistributedSystemImpl(DistributedSystemConfigImpl config) {
+    loggingSession = createLoggingSession();
 
     // init from config...
     this.config = config;
@@ -217,8 +224,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
 
     // LOG: create LogWriterAppender unless one already exists
-    this.logWriterAppender = LogWriterAppenders.getOrCreateAppender(
-        LogWriterAppenders.Identifier.MAIN, false, this.config.createLogConfig(), false);
+    loggingSession.startSession();
 
     // LOG: look in DistributedSystemConfigImpl for existing LogWriter to use
     InternalLogWriter existingLogWriter = this.config.getInternalLogWriter();
@@ -226,11 +232,10 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       this.logWriter = existingLogWriter;
     } else {
       // LOG: create LogWriterLogger
-      this.logWriter = LogWriterFactory.createLogWriterLogger(false, false,
-          this.config.createLogConfig(), false);
+      this.logWriter = LogWriterFactory.createLogWriterLogger(this.config.createLogConfig(), false);
       if (!Boolean.getBoolean(InternalLocator.INHIBIT_DM_BANNER)) {
         // LOG: changed statement from config to info
-        this.logWriter.info(Banner.getString(null));
+        this.logWriter.info(new Banner().getString());
       } else {
         logger.debug("skipping banner - " + InternalLocator.INHIBIT_DM_BANNER + " is set to true");
       }
@@ -309,8 +314,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   private void checkConnectCalled() {
     if (this.gfManagerAgent == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
   }
 
@@ -322,14 +326,17 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return this.gfManagerAgent;
   }
 
+  @Override
   public boolean isConnected() {
     return this.gfManagerAgent != null && this.gfManagerAgent.isConnected();
   }
 
+  @Override
   public String getId() {
     return this.id;
   }
 
+  @Override
   public String getName() {
     String name = this.config.getSystemName();
     if (name != null && name.length() > 0) {
@@ -344,14 +351,17 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return this.config.getSystemName();
   }
 
+  @Override
   public String getRemoteCommand() {
     return this.config.getRemoteCommand();
   }
 
+  @Override
   public void setRemoteCommand(String remoteCommand) {
     this.config.setRemoteCommand(remoteCommand);
   }
 
+  @Override
   public void setAlertLevel(AlertLevel level) {
     if (this.isConnected()) {
       this.gfManagerAgent.setAlertLevel(level.getSeverity());
@@ -360,10 +370,12 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     this.alertLevel = level;
   }
 
+  @Override
   public AlertLevel getAlertLevel() {
     return this.alertLevel;
   }
 
+  @Override
   public void addAlertListener(AlertListener listener) {
     synchronized (this.alertLock) {
       Set<AlertListener> oldListeners = this.alertListeners;
@@ -381,6 +393,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void removeAlertListener(AlertListener listener) {
     synchronized (this.alertLock) {
       Set<AlertListener> oldListeners = this.alertListeners;
@@ -393,6 +406,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void addMembershipListener(SystemMembershipListener listener) {
     synchronized (this.membershipLock) {
       Set oldListeners = this.membershipListeners;
@@ -404,6 +418,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void removeMembershipListener(SystemMembershipListener listener) {
     synchronized (this.membershipLock) {
       Set oldListeners = this.membershipListeners;
@@ -416,10 +431,12 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public String getMcastAddress() {
     return this.config.getMcastAddress();
   }
 
+  @Override
   public int getMcastPort() {
     return this.config.getMcastPort();
   }
@@ -432,6 +449,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return this.config.getDisableAutoReconnect();
   }
 
+  @Override
   public String getLocators() {
     return this.config.getLocators();
   }
@@ -457,6 +475,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     this.getConfig().setMembershipPortRange(membershipPortRange);
   }
 
+  @Override
   public DistributedSystemConfig getConfig() {
     return this.config;
   }
@@ -464,6 +483,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Returns true if any members of this system are currently running.
    */
+  @Override
   public boolean isRunning() {
     if (this.gfManagerAgent == null)
       return false;
@@ -476,6 +496,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   }
 
   /** Returns true if this system can use multicast for communications */
+  @Override
   public boolean isMcastEnabled() {
     return this.getMcastPort() > 0;
   }
@@ -497,6 +518,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Starts all managed entities in this system.
    */
+  @Override
   public void start() throws AdminException {
     // Wait for each managed entity to start (see bug 32569)
     DistributionLocator[] locs = getDistributionLocators();
@@ -507,15 +529,15 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       try {
         if (!locs[i].waitToStart(TIMEOUT_MS)) {
           throw new AdminException(
-              LocalizedStrings.AdminDistributedSystemImpl_0_DID_NOT_START_AFTER_1_MS
-                  .toLocalizedString(new Object[] {locs[i], Integer.valueOf(TIMEOUT_MS)}));
+              String.format("%s did not start after %s ms",
+                  new Object[] {locs[i], Integer.valueOf(TIMEOUT_MS)}));
         }
 
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         throw new AdminException(
-            LocalizedStrings.AdminDistributedSystemImpl_INTERRUPTED_WHILE_WAITING_FOR_0_TO_START
-                .toLocalizedString(locs[i]),
+            String.format("Interrupted while waiting for %s to start.",
+                locs[i]),
             ex);
       }
     }
@@ -528,15 +550,15 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       try {
         if (!servers[i].waitToStart(TIMEOUT_MS)) {
           throw new AdminException(
-              LocalizedStrings.AdminDistributedSystemImpl_0_DID_NOT_START_AFTER_1_MS
-                  .toLocalizedString(new Object[] {servers[i], Integer.valueOf(TIMEOUT_MS)}));
+              String.format("%s did not start after %s ms",
+                  new Object[] {servers[i], Integer.valueOf(TIMEOUT_MS)}));
         }
 
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         throw new AdminException(
-            LocalizedStrings.AdminDistributedSystemImpl_INTERRUPTED_WHILE_WAITING_FOR_0_TO_START
-                .toLocalizedString(servers[i]),
+            String.format("Interrupted while waiting for %s to start.",
+                servers[i]),
             ex);
       }
     }
@@ -545,6 +567,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Stops all GemFire managers that are members of this system.
    */
+  @Override
   public void stop() throws AdminException {
     // Stop cache server before GemFire managers because the cache
     // server might host a cache proxy that is dependent on the
@@ -561,15 +584,15 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       try {
         if (!servers[i].waitToStop(timeout * 1000)) {
           throw new AdminException(
-              LocalizedStrings.AdminDistributedSystemImpl_0_DID_NOT_STOP_AFTER_1_SECONDS
-                  .toLocalizedString(new Object[] {servers[i], Long.valueOf(timeout)}));
+              String.format("%s did not stop after %s seconds.",
+                  new Object[] {servers[i], Long.valueOf(timeout)}));
         }
 
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         throw new AdminException(
-            LocalizedStrings.AdminDistributedSystemImpl_INTERRUPTED_WHILE_WAITING_FOR_0_TO_STOP
-                .toLocalizedString(servers[i]),
+            String.format("Interrupted while waiting for %s to stop.",
+                servers[i]),
             ex);
       }
     }
@@ -582,21 +605,22 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       try {
         if (!locs[i].waitToStop(timeout * 1000)) {
           throw new AdminException(
-              LocalizedStrings.AdminDistributedSystemImpl_0_DID_NOT_STOP_AFTER_1_SECONDS
-                  .toLocalizedString(new Object[] {locs[i], Long.valueOf(timeout)}));
+              String.format("%s did not stop after %s seconds.",
+                  new Object[] {locs[i], Long.valueOf(timeout)}));
         }
 
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         throw new AdminException(
-            LocalizedStrings.AdminDistributedSystemImpl_INTERRUPTED_WHILE_WAITING_FOR_0_TO_STOP
-                .toLocalizedString(locs[i]),
+            String.format("Interrupted while waiting for %s to stop.",
+                locs[i]),
             ex);
       }
     }
   }
 
   /** Display merged system member logs */
+  @Override
   public String displayMergedLogs() {
     return this.logCollator.collateLogs(this.gfManagerAgent);
   }
@@ -607,6 +631,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * @return license for this GemFire product
    */
+  @Override
   public java.util.Properties getLicense() {
     SystemMember member = findFirstRunningMember();
     if (member != null) {
@@ -630,8 +655,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     ConfigurationParameter[] configParms = new ConfigurationParameter[] {
         new ConfigurationParameterImpl(MCAST_PORT, Integer.valueOf(this.config.getMcastPort())),
         new ConfigurationParameterImpl(LOCATORS, this.config.getLocators()),
-        new ConfigurationParameterImpl(MCAST_ADDRESS,
-            InetAddressUtil.toInetAddress(this.config.getMcastAddress())),
+        new ConfigurationParameterImpl(MCAST_ADDRESS, toInetAddress(this.config.getMcastAddress())),
         new ConfigurationParameterImpl(DISABLE_TCP, Boolean.valueOf(this.config.getDisableTcp())),};
     member.setConfiguration(configParms);
   }
@@ -650,8 +674,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
     if (cause instanceof CancelException) { // bug 37285
       throw new FutureCancelledException(
-          LocalizedStrings.AdminDistributedSystemImpl_FUTURE_CANCELLED_DUE_TO_SHUTDOWN
-              .toLocalizedString(),
+          "Future cancelled due to shutdown",
           ex);
     }
 
@@ -660,7 +683,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     // different thread. In addition to the cause, we also want to
     // know which code was waiting for the Future.
     throw new RuntimeAdminException(
-        LocalizedStrings.AdminDistributedSystemImpl_WHILE_WAITING_FOR_FUTURE.toLocalizedString(),
+        "While waiting for Future",
         ex);
   }
 
@@ -677,6 +700,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * @return array of system members for each non-manager member
    */
+  @Override
   public SystemMember[] getSystemMemberApplications() throws org.apache.geode.admin.AdminException {
     synchronized (this.applicationSet) {
       Collection coll = new ArrayList(this.applicationSet.size());
@@ -714,6 +738,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * TODO: create an external admin api object for Alert
    */
+  @Override
   public String getLatestAlert() {
     if (this.latestAlert == null) {
       return "";
@@ -724,6 +749,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Connects to the currently configured system.
    */
+  @Override
   public void connect() {
     connect(this.logWriter);
   }
@@ -759,8 +785,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
 
       if (thisAdminDS != null) { // TODO: beef up toString and add thisAdminDS
         throw new IllegalStateException(
-            LocalizedStrings.AdminDistributedSystemImpl_ONLY_ONE_ADMINDISTRIBUTEDSYSTEM_CONNECTION_CAN_BE_MADE_AT_ONCE
-                .toLocalizedString());
+            "Only one AdminDistributedSystem connection can be made at once.");
       }
 
       thisAdminDS = this; // added for feature requests #32887
@@ -854,8 +879,8 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
 
             DistributionLocatorConfig conf = impl.getConfig();
 
-            InetAddress host1 = InetAddressUtil.toInetAddress(host);
-            InetAddress host2 = InetAddressUtil.toInetAddress(conf.getHost());
+            InetAddress host1 = toInetAddress(host);
+            InetAddress host2 = toInetAddress(conf.getHost());
             if (port == conf.getPort() && host1.equals(host2)) {
               // Already have an admin object for this locator
               continue NEXT;
@@ -868,7 +893,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
         // an admin object for it.
         InetAddress bindAddress = null;
         if (bindAddr != null) {
-          bindAddress = InetAddressUtil.toInetAddress(bindAddr);
+          bindAddress = toInetAddress(bindAddr);
         }
         DistributionLocatorConfig conf =
             DistributionLocatorConfigImpl.createConfigFor(host, port, bindAddress);
@@ -885,6 +910,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Polls to determine whether or not the connection to the distributed system has been made.
    */
+  @Override
   public boolean waitToBeConnected(long timeout) throws InterruptedException {
 
     if (Thread.interrupted())
@@ -910,11 +936,10 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * @see org.apache.geode.distributed.DistributedSystem#disconnect()
    */
+  @Override
   public void disconnect() {
     synchronized (CONNECTION_SYNC) {
-      if (this.logWriterAppender != null) {
-        LogWriterAppenders.stop(LogWriterAppenders.Identifier.MAIN);
-      }
+      loggingSession.stopSession();
       try {
         if (thisAdminDS == this) {
           thisAdminDS = null;
@@ -933,9 +958,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
           ((DistributedSystemConfigImpl) this.config).setDistributedSystem(null);
         }
       } finally {
-        if (logWriterAppender != null) {
-          LogWriterAppenders.destroy(LogWriterAppenders.Identifier.MAIN);
-        }
+        loggingSession.shutdown();
       }
     }
   }
@@ -945,11 +968,11 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * system.
    */
   public DistributionManager getDistributionManager() {
-    if (this.gfManagerAgent == null) {
+    GfManagerAgent agent = gfManagerAgent;
+    if (agent == null) {
       return null;
     }
-    return this.gfManagerAgent.getDM();
-
+    return agent.getDM();
   }
 
   /**
@@ -965,6 +988,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   /**
    * Adds a new, unstarted <code>DistributionLocator</code> to this distributed system.
    */
+  @Override
   public DistributionLocator addDistributionLocator() {
     DistributionLocatorConfig conf = new DistributionLocatorConfigImpl();
     DistributionLocator locator = createDistributionLocatorImpl(conf);
@@ -977,6 +1001,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return locator;
   }
 
+  @Override
   public DistributionLocator[] getDistributionLocators() {
     synchronized (this.locatorSet) {
       Collection coll = new ArrayList(this.locatorSet.size());
@@ -1073,6 +1098,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * @param vm the VM that joined
    * @see org.apache.geode.internal.admin.JoinLeaveListener#nodeJoined
    */
+  @Override
   public void nodeJoined(GfManagerAgent source, final GemFireVM vm) {
     // sync to prevent bug 33341 Admin API can double-represent system members
     synchronized (this.membershipListenerLock) {
@@ -1088,11 +1114,10 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
           if (app.isDedicatedCacheServer()) {
             synchronized (this.cacheServerSet) {
               future = new AdminFutureTask(vm.getId(), new Callable() {
+                @Override
                 public Object call() throws Exception {
-                  logger.info(LogMarker.DM_MARKER,
-                      LocalizedMessage.create(
-                          LocalizedStrings.AdminDistributedSystemImpl_ADDING_NEW_CACHESERVER_FOR__0,
-                          vm));
+                  logger.info(LogMarker.DM_MARKER, "Adding new CacheServer for {}",
+                      vm);
                   return createCacheServer(app);
                 }
               });
@@ -1103,11 +1128,10 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
           } else {
             synchronized (this.applicationSet) {
               future = new AdminFutureTask(vm.getId(), new Callable() {
+                @Override
                 public Object call() throws Exception {
-                  logger.info(LogMarker.DM_MARKER,
-                      LocalizedMessage.create(
-                          LocalizedStrings.AdminDistributedSystemImpl_ADDING_NEW_APPLICATION_FOR__0,
-                          vm));
+                  logger.info(LogMarker.DM_MARKER, "Adding new Application for {}",
+                      vm);
                   return createSystemMember(app);
                 }
               });
@@ -1165,6 +1189,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * @param vm the VM that left
    * @see org.apache.geode.internal.admin.JoinLeaveListener#nodeLeft
    */
+  @Override
   public void nodeLeft(GfManagerAgent source, GemFireVM vm) {
     // sync to prevent bug 33341 Admin API can double-represent system members
     synchronized (this.membershipListenerLock) {
@@ -1193,6 +1218,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * @param vm the VM that crashed
    * @see org.apache.geode.internal.admin.JoinLeaveListener#nodeCrashed
    */
+  @Override
   public void nodeCrashed(GfManagerAgent source, GemFireVM vm) {
     // sync to prevent bug 33341 Admin API can double-represent system members
     synchronized (this.membershipListenerLock) {
@@ -1220,6 +1246,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    * @param alert the latest alert from the system
    * @see org.apache.geode.internal.admin.AlertListener#alert
    */
+  @Override
   public void alert(org.apache.geode.internal.admin.Alert alert) {
     if (AlertLevel.forSeverity(alert.getLevel()).ordinal < alertLevel.ordinal) {
       return;
@@ -1232,6 +1259,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void onDisconnect(InternalDistributedSystem sys) {
     logger.debug("Calling AdminDistributedSystemImpl#onDisconnect");
     disconnect();
@@ -1365,7 +1393,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       }
 
       ManagedEntityConfig conf = entity.getEntityConfig();
-      InetAddress managedHost = InetAddressUtil.toInetAddress(conf.getHost());
+      InetAddress managedHost = toInetAddress(conf.getHost());
       File managedWorkingDir = new File(conf.getWorkingDirectory());
       File managedProdDir = new File(conf.getProductDirectory());
 
@@ -1400,8 +1428,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
       }
     } catch (IOException ex) {
       // oh well...
-      logger.info(LocalizedMessage
-          .create(LocalizedStrings.AdminDistributedSystemImpl_WHILE_GETTING_CANONICAL_FILE), ex);
+      logger.info("While getting canonical file", ex);
     }
 
     return false;
@@ -1504,8 +1531,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
         member.setGemFireVM(vm);
 
       } catch (AdminException ex) {
-        logger.warn(LocalizedMessage
-            .create(LocalizedStrings.AdminDistributedSystem_COULD_NOT_SET_THE_GEMFIRE_VM), ex);
+        logger.warn("Could not set the GemFire VM.", ex);
       }
     }
 
@@ -1607,7 +1633,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
           Thread.currentThread().interrupt();
           checkCancellation();
           throw new RuntimeException(
-              LocalizedStrings.AdminDistributedSystemImpl_INTERRUPTED.toLocalizedString(), ex);
+              "Interrupted", ex);
 
         } catch (CancellationException ex) {
           continue;
@@ -1633,8 +1659,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
         }
 
       } catch (AdminException ex) {
-        logger.fatal(LocalizedMessage
-            .create(LocalizedStrings.AdminDistributedSystem_UNEXPECTED_ADMINEXCEPTION), ex);
+        logger.fatal("Unexpected AdminException", ex);
       }
       return member;
 
@@ -1664,15 +1689,16 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   }
 
   protected SSLConfig buildSSLConfig() {
-    SSLConfig conf = new SSLConfig();
+    SSLConfig.Builder sslConfigBuilder = new SSLConfig.Builder();
+
     if (getConfig() != null) {
-      conf.setEnabled(getConfig().isSSLEnabled());
-      conf.setProtocols(getConfig().getSSLProtocols());
-      conf.setCiphers(getConfig().getSSLCiphers());
-      conf.setRequireAuth(getConfig().isSSLAuthenticationRequired());
-      conf.setProperties(getConfig().getSSLProperties());
+      sslConfigBuilder.setEnabled(getConfig().isSSLEnabled());
+      sslConfigBuilder.setProtocols(getConfig().getSSLProtocols());
+      sslConfigBuilder.setCiphers(getConfig().getSSLCiphers());
+      sslConfigBuilder.setRequireAuth(getConfig().isSSLAuthenticationRequired());
+      sslConfigBuilder.setProperties(getConfig().getSSLProperties());
     }
-    return conf;
+    return sslConfigBuilder.build();
   }
 
   /**
@@ -1825,6 +1851,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * @see #createGemFireHealth
    */
+  @Override
   public GemFireHealth getGemFireHealth() {
     synchronized (this) {
       if (this.health == null || this.health.isClosed()) {
@@ -1833,8 +1860,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
 
         } catch (AdminException ex) {
           throw new RuntimeAdminException(
-              LocalizedStrings.AdminDistributedSystemImpl_AN_ADMINEXCEPTION_WAS_THROWN_WHILE_GETTING_THE_GEMFIRE_HEALTH
-                  .toLocalizedString(),
+              "An AdminException was thrown while getting the GemFire health.",
               ex);
         }
       }
@@ -1854,16 +1880,17 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
 
     if (agent == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_GFMANAGERAGENT_MUST_NOT_BE_NULL
-              .toLocalizedString());
+          "GfManagerAgent must not be null");
     }
     return new GemFireHealthImpl(agent, this);
   }
 
+  @Override
   public CacheVm addCacheVm() throws AdminException {
     return (CacheVm) addCacheServer();
   }
 
+  @Override
   public CacheServer addCacheServer() throws AdminException {
     CacheServerConfigImpl conf = new CacheServerConfigImpl();
     CacheServer server = createCacheServer(conf);
@@ -1917,6 +1944,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
    *
    * @since GemFire 5.6
    */
+  @Override
   public CacheServer[] getCacheServers(String durableClientId) throws AdminException {
     Collection serversForDurableClient = new ArrayList();
     CacheServer[] servers = getCacheServers();
@@ -1932,6 +1960,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return array;
   }
 
+  @Override
   public CacheVm[] getCacheVms() throws AdminException {
     Collection coll = getCacheVmsCollection();
     if (coll == null)
@@ -1941,6 +1970,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return array;
   }
 
+  @Override
   public CacheServer[] getCacheServers() throws AdminException {
     Collection coll = getCacheVmsCollection();
     if (coll == null)
@@ -1978,6 +2008,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void addCacheListener(SystemMemberCacheListener listener) {
     synchronized (this.cacheListLock) {
       // never modify cacheListeners in place.
@@ -1991,6 +2022,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public void removeCacheListener(SystemMemberCacheListener listener) {
     synchronized (this.cacheListLock) {
       List oldListeners = this.cacheListeners;
@@ -2010,6 +2042,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return this.cacheListeners;
   }
 
+  @Override
   public SystemMember lookupSystemMember(DistributedMember distributedMember)
       throws AdminException {
     if (distributedMember == null)
@@ -2069,6 +2102,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
 
     ////////////////////// Instance Methods //////////////////////
 
+    @Override
     public AlertLevel getLevel() {
       return AlertLevel.forSeverity(alert.getLevel());
     }
@@ -2076,22 +2110,27 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     /*
      * Eager initialization of system member is done while creating this alert only.
      */
+    @Override
     public SystemMember getSystemMember() {
       return systemMember;
     }
 
+    @Override
     public String getConnectionName() {
       return alert.getConnectionName();
     }
 
+    @Override
     public String getSourceId() {
       return alert.getSourceId();
     }
 
+    @Override
     public String getMessage() {
       return alert.getMessage();
     }
 
+    @Override
     public java.util.Date getDate() {
       return alert.getDate();
     }
@@ -2152,7 +2191,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
             // We interrupted the runnable but we don't want the thread
             // that called get() to think that the runnable was interrupted.
             CancellationException ex2 = new CancellationException(
-                LocalizedStrings.AdminDistributedSystemImpl_BY_INTERRUPT.toLocalizedString());
+                "by interrupt");
             ex2.setStackTrace(cause.getStackTrace());
             throw ex2;
           }
@@ -2178,13 +2217,13 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public Set<PersistentID> getMissingPersistentMembers() throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     return getMissingPersistentMembers(dm);
   }
@@ -2193,25 +2232,25 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return MissingPersistentIDsRequest.send(dm);
   }
 
+  @Override
   public void revokePersistentMember(InetAddress host, String directory) throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     revokePersistentMember(dm, host, directory);
 
   }
 
+  @Override
   public void revokePersistentMember(UUID diskStoreID) throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     revokePersistentMember(dm, diskStoreID);
 
@@ -2277,17 +2316,18 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     }
   }
 
+  @Override
   public Set shutDownAllMembers() throws AdminException {
     return shutDownAllMembers(0);
   }
 
+  @Override
   public Set shutDownAllMembers(long timeout) throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     return shutDownAllMembers(dm, timeout);
   }
@@ -2304,17 +2344,18 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     return ShutdownAllRequest.send(dm, timeout);
   }
 
+  @Override
   public BackupStatus backupAllMembers(File targetDir) throws AdminException {
     return backupAllMembers(targetDir, null);
   }
 
+  @Override
   public BackupStatus backupAllMembers(File targetDir, File baselineDir) throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     return backupAllMembers(dm, targetDir, baselineDir);
   }
@@ -2326,13 +2367,13 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
         baselineDirectory);
   }
 
+  @Override
   public Map<DistributedMember, Set<PersistentID>> compactAllDiskStores() throws AdminException {
     connectAdminDS();
     DistributionManager dm = getDistributionManager();
     if (dm == null) {
       throw new IllegalStateException(
-          LocalizedStrings.AdminDistributedSystemImpl_CONNECT_HAS_NOT_BEEN_INVOKED_ON_THIS_ADMINDISTRIBUTEDSYSTEM
-              .toLocalizedString());
+          "connect() has not been invoked on this AdminDistributedSystem.");
     }
     return compactAllDiskStores(dm);
   }
@@ -2360,6 +2401,7 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
   public void processClientMembership(String senderId, String clientId, String clientHost,
       int eventType) {}
 
+  @Override
   public void setAlertLevelAsString(String level) {
     AlertLevel newAlertLevel = AlertLevel.forName(level);
 
@@ -2368,11 +2410,12 @@ public class AdminDistributedSystemImpl implements org.apache.geode.admin.AdminD
     } else {
       System.out.println("ERROR:: " + level
           + " is invalid. Allowed alert levels are: WARNING, ERROR, SEVERE, OFF");
-      throw new IllegalArgumentException(LocalizedStrings.DEBUG.toLocalizedString(
+      throw new IllegalArgumentException(String.format("%s",
           level + " is invalid. Allowed alert levels are: WARNING, ERROR, SEVERE, OFF"));
     }
   }
 
+  @Override
   public String getAlertLevelAsString() {
     return getAlertLevel().getName();
   }

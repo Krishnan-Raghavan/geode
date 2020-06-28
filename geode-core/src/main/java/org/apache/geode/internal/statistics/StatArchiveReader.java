@@ -44,19 +44,12 @@ import org.apache.geode.GemFireIOException;
 import org.apache.geode.InternalGemFireException;
 import org.apache.geode.internal.Assert;
 import org.apache.geode.internal.ExitCode;
-import org.apache.geode.internal.i18n.LocalizedStrings;
 import org.apache.geode.internal.logging.DateFormatter;
 
 /**
  * StatArchiveReader provides APIs to read statistic snapshots from an archive file.
  */
 public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
-
-  protected static final NumberFormat nf = NumberFormat.getNumberInstance();
-  static {
-    nf.setMaximumFractionDigits(2);
-    nf.setGroupingUsed(false);
-  }
 
   private final StatArchiveFile[] archives;
   private boolean dump;
@@ -167,6 +160,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
   /**
    * Closes all archives.
    */
+  @Override
   public void close() throws IOException {
     if (!this.closed) {
       StatArchiveReader.StatArchiveFile[] archives = getArchives();
@@ -211,26 +205,126 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       case DOUBLE_CODE:
         return Double.longBitsToDouble(bits);
       default:
-        throw new InternalGemFireException(LocalizedStrings.StatArchiveReader_UNEXPECTED_TYPECODE_0
-            .toLocalizedString(Integer.valueOf(type)));
+        throw new InternalGemFireException(String.format("Unexpected typecode %s",
+            Integer.valueOf(type)));
     }
   }
+
+  private static class SingleStatRawStatSpec implements StatSpec {
+
+    private final String archive;
+    private final String statType;
+    private final String statName;
+
+    SingleStatRawStatSpec(String archive, String typeAndStat) {
+      this.archive = archive;
+      String[] parts = typeAndStat.split("\\.", 0);
+      this.statType = parts[0];
+      this.statName = parts[1];
+    }
+
+    @Override
+    public boolean archiveMatches(File archive) {
+      return true; // this.archive.equalsIgnoreCase(archive.getName());
+    }
+
+    @Override
+    public boolean typeMatches(String typeName) {
+      return this.statType.equalsIgnoreCase(typeName);
+    }
+
+    @Override
+    public boolean statMatches(String statName) {
+      return this.statName.equalsIgnoreCase(statName);
+    }
+
+    @Override
+    public boolean instanceMatches(String textId, long numericId) {
+      return true;
+    }
+
+    @Override
+    public int getCombineType() {
+      return StatSpec.NONE;
+    }
+  }
+
+  private static void printStatValue(StatArchiveReader.StatValue v, long startTime, long endTime,
+      boolean nofilter, boolean persec, boolean persample, boolean prunezeros, boolean details) {
+    v = v.createTrimmed(startTime, endTime);
+    if (nofilter) {
+      v.setFilter(StatArchiveReader.StatValue.FILTER_NONE);
+    } else if (persec) {
+      v.setFilter(StatArchiveReader.StatValue.FILTER_PERSEC);
+    } else if (persample) {
+      v.setFilter(StatArchiveReader.StatValue.FILTER_PERSAMPLE);
+    }
+    if (prunezeros) {
+      if (v.getSnapshotsMinimum() == 0.0 && v.getSnapshotsMaximum() == 0.0) {
+        return;
+      }
+    }
+    System.out.println("  " + v.toString());
+    if (details) {
+      System.out.print("  values=");
+      double[] snapshots = v.getSnapshots();
+      for (int i = 0; i < snapshots.length; i++) {
+        System.out.print(' ');
+        System.out.print(snapshots[i]);
+      }
+      System.out.println();
+      String desc = v.getDescriptor().getDescription();
+      if (desc != null && desc.length() > 0) {
+        System.out.println("    " + desc);
+      }
+    }
+  }
+
 
   /**
    * Simple utility to read and dump statistic archive.
    */
   public static void main(String args[]) throws IOException {
     String archiveName = null;
+    final StatArchiveReader reader;
     if (args.length > 1) {
-      System.err.println("Usage: [archiveName]");
-      ExitCode.FATAL.doSystemExit();
-    } else if (args.length == 1) {
-      archiveName = args[0];
+      if (!args[0].equals("stat") || args.length > 3) {
+        System.err.println("Usage: stat archiveName statType.statName");
+        ExitCode.FATAL.doSystemExit();
+      }
+      archiveName = args[1];
+      String statSpec = args[2];
+      if (!statSpec.contains(".")) {
+        throw new IllegalArgumentException(
+            "stat spec '" + statSpec + "' is malformed - use StatType.statName");
+      }
+      File archiveFile = new File(archiveName);
+      if (!archiveFile.exists()) {
+        throw new IllegalArgumentException("archive file does not exist: " + archiveName);
+      }
+      if (!archiveFile.canRead()) {
+        throw new IllegalArgumentException("archive file exists but is unreadable: " + archiveName);
+      }
+      File[] archives = new File[] {archiveFile};
+      SingleStatRawStatSpec[] filters =
+          new SingleStatRawStatSpec[] {new SingleStatRawStatSpec(archiveName, args[2])};
+      reader = new StatArchiveReader(archives, filters, false);
+      final StatValue[] statValues = reader.matchSpec(filters[0]);
+      System.out.println(statSpec + " matched " + statValues.length + " stats...");
+      for (StatValue value : statValues) {
+        printStatValue(value, -1, -1, true, false, false, false, true);
+      }
+      System.out.println("");
+      System.out.flush();
     } else {
-      archiveName = "statArchive.gfs";
+      if (args.length == 1) {
+        archiveName = args[0];
+      } else {
+        archiveName = "statArchive.gfs";
+      }
+      reader = new StatArchiveReader(archiveName);
+      System.out.println("DEBUG: memory used = " + reader.getMemoryUsed());
     }
-    StatArchiveReader reader = new StatArchiveReader(archiveName);
-    System.out.println("DEBUG: memory used = " + reader.getMemoryUsed());
     reader.close();
   }
 
@@ -244,22 +338,27 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       this.spec = wrappedSpec;
     }
 
+    @Override
     public int getCombineType() {
       return StatSpec.NONE;
     }
 
+    @Override
     public boolean typeMatches(String typeName) {
       return spec.typeMatches(typeName);
     }
 
+    @Override
     public boolean statMatches(String statName) {
       return spec.statMatches(statName);
     }
 
+    @Override
     public boolean instanceMatches(String textId, long numericId) {
       return spec.instanceMatches(textId, numericId);
     }
 
+    @Override
     public boolean archiveMatches(File archive) {
       return spec.archiveMatches(archive);
     }
@@ -565,49 +664,58 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       }
     }
 
+    @Override
     public int getSnapshotsSize() {
       calcStats();
       return this.size;
     }
 
+    @Override
     public double getSnapshotsMinimum() {
       calcStats();
       return this.min;
     }
 
+    @Override
     public double getSnapshotsMaximum() {
       calcStats();
       return this.max;
     }
 
+    @Override
     public double getSnapshotsAverage() {
       calcStats();
       return this.avg;
     }
 
+    @Override
     public double getSnapshotsStandardDeviation() {
       calcStats();
       return this.stddev;
     }
 
+    @Override
     public double getSnapshotsMostRecent() {
       calcStats();
       return this.mostRecent;
     }
 
+    @Override
     public StatDescriptor getDescriptor() {
       return this.descriptor;
     }
 
+    @Override
     public int getFilter() {
       return this.filter;
     }
 
+    @Override
     public void setFilter(int filter) {
       if (filter != this.filter) {
         if (filter != FILTER_NONE && filter != FILTER_PERSEC && filter != FILTER_PERSAMPLE) {
           throw new IllegalArgumentException(
-              LocalizedStrings.StatArchiveReader_FILTER_VALUE_0_MUST_BE_1_2_OR_3.toLocalizedString(
+              String.format("Filter value %s must be %s, %s, or %s.",
                   new Object[] {Integer.valueOf(filter), Integer.valueOf(FILTER_NONE),
                       Integer.valueOf(FILTER_PERSEC), Integer.valueOf(FILTER_PERSAMPLE)}));
         }
@@ -681,6 +789,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       if (endTime != -1) {
         result.append(" endTime=\"").append(new Date(endTime)).append("\"");
       }
+
+      NumberFormat nf = getNumberFormat();
       result.append(" min=").append(nf.format(min));
       result.append(" max=").append(nf.format(max));
       result.append(" average=").append(nf.format(avg));
@@ -704,7 +814,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
      * Creates a ComboValue by adding all the specified values together.
      */
     ComboValue(List valueList) {
-      this((StatValue[]) valueList.toArray(new StatValue[valueList.size()]));
+      this((StatValue[]) valueList.toArray(new StatValue[0]));
     }
 
     /**
@@ -723,17 +833,15 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
            * change the filter since a client has no way to select values based on the filter.
            */
           throw new IllegalArgumentException(
-              LocalizedStrings.StatArchiveReader_CANT_COMBINE_VALUES_WITH_DIFFERENT_FILTERS
-                  .toLocalizedString());
+              "Cannot combine values with different filters.");
         }
         if (!typeName.equals(this.values[i].getType().getName())) {
           throw new IllegalArgumentException(
-              LocalizedStrings.StatArchiveReader_CANT_COMBINE_VALUES_WITH_DIFFERENT_TYPES
-                  .toLocalizedString());
+              "Cannot combine values with different types.");
         }
         if (!statName.equals(this.values[i].getDescriptor().getName())) {
           throw new IllegalArgumentException(
-              LocalizedStrings.StatArchiveReader_CANT_COMBINE_DIFFERENT_STATS.toLocalizedString());
+              "Cannot combine different stats.");
         }
         if (this.values[i].getDescriptor().isCounter()) {
           // it is a counter which is not the default
@@ -774,6 +882,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       }
     }
 
+    @Override
     public StatValue createTrimmed(long startTime, long endTime) {
       if (startTime == this.startTime && endTime == this.endTime) {
         return this;
@@ -782,10 +891,12 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       }
     }
 
+    @Override
     public ResourceType getType() {
       return this.type;
     }
 
+    @Override
     public ResourceInst[] getResources() {
       Set set = new HashSet();
       for (int i = 0; i < values.length; i++) {
@@ -795,6 +906,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return (ResourceInst[]) set.toArray(result);
     }
 
+    @Override
     public boolean hasValueChanged() {
       return true;
     }
@@ -819,10 +931,12 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return (nextIdx < valueTimeStamps.length) && (valueTimeStamps[nextIdx] <= tsAtInsertPoint);
     }
 
+    @Override
     public long[] getRawAbsoluteTimeStampsWithSecondRes() {
       return getRawAbsoluteTimeStamps();
     }
 
+    @Override
     public long[] getRawAbsoluteTimeStamps() {
       if (values.length == 0) {
         return new long[0];
@@ -916,6 +1030,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return ourTimeStamps;
     }
 
+    @Override
     public double[] getRawSnapshots() {
       return getRawSnapshots(getRawAbsoluteTimeStamps());
     }
@@ -935,6 +1050,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return closer(ts, timeStamps[curIdx], timeStamps[curIdx + 1]);
     }
 
+    @Override
     public boolean isTrimmedLeft() {
       for (int i = 0; i < this.values.length; i++) {
         if (this.values[i].isTrimmedLeft()) {
@@ -991,6 +1107,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return result;
     }
 
+    @Override
     public double[] getSnapshots() {
       double[] result;
       if (filter != FILTER_NONE) {
@@ -1029,6 +1146,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
     private boolean valueChangeNoticed = false;
 
 
+    @Override
     public StatValue createTrimmed(long startTime, long endTime) {
       if (startTime == this.startTime && endTime == this.endTime) {
         return this;
@@ -1062,14 +1180,17 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       this.valueChangeNoticed = true;
     }
 
+    @Override
     public ResourceType getType() {
       return this.resource.getType();
     }
 
+    @Override
     public ResourceInst[] getResources() {
       return new ResourceInst[] {this.resource};
     }
 
+    @Override
     public boolean isTrimmedLeft() {
       return getStartIdx() != 0;
     }
@@ -1108,6 +1229,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return endIdx;
     }
 
+    @Override
     public double[] getSnapshots() {
       double[] result;
       int startIdx = getStartIdx();
@@ -1137,6 +1259,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return result;
     }
 
+    @Override
     public double[] getRawSnapshots() {
       int startIdx = getStartIdx();
       int endIdx = getEndIdx(startIdx);
@@ -1144,6 +1267,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return series.getValuesEx(descriptor.getTypeCode(), startIdx, resultSize);
     }
 
+    @Override
     public long[] getRawAbsoluteTimeStampsWithSecondRes() {
       long[] result = getRawAbsoluteTimeStamps();
       for (int i = 0; i < result.length; i++) {
@@ -1154,6 +1278,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return result;
     }
 
+    @Override
     public long[] getRawAbsoluteTimeStamps() {
       int startIdx = getStartIdx();
       int endIdx = getEndIdx(startIdx);
@@ -1172,6 +1297,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       }
     }
 
+    @Override
     public boolean hasValueChanged() {
       if (valueChangeNoticed) {
         valueChangeNoticed = false;
@@ -1192,6 +1318,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
     protected void dump(PrintWriter stream) {
       calcStats();
       stream.print("  " + descriptor.getName() + "=");
+      NumberFormat nf = getNumberFormat();
       stream.print("[size=" + getSnapshotsSize() + " min=" + nf.format(min) + " max="
           + nf.format(max) + " avg=" + nf.format(avg) + " stddev=" + nf.format(stddev) + "]");
       if (Boolean.getBoolean("StatArchiveReader.dumpall")) {
@@ -1887,8 +2014,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       // assert
       if (idx != resultSize) {
         throw new InternalGemFireException(
-            LocalizedStrings.StatArchiveReader_GETVALUESEX_DIDNT_FILL_THE_LAST_0_ENTRIES_OF_ITS_RESULT
-                .toLocalizedString(Integer.valueOf(resultSize - idx)));
+            String.format("getValuesEx did not fill the last %s entries of its result.",
+                Integer.valueOf(resultSize - idx)));
       }
       return result;
     }
@@ -2832,8 +2959,7 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       }
       if (!this.updateOK) {
         throw new InternalGemFireException(
-            LocalizedStrings.StatArchiveReader_UPDATE_OF_THIS_TYPE_OF_FILE_IS_NOT_SUPPORTED
-                .toLocalizedString());
+            "update of this type of file is not supported.");
       }
 
       if (doReset) {
@@ -2952,15 +3078,15 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       String machine = dataIn.readUTF();
       if (archiveVersion <= 1) {
         throw new GemFireIOException(
-            LocalizedStrings.StatArchiveReader_ARCHIVE_VERSION_0_IS_NO_LONGER_SUPPORTED
-                .toLocalizedString(Byte.valueOf(archiveVersion)),
+            String.format("Archive version: %s is no longer supported.",
+                Byte.valueOf(archiveVersion)),
             null);
       }
       if (archiveVersion > ARCHIVE_VERSION) {
         throw new GemFireIOException(
-            LocalizedStrings.StatArchiveReader_UNSUPPORTED_ARCHIVE_VERSION_0_THE_SUPPORTED_VERSION_IS_1
-                .toLocalizedString(
-                    new Object[] {Byte.valueOf(archiveVersion), Byte.valueOf(ARCHIVE_VERSION)}),
+            String.format("Unsupported archive version: %s .  The supported version is: %s .",
+
+                new Object[] {Byte.valueOf(archiveVersion), Byte.valueOf(ARCHIVE_VERSION)}),
             null);
       }
       this.archiveVersion = archiveVersion;
@@ -3150,8 +3276,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
               v = readCompactValue();
               break;
             default:
-              throw new IOException(LocalizedStrings.StatArchiveReader_UNEXPECTED_TYPECODE_VALUE_0
-                  .toLocalizedString(Byte.valueOf(stats[i].getTypeCode())));
+              throw new IOException(String.format("unexpected typeCode value %s",
+                  Byte.valueOf(stats[i].getTypeCode())));
           }
           resourceInstTable[resourceInstId].initialValue(i, v);
         }
@@ -3227,8 +3353,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
               statDeltaBits = readCompactValue();
               break;
             default:
-              throw new IOException(LocalizedStrings.StatArchiveReader_UNEXPECTED_TYPECODE_VALUE_0
-                  .toLocalizedString(Byte.valueOf(stats[statOffset].getTypeCode())));
+              throw new IOException(String.format("unexpected typeCode value %s",
+                  Byte.valueOf(stats[statOffset].getTypeCode())));
           }
           if (resourceInstTable[resourceInstId].addValueSample(statOffset, statDeltaBits)) {
             if (dump) {
@@ -3281,8 +3407,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
             readSampleToken();
             break;
           default:
-            throw new IOException(LocalizedStrings.StatArchiveReader_UNEXPECTED_TOKEN_BYTE_VALUE_0
-                .toLocalizedString(Byte.valueOf(token)));
+            throw new IOException(String.format("Unexpected token byte value: %s",
+                Byte.valueOf(token)));
         }
         return true;
       } catch (EOFException ignore) {
@@ -3303,4 +3429,12 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       return result;
     }
   }
+
+  private static NumberFormat getNumberFormat() {
+    NumberFormat nf = NumberFormat.getNumberInstance();
+    nf.setMaximumFractionDigits(2);
+    nf.setGroupingUsed(false);
+    return nf;
+  }
+
 }

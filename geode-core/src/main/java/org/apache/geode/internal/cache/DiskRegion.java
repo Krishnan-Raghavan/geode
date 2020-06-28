@@ -177,6 +177,7 @@ public class DiskRegion extends AbstractDiskRegion {
         startingBucketId, compressor, offHeap);
   }
 
+  @Override
   public CancelCriterion getCancelCriterion() {
     return cancel;
   }
@@ -267,6 +268,7 @@ public class DiskRegion extends AbstractDiskRegion {
   private void destroyOldTomstones(final DiskRecoveryStore drs) {
     // iterate over all region entries in drs
     drs.foreachRegionEntry(new RegionEntryCallback() {
+      @Override
       public void handleRegionEntry(RegionEntry regionEntry) {
         DiskEntry de = (DiskEntry) regionEntry;
         synchronized (de) {
@@ -287,6 +289,7 @@ public class DiskRegion extends AbstractDiskRegion {
   private void destroyRemainingRecoveredEntries(final DiskRecoveryStore drs) {
     // iterate over all region entries in drs
     drs.foreachRegionEntry(new RegionEntryCallback() {
+      @Override
       public void handleRegionEntry(RegionEntry regionEntry) {
         DiskEntry de = (DiskEntry) regionEntry;
         synchronized (de) {
@@ -308,6 +311,7 @@ public class DiskRegion extends AbstractDiskRegion {
   public void resetRecoveredEntries(final DiskRecoveryStore drs) {
     // iterate over all region entries in drs
     drs.foreachRegionEntry(new RegionEntryCallback() {
+      @Override
       public void handleRegionEntry(RegionEntry regionEntry) {
         DiskEntry de = (DiskEntry) regionEntry;
         synchronized (de) {
@@ -548,6 +552,7 @@ public class DiskRegion extends AbstractDiskRegion {
     getDiskStore().pauseFlusherForTesting();
   }
 
+  @Override
   public boolean isSync() {
     return this.isSync;
   }
@@ -602,6 +607,7 @@ public class DiskRegion extends AbstractDiskRegion {
     this.clearCount.incrementAndGet();
   }
 
+  @Override
   public boolean didClearCountChange() {
     Integer i = childReference.get();
     boolean result = i != null && i.intValue() != this.clearCount.get();
@@ -645,10 +651,12 @@ public class DiskRegion extends AbstractDiskRegion {
     // this.lock.unlock();
   }
 
+  @Override
   public void acquireReadLock() {
     getDiskStore().acquireReadLock(this);
   }
 
+  @Override
   public void releaseReadLock() {
     getDiskStore().releaseReadLock(this);
   }
@@ -673,15 +681,10 @@ public class DiskRegion extends AbstractDiskRegion {
   }
 
   void cleanupFailedInitialization(LocalRegion region) {
-    if (isRecreated() && !this.wasAboutToDestroy() && !this.wasAboutToDestroyDataStorage()) {
+    if (regionPreviouslyHostedData()) {
       close(region, isBucket());
     } else {
-      if (this.isBucket() && !this.wasAboutToDestroy()) {
-        // Fix for 48642
-        // If this is a bucket, only destroy the data, if required.
-        beginDestroyDataStorage();
-      }
-      endDestroy(region);
+      destroyPartiallyInitializedRegion(region);
     }
   }
 
@@ -689,6 +692,7 @@ public class DiskRegion extends AbstractDiskRegion {
     getDiskStore().prepareForClose(region, this);
   }
 
+  @Override
   public boolean isRegionClosed() {
     return this.isRegionClosed;
   }
@@ -737,7 +741,7 @@ public class DiskRegion extends AbstractDiskRegion {
   }
 
   Map<Long, Oplog> getOplogIdToOplog() {
-    return getOplogSet().oplogIdToOplog;
+    return getOplogSet().getOplogIdToOplog();
   }
 
   void testHookCloseAllOverflowChannels() {
@@ -757,6 +761,7 @@ public class DiskRegion extends AbstractDiskRegion {
       return;
     }
     region.foreachRegionEntry(new RegionEntryCallback() {
+      @Override
       public void handleRegionEntry(RegionEntry regionEntry) {
         DiskEntry de = (DiskEntry) regionEntry;
         DiskId id = de.getDiskId();
@@ -781,6 +786,7 @@ public class DiskRegion extends AbstractDiskRegion {
     });
   }
 
+  @Override
   public void finishPendingDestroy() {
     boolean wasFullDestroy = wasAboutToDestroy();
     super.endDestroy(null);
@@ -791,6 +797,7 @@ public class DiskRegion extends AbstractDiskRegion {
     }
   }
 
+  @Override
   public DiskStoreID getDiskStoreID() {
     return getDiskStore().getDiskStoreID();
   }
@@ -800,6 +807,7 @@ public class DiskRegion extends AbstractDiskRegion {
 
   }
 
+  @Override
   public void endRead(long start, long end, long bytesRead) {
     getStats().endRead(start, end, bytesRead);
   }
@@ -842,5 +850,29 @@ public class DiskRegion extends AbstractDiskRegion {
     // should never be called so throw an exception
     throw new IllegalStateException(
         "getExistingController should never be called on " + getClass());
+  }
+
+  private boolean regionPreviouslyHostedData() {
+    return isRecreated() && this.getMyPersistentID() != null && !this.wasAboutToDestroy()
+        && !this.wasAboutToDestroyDataStorage();
+  }
+
+  private void destroyPartiallyInitializedRegion(final LocalRegion region) {
+    if (this.isBucket() && !this.wasAboutToDestroy()) {
+      /*
+       * For bucket regions, we only destroy data storage for the following reason:
+       * The ProxyBucketRegion and DiskInitFile will hold a reference to the same AbstractDiskRegion
+       * object. If we do a full region destroy, it will result in the proxy and init file
+       * referencing different objects. This can lead to a memory leak because disk compaction will
+       * use the init file's version which may not have all changes from the in-memory version. A
+       * partial destroy ensures that the ProxyBucketRegion and DiskInitFile continue to share the
+       * same AbstractDiskRegion reference, which prevents this memory leak.
+       *
+       * Because we only destroy data storage, the persistence view will be maintained (disk ID will
+       * be non-null) but all data and initializing/initialized persistent IDs will be deleted.
+       */
+      beginDestroyDataStorage();
+    }
+    endDestroy(region);
   }
 }

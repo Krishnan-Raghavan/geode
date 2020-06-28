@@ -12,9 +12,6 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-/**
- * File comment
- */
 package org.apache.geode.internal.cache;
 
 import org.apache.geode.cache.client.internal.ServerRegionDataAccess;
@@ -56,16 +53,19 @@ public interface TXStateProxy extends TXStateInterface {
   /**
    * Perform additional tasks required by the proxy to suspend a transaction
    */
+  @Override
   void suspend();
 
   /**
    * Perform additional tasks required by the proxy to resume a transaction
    */
+  @Override
   void resume();
 
   /**
    * record a client-side transactional operation for possible later replay
    */
+  @Override
   void recordTXOperation(ServerRegionDataAccess proxy, ServerRegionOperation op, Object key,
       Object[] arguments);
 

@@ -15,6 +15,7 @@
 package org.apache.geode.internal.cache.partitioned;
 
 import static org.apache.geode.internal.lang.ThrowableUtils.getRootCause;
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -28,7 +29,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.awaitility.Awaitility;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -142,6 +142,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
 
     vm0.invoke(addExceptionTag1(expectedExceptions));
     Invoke.invokeInEveryVM(new SerializableRunnable("set TestInternalGemFireError") {
+      @Override
       public void run() {
         System.setProperty("TestInternalGemFireError", "true");
       }
@@ -151,6 +152,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     assertTrue(InternalDistributedSystem.getExistingSystems().isEmpty());
 
     Invoke.invokeInEveryVM(new SerializableRunnable("reset TestInternalGemFireError") {
+      @Override
       public void run() {
         System.setProperty("TestInternalGemFireError", "false");
       }
@@ -179,6 +181,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     vm0.invoke(addExceptionTag1(expectedExceptions));
     vm1.invoke(addExceptionTag1(expectedExceptions));
     Invoke.invokeInEveryVM(new SerializableRunnable("set TestInternalGemFireError") {
+      @Override
       public void run() {
         System.setProperty("TestInternalGemFireError", "true");
       }
@@ -188,6 +191,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     assertTrue(InternalDistributedSystem.getExistingSystems().isEmpty());
 
     Invoke.invokeInEveryVM(new SerializableRunnable("reset TestInternalGemFireError") {
+      @Override
       public void run() {
         System.setProperty("TestInternalGemFireError", "false");
       }
@@ -214,7 +218,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
         @Override
         public void cacheCreated(InternalCache cache) {
           calledCreateCache.set(true);
-          Awaitility.await().atMost(90, TimeUnit.SECONDS).until(() -> cache.isCacheAtShutdownAll());
+          await().until(() -> cache.isCacheAtShutdownAll());
         }
 
         @Override
@@ -227,14 +231,14 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     });
     try {
       boolean vm0CalledCreateCache = vm0.invoke(() -> {
-        Awaitility.await().atMost(90, TimeUnit.SECONDS).until(() -> calledCreateCache.get());
+        await().until(() -> calledCreateCache.get());
         return calledCreateCache.get();
       });
       assertTrue(vm0CalledCreateCache);
       shutDownAllMembers(vm2, 1);
       asyncCreate.get(60, TimeUnit.SECONDS);
       boolean vm0CalledCloseCache = vm0.invoke(() -> {
-        Awaitility.await().atMost(90, TimeUnit.SECONDS).until(() -> calledCloseCache.get());
+        await().until(() -> calledCloseCache.get());
         return calledCloseCache.get();
       });
       assertTrue(vm0CalledCloseCache);
@@ -417,24 +421,6 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     checkPRRecoveredFromDisk(vm1, "region", 0, true);
   }
 
-  /*
-   * @Test public void testStopNonPersistRegions() throws Throwable { Host host = Host.getHost(0);
-   * VM vm0 = host.getVM(0); VM vm1 = host.getVM(1); VM vm2 = host.getVM(2); createRegion(vm0,
-   * "region", null, true, 1); createRegion(vm1, "region", "disk", true, 1);
-   *
-   * createData(vm0, 0, 1, "a", "region");
-   *
-   * shutDownAllMembers(vm2, 2);
-   *
-   * // restart vms, and let vm0 to do GII from vm0 createRegion(vm1, "region", "disk", true, 1);
-   * createRegion(vm0, "region", null, true, 1);
-   *
-   * checkData(vm0, 0, 1, "a", "region"); checkData(vm1, 0, 1, "a", "region");
-   *
-   * checkPRRecoveredFromDisk(vm1, "region", 0, true); checkPRRecoveredFromDisk(vm0, "region", 0,
-   * false); }
-   */
-
   @Test
   public void testMultiPRDR() throws Throwable {
     Host host = Host.getHost(0);
@@ -497,6 +483,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
     // Add a cache listener that will cause the system to hang up.
     // Then do some puts to get us stuck in a put.
     AsyncInvocation async1 = vm0.invokeAsync(new SerializableRunnable() {
+      @Override
       public void run() {
         Region<Object, Object> region = getCache().getRegion("region");
         listener = new HangingCacheListener();
@@ -527,6 +514,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
 
     // clean up our stuck thread
     vm0.invoke(new SerializableRunnable() {
+      @Override
       public void run() {
         listener.latch.countDown();
         listener = null;
@@ -625,6 +613,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
   private void shutDownAllMembers(VM vm, final int expnum) {
     vm.invoke(new SerializableRunnable("Shutdown all the members") {
 
+      @Override
       public void run() {
         DistributedSystemConfig config;
         AdminDistributedSystemImpl adminDS = null;
@@ -653,6 +642,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
   private SerializableRunnable getCreateDRRunnable(final String regionName,
       final String diskStoreName) {
     return new SerializableRunnable("create DR") {
+      @Override
       public void run() {
         Cache cache = ShutdownAllDUnitTest.this.getCache();
 
@@ -671,6 +661,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
 
   protected void addCacheServer(VM vm, final int port) {
     vm.invoke(new SerializableRunnable("add Cache Server") {
+      @Override
       public void run() {
         Cache cache = getCache();
         CacheServer cs = cache.addCacheServer();
@@ -763,6 +754,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
       final String regionName) {
     SerializableRunnable createData = new SerializableRunnable() {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(regionName);
@@ -778,6 +770,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
   protected Set<Integer> getBucketList(VM vm, final String regionName) {
     SerializableCallable getBuckets = new SerializableCallable("get buckets") {
 
+      @Override
       public Object call() throws Exception {
         Cache cache = getCache();
         Region region = cache.getRegion(regionName);
@@ -797,6 +790,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
       final String regionName) {
     SerializableRunnable checkData = new SerializableRunnable() {
 
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(regionName);
@@ -813,6 +807,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
   protected void checkPRRecoveredFromDisk(VM vm, final String regionName, final int bucketId,
       final boolean recoveredLocally) {
     vm.invoke(new SerializableRunnable("check PR recovered from disk") {
+      @Override
       public void run() {
         Cache cache = getCache();
         PartitionedRegion region = (PartitionedRegion) cache.getRegion(regionName);
@@ -830,6 +825,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
 
   protected void closeRegion(VM vm, final String regionName) {
     SerializableRunnable close = new SerializableRunnable() {
+      @Override
       public void run() {
         Cache cache = getCache();
         Region region = cache.getRegion(regionName);
@@ -843,6 +839,7 @@ public class ShutdownAllDUnitTest extends JUnit4CacheTestCase {
   private void shutDownAllMembers(VM vm, final int expnum, final long timeout) {
     vm.invoke(new SerializableRunnable("Shutdown all the members") {
 
+      @Override
       public void run() {
         DistributedSystemConfig config;
         AdminDistributedSystemImpl adminDS = null;

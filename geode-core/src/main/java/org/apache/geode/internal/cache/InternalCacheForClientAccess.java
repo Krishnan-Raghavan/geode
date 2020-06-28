@@ -16,6 +16,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.util.internal.UncheckedUtils.uncheckedCast;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +25,7 @@ import java.net.URL;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -31,8 +34,11 @@ import java.util.concurrent.TimeUnit;
 import javax.naming.Context;
 import javax.transaction.TransactionManager;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.LogWriter;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.cache.CacheTransactionManager;
@@ -40,6 +46,7 @@ import org.apache.geode.cache.CacheWriterException;
 import org.apache.geode.cache.Declarable;
 import org.apache.geode.cache.DiskStore;
 import org.apache.geode.cache.DiskStoreFactory;
+import org.apache.geode.cache.DynamicRegionFactory;
 import org.apache.geode.cache.GatewayException;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionAttributes;
@@ -72,11 +79,14 @@ import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.i18n.LogWriterI18n;
 import org.apache.geode.internal.SystemTimer;
+import org.apache.geode.internal.admin.ClientHealthMonitoringRegion;
 import org.apache.geode.internal.cache.InitialImageOperation.Entry;
 import org.apache.geode.internal.cache.backup.BackupService;
 import org.apache.geode.internal.cache.control.InternalResourceManager;
 import org.apache.geode.internal.cache.control.ResourceAdvisor;
 import org.apache.geode.internal.cache.event.EventTrackerExpiryTask;
+import org.apache.geode.internal.cache.eviction.HeapEvictor;
+import org.apache.geode.internal.cache.eviction.OffHeapEvictor;
 import org.apache.geode.internal.cache.extension.ExtensionPoint;
 import org.apache.geode.internal.cache.persistence.PersistentMemberManager;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
@@ -84,8 +94,10 @@ import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.logging.InternalLogWriter;
 import org.apache.geode.internal.offheap.MemoryAllocator;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.internal.statistics.StatisticsClock;
 import org.apache.geode.management.internal.JmxManagerAdvisor;
 import org.apache.geode.management.internal.RestAgent;
+import org.apache.geode.pdx.JSONFormatter;
 import org.apache.geode.pdx.PdxInstance;
 import org.apache.geode.pdx.PdxInstanceFactory;
 import org.apache.geode.pdx.PdxSerializer;
@@ -96,6 +108,8 @@ import org.apache.geode.security.NotAuthorizedException;
  * This class delegates all methods to the InternalCache instance
  * it wraps. Any regions returned will be checked and if they are
  * internal an exception is thrown if they are.
+ *
+ * <p>
  * Note: an instance of this class should be used by servers that
  * process requests from clients that contains region names to prevent
  * the client from directly accessing internal regions.
@@ -109,16 +123,21 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   private void checkForInternalRegion(Region<?, ?> r) {
+    if (r == null) {
+      return;
+    }
     InternalRegion ir = (InternalRegion) r;
-    if (ir.isInternalRegion()) {
+    if (ir.isInternalRegion()
+        && !r.getName().equals(DynamicRegionFactory.DYNAMIC_REGION_LIST_NAME)
+        && !r.getName().equals(ClientHealthMonitoringRegion.ADMIN_REGION_NAME)) {
       throw new NotAuthorizedException("The region " + r.getName()
           + " is an internal region that a client is never allowed to access");
     }
   }
 
   @SuppressWarnings("unchecked")
-  private void checkSetOfRegions(@SuppressWarnings("rawtypes") Set regions) {
-    for (InternalRegion r : (Set<InternalRegion>) regions) {
+  private void checkSetOfRegions(Set regions) {
+    for (Region r : (Set<Region>) regions) {
       checkForInternalRegion(r);
     }
   }
@@ -130,11 +149,20 @@ public class InternalCacheForClientAccess implements InternalCache {
     return result;
   }
 
+  /**
+   * This method can be used to locate an internal region.
+   * It should not be invoked with a region name obtained
+   * from a client.
+   */
+  public <K, V> Region<K, V> getInternalRegion(String path) {
+    return delegate.getRegion(path);
+  }
+
   @Override
-  public Region getRegion(String path, boolean returnDestroyedRegion) {
+  public <K, V> Region<K, V> getRegion(String path, boolean returnDestroyedRegion) {
     Region result = delegate.getRegion(path, returnDestroyedRegion);
     checkForInternalRegion(result);
-    return result;
+    return uncheckedCast(result);
   }
 
   @Override
@@ -145,8 +173,15 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public InternalRegion getRegionByPath(String path) {
-    InternalRegion result = delegate.getRegionByPath(path);
+  public <K, V> Region<K, V> getRegionByPath(String path) {
+    InternalRegion result = delegate.getInternalRegionByPath(path);
+    checkForInternalRegion(result);
+    return uncheckedCast(result);
+  }
+
+  @Override
+  public InternalRegion getInternalRegionByPath(String path) {
+    InternalRegion result = delegate.getInternalRegionByPath(path);
     checkForInternalRegion(result);
     return result;
   }
@@ -210,14 +245,23 @@ public class InternalCacheForClientAccess implements InternalCache {
     return delegate.createVMRegion(name, p_attrs, internalRegionArgs);
   }
 
+  /**
+   * This method allows server-side code to create an internal region. It should
+   * not be invoked with a region name obtained from a client.
+   */
+  public <K, V> Region<K, V> createInternalRegion(String name, RegionAttributes<K, V> p_attrs,
+      InternalRegionArguments internalRegionArgs)
+      throws RegionExistsException, TimeoutException, IOException, ClassNotFoundException {
+    return delegate.createVMRegion(name, p_attrs, internalRegionArgs);
+  }
+
   @Override
   public Cache getReconnectedCache() {
     Cache reconnectedCache = delegate.getReconnectedCache();
     if (reconnectedCache != null) {
       return new InternalCacheForClientAccess((InternalCache) reconnectedCache);
-    } else {
-      return null;
     }
+    return null;
   }
 
   @Override
@@ -604,6 +648,11 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
+  public <T extends CacheService> Optional<T> getOptionalService(Class<T> clazz) {
+    return Optional.ofNullable(getService(clazz));
+  }
+
+  @Override
   public Collection<CacheService> getServices() {
     return delegate.getServices();
   }
@@ -910,16 +959,12 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public void determineDefaultPool() {
-    delegate.determineDefaultPool();
-  }
-
-  @Override
   public BackupService getBackupService() {
     return delegate.getBackupService();
   }
 
   @Override
+  @VisibleForTesting
   public Throwable getDisconnectCause() {
     return delegate.getDisconnectCause();
   }
@@ -975,9 +1020,9 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public void close(String reason, Throwable systemFailureCause, boolean keepAlive,
-      boolean keepDS) {
-    delegate.close(reason, systemFailureCause, keepAlive, keepDS);
+  public void close(String reason, Throwable systemFailureCause, boolean keepAlive, boolean keepDS,
+      boolean skipAwait) {
+    delegate.close(reason, systemFailureCause, keepAlive, keepDS, skipAwait);
   }
 
   @Override
@@ -991,7 +1036,7 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public int getUpTime() {
+  public long getUpTime() {
     return delegate.getUpTime();
   }
 
@@ -1011,7 +1056,7 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public List getCacheServersAndGatewayReceiver() {
+  public List<InternalCacheServer> getCacheServersAndGatewayReceiver() {
     return delegate.getCacheServersAndGatewayReceiver();
   }
 
@@ -1066,6 +1111,7 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
+  @VisibleForTesting
   public RestAgent getRestAgent() {
     return delegate.getRestAgent();
   }
@@ -1096,16 +1142,23 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public CacheServer addCacheServer(boolean isGatewayReceiver) {
-    return delegate.addCacheServer(isGatewayReceiver);
+  public InternalCacheServer addGatewayReceiverServer(GatewayReceiver receiver) {
+    return delegate.addGatewayReceiverServer(receiver);
   }
 
   @Override
+  @VisibleForTesting
   public boolean removeCacheServer(CacheServer cacheServer) {
     return delegate.removeCacheServer(cacheServer);
   }
 
   @Override
+  public boolean removeGatewayReceiverServer(InternalCacheServer receiverServer) {
+    return delegate.removeGatewayReceiverServer(receiverServer);
+  }
+
+  @Override
+  @VisibleForTesting
   public void setReadSerializedForTest(boolean value) {
     delegate.setReadSerializedForTest(value);
   }
@@ -1153,16 +1206,38 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public InternalQueryService getQueryService() {
+  public QueryService getQueryService() {
     return delegate.getQueryService();
   }
 
   @Override
+  public InternalQueryService getInternalQueryService() {
+    return delegate.getInternalQueryService();
+  }
+
+  @Override
+  public void lockDiskStore(String diskStoreName) {
+
+  }
+
+  @Override
+  public void unlockDiskStore(String diskStoreName) {
+
+  }
+
+  @Override
+  public JSONFormatter getJsonFormatter() {
+    return delegate.getJsonFormatter();
+  }
+
+  @Override
+  @VisibleForTesting
   public Set<AsyncEventQueue> getAsyncEventQueues(boolean visibleOnly) {
     return delegate.getAsyncEventQueues(visibleOnly);
   }
 
   @Override
+  @VisibleForTesting
   public void closeDiskStores() {
     delegate.closeDiskStores();
   }
@@ -1183,7 +1258,44 @@ public class InternalCacheForClientAccess implements InternalCache {
   }
 
   @Override
-  public InternalCache getCacheForProcessingClientRequests() {
+  public InternalCacheForClientAccess getCacheForProcessingClientRequests() {
     return this;
+  }
+
+  @Override
+  public void initialize() {
+    // do nothing
+  }
+
+  @Override
+  public void throwCacheExistsException() {
+    delegate.throwCacheExistsException();
+  }
+
+  @Override
+  public MeterRegistry getMeterRegistry() {
+    return delegate.getMeterRegistry();
+  }
+
+  @Override
+  public void saveCacheXmlForReconnect() {
+    delegate.saveCacheXmlForReconnect();
+  }
+
+  @Override
+  @VisibleForTesting
+  public HeapEvictor getHeapEvictor() {
+    return delegate.getHeapEvictor();
+  }
+
+  @Override
+  @VisibleForTesting
+  public OffHeapEvictor getOffHeapEvictor() {
+    return delegate.getOffHeapEvictor();
+  }
+
+  @Override
+  public StatisticsClock getStatisticsClock() {
+    return delegate.getStatisticsClock();
   }
 }

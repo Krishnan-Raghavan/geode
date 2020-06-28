@@ -23,17 +23,16 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.distributed.ConfigurationProperties;
 import org.apache.geode.internal.cache.tier.CommunicationMode;
-import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.protocol.protobuf.v1.BasicTypes;
 import org.apache.geode.internal.protocol.protobuf.v1.MessageExecutionContext;
 import org.apache.geode.internal.protocol.protobuf.v1.ProtobufOperationContext;
-import org.apache.geode.internal.protocol.protobuf.v1.ProtobufOpsProcessor;
 import org.apache.geode.internal.protocol.protobuf.v1.operations.ProtocolVersionHandler;
 import org.apache.geode.internal.protocol.protobuf.v1.state.exception.ConnectionStateException;
 import org.apache.geode.internal.security.SecurityService;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 public class RequireVersion implements ConnectionState {
-  private static final Logger logger = LogService.getLogger(ProtobufOpsProcessor.class);
+  private static final Logger logger = LogService.getLogger();
   private final SecurityService securityService;
 
   public RequireVersion(SecurityService securityService) {
@@ -41,13 +40,16 @@ public class RequireVersion implements ConnectionState {
   }
 
   @Override
-  public void validateOperation(ProtobufOperationContext operationContext)
+  public void validateOperation(
+      @SuppressWarnings("rawtypes") ProtobufOperationContext operationContext)
       throws ConnectionStateException {
     throw new ConnectionStateException(BasicTypes.ErrorCode.INVALID_REQUEST,
         "Connection processing should never be asked to validate an operation");
   }
 
-  private ConnectionState nextConnectionState(MessageExecutionContext executionContext) {
+  @SuppressWarnings("deprecation")
+  private ConnectionState nextConnectionState(
+      @SuppressWarnings("unused") MessageExecutionContext executionContext) {
     if (securityService.isIntegratedSecurity()) {
       return new RequireAuthentication();
     } else if (securityService.isPeerSecurityRequired()

@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.MCAST_PORT;
 import static org.apache.geode.internal.Assert.fail;
@@ -66,10 +67,10 @@ import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
 import org.apache.geode.internal.cache.tier.sockets.ConflationDUnitTestHelper;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.DistributedTestCase;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 import org.apache.geode.test.junit.categories.SerializationTest;
@@ -86,7 +87,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   private static final String LAST_KEY = "LAST_KEY";
   private static final String REGION_NAME = "PRDeltaPropagationDUnitTest_Region";
   private static final String CQ =
-      "SELECT * FROM " + Region.SEPARATOR + REGION_NAME + " p where p.intVar < 9";
+      "SELECT * FROM " + SEPARATOR + REGION_NAME + " p where p.intVar < 9";
 
   private static Cache cache = null;
   private static Region deltaPR = null;
@@ -307,7 +308,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * 1) Put delta objects on client feeder connected PR accessor bridge server. 2) From accessor to
+   * 1) Put delta objects on client feeder connected PR accessor cache server. 2) From accessor to
    * data store delta gets propagated as part of <code>PutMessage</code> delta. 3) From data store
    * to client delta should get propagated.
    */
@@ -326,7 +327,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * 1) Put delta objects on client feeder connected PR accessor bridge server. 2) From accessor to
+   * 1) Put delta objects on client feeder connected PR accessor cache server. 2) From accessor to
    * data store delta gets propagated as part of <code>PutMessage</code> delta. 3) Exception occurs
    * when applying delta on datastore node. This invalid delta exception propagated back to client
    * through accessor. 4) Client sends full object in response.
@@ -398,7 +399,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * 1) Put delta objects on client feeder connected accessor bridge server. 2) From accessor to
+   * 1) Put delta objects on client feeder connected accessor cache server. 2) From accessor to
    * data store delta gets propagated as part of <code>UpdateMessage</code> delta. 3) Exception
    * occurs when applying delta on datastore node. This invalid delta exception propagated back to
    * client through accessor. 4) Client sends full object in response.
@@ -437,7 +438,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * 1) Put delta objects on feeder connected accessor bridge server. 2) Second client attached to
+   * 1) Put delta objects on feeder connected accessor cache server. 2) Second client attached to
    * datastore. Register CQ. 3) Varifies that no data loss, event revcieved on second client
    */
   @Test
@@ -519,7 +520,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * Topology: PR: Accessor,DataStore,Bridge server; configured for 2 buckets and redundancy 1
+   * Topology: PR: Accessor,DataStore,cache server; configured for 2 buckets and redundancy 1
    * DataStore has primary while BridgeServer has secondary of bucket. client connects to PR
    * Accessor client1 connects to PR BridgeServer client1 registers CQ client puts delta objects on
    * accessor Verify on client1 that queryUpdate and queryDestroy are executed properly
@@ -564,7 +565,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * Topology: PR: Accessor,DataStore,Bridge server; configured for 2 buckets and redundancy 1
+   * Topology: PR: Accessor,DataStore,cache server; configured for 2 buckets and redundancy 1
    * DataStore has primary while BridgeServer has secondary of bucket. client connects to PR
    * Accessor client1 connects to PR BridgeServer client1 registers Interest as well as CQ client
    * puts delta objects on accessor Verify that client1 receives 2 deltas for 2 updates (due to RI)
@@ -609,7 +610,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
   }
 
   /**
-   * 1) Put delta objects on client feeder connected to PR accessor bridge server. 2) From accessor
+   * 1) Put delta objects on client feeder connected to PR accessor cache server. 2) From accessor
    * to data store delta gets propagated as part of <code>PutMessage</code> delta. 3) From data
    * store to accessor delta + full value gets propagated as part of Adjunct Message. 4) From
    * accessor to client delta should get propagated.
@@ -853,7 +854,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
     numValidCqEvents = 0;
 
     PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer("localhost", port1)
-        .setSubscriptionEnabled(true).setSubscriptionRedundancy(0).setThreadLocalConnections(true)
+        .setSubscriptionEnabled(true).setSubscriptionRedundancy(0)
         .setMinConnections(6).setReadTimeout(20000).setPingInterval(10000).setRetryAttempts(5)
         .create("PRDeltaPropagationDUnitTestPool");
 
@@ -934,7 +935,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
 
     PoolImpl p = (PoolImpl) PoolManager.createFactory().addServer("localhost", port1)
         .addServer("localhost", port2).setSubscriptionEnabled(true).setSubscriptionRedundancy(1)
-        .setThreadLocalConnections(true).setMinConnections(6).setReadTimeout(20000)
+        .setMinConnections(6).setReadTimeout(20000)
         .setPingInterval(10000).setRetryAttempts(5).create("PRDeltaPropagationDUnitTestPool");
 
     AttributesFactory factory = new AttributesFactory();
@@ -1067,7 +1068,7 @@ public class PRDeltaPropagationDUnitTest extends DistributedTestCase {
         return "Last key NOT received.";
       }
     };
-    Wait.waitForCriterion(wc, 10 * 1000, 100, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   private boolean verifyQueryUpdateExecuted() {

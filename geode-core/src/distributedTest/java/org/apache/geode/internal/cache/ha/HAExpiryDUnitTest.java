@@ -14,6 +14,9 @@
  */
 package org.apache.geode.internal.cache.ha;
 
+import static org.apache.geode.cache.Region.SEPARATOR;
+import static org.apache.geode.internal.cache.ha.HARegionQueue.createRegionName;
+import static org.apache.geode.internal.statistics.StatisticsClockFactory.disabledClock;
 import static org.junit.Assert.assertNotNull;
 
 import java.util.Properties;
@@ -38,6 +41,7 @@ import org.apache.geode.internal.cache.EventID;
 import org.apache.geode.internal.cache.HARegion;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.cache.RegionQueue;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.SerializableRunnable;
@@ -57,13 +61,13 @@ import org.apache.geode.test.junit.categories.ClientSubscriptionTest;
 @Category({ClientSubscriptionTest.class})
 public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
 
-  VM vm0 = null;
+  private VM vm0 = null;
 
-  VM vm1 = null;
+  private VM vm1 = null;
 
-  VM vm2 = null;
+  private VM vm2 = null;
 
-  VM vm3 = null;
+  private VM vm3 = null;
 
   protected static InternalCache cache = null;
 
@@ -71,13 +75,7 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
 
   private static final String REGION_NAME = "HAExpiryDUnitTest_region";
 
-  static RegionQueue regionqueue = null;
-
-  protected static int regionQueueSize = -1;
-
-  public HAExpiryDUnitTest() {
-    super();
-  }
+  private static int regionQueueSize = -1;
 
   /**
    * This function creates regionqueue on 4 VMs
@@ -103,6 +101,7 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
     vm3.invoke(() -> HAExpiryDUnitTest.closeCache());
     cache = null;
     Invoke.invokeInEveryVM(new SerializableRunnable() {
+      @Override
       public void run() {
         cache = null;
       }
@@ -118,8 +117,9 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
 
     vm0.invoke(new CacheSerializableRunnable("putFromVm") {
 
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         region.put("KEY1", "VALUE1");
       }
     });
@@ -146,8 +146,9 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
 
     vm0.invoke(new CacheSerializableRunnable("putFromVm") {
 
+      @Override
       public void run2() throws CacheException {
-        Region region = cache.getRegion(Region.SEPARATOR + REGION_NAME);
+        Region region = cache.getRegion(SEPARATOR + REGION_NAME);
         region.put("KEY1", "VALUE1");
       }
     });
@@ -172,22 +173,24 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
    * This function checks the regionqueue size before expiration. size should be > 0.
    *
    */
-  public static void checkSizeBeforeExpiration() throws Exception {
+  private static void checkSizeBeforeExpiration() throws Exception {
     HARegion regionForQueue = (HARegion) cache
-        .getRegion(Region.SEPARATOR + HARegionQueue.createRegionName(regionQueueName));
+        .getRegion(SEPARATOR + createRegionName(regionQueueName));
     final HARegionQueue regionqueue = regionForQueue.getOwner();
     regionQueueSize = regionqueue.size();
     cache.getLogger().info("Size of the regionqueue before expiration is " + regionQueueSize);
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return regionqueue.size() >= 1;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
     /*
      * if (regionqueue.size() < 1) fail("RegionQueue size canot be less than 1 before expiration");
      */
@@ -197,22 +200,24 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
    * This function checks the regionqueue size After expiration. size should be = 0.
    *
    */
-  public static void checkSizeAfterExpiration() throws Exception {
+  private static void checkSizeAfterExpiration() throws Exception {
 
     HARegion regionForQueue = (HARegion) cache
-        .getRegion(Region.SEPARATOR + HARegionQueue.createRegionName(regionQueueName));
+        .getRegion(SEPARATOR + createRegionName(regionQueueName));
     final HARegionQueue regionqueue = regionForQueue.getOwner();
     cache.getLogger().info("Size of the regionqueue After expiration is " + regionqueue.size());
     WaitCriterion ev = new WaitCriterion() {
+      @Override
       public boolean done() {
         return regionqueue.size() <= regionQueueSize;
       }
 
+      @Override
       public String description() {
         return null;
       }
     };
-    Wait.waitForCriterion(ev, 60 * 1000, 200, true);
+    GeodeAwaitility.await().untilAsserted(ev);
 
     /*
      * if (regionqueue.size() > regionQueueSize) fail("RegionQueue size should be 0 after
@@ -229,13 +234,13 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
     assertNotNull(cache);
   }
 
-  public static void createRegionQueue(Boolean isDurable) throws Exception {
+  private static void createRegionQueue(Boolean isDurable) throws Exception {
     new HAExpiryDUnitTest().createCache(new Properties());
     HARegionQueueAttributes hattr = new HARegionQueueAttributes();
     // setting expiry time for the regionqueue.
     hattr.setExpiryTime(4);
     RegionQueue regionqueue = HARegionQueue.getHARegionQueueInstance(regionQueueName, cache, hattr,
-        HARegionQueue.NON_BLOCKING_HA_QUEUE, isDurable.booleanValue());
+        HARegionQueue.NON_BLOCKING_HA_QUEUE, isDurable.booleanValue(), disabledClock());
     assertNotNull(regionqueue);
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
@@ -258,10 +263,11 @@ public class HAExpiryDUnitTest extends JUnit4DistributedTestCase {
    * This listener performs the put of Conflatable object in the regionqueue.
    */
   static class VMListener extends CacheListenerAdapter {
+    @Override
     public void afterCreate(EntryEvent event) {
       Cache cache = event.getRegion().getCache();
       HARegion regionForQueue = (HARegion) cache.getRegion(
-          Region.SEPARATOR + HARegionQueue.createRegionName(HAExpiryDUnitTest.regionQueueName));
+          SEPARATOR + HARegionQueue.createRegionName(HAExpiryDUnitTest.regionQueueName));
       HARegionQueue regionqueue = regionForQueue.getOwner();
       try {
         regionqueue.put(new ConflatableObject(event.getKey(), event.getNewValue(),

@@ -14,6 +14,8 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.internal.cache.LocalRegion.InitializationLevel.ANY_INIT;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -37,6 +39,9 @@ import org.apache.geode.CancelException;
 import org.apache.geode.DataSerializer;
 import org.apache.geode.InternalGemFireError;
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.annotations.VisibleForTesting;
+import org.apache.geode.annotations.internal.MutableForTesting;
 import org.apache.geode.cache.CacheEvent;
 import org.apache.geode.cache.EntryEvent;
 import org.apache.geode.cache.Operation;
@@ -57,23 +62,24 @@ import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.ClassLoadUtil;
 import org.apache.geode.internal.CopyOnWriteHashSet;
-import org.apache.geode.internal.DataSerializableFixedID;
 import org.apache.geode.internal.InternalDataSerializer;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.CacheDistributionAdvisor.CacheProfile;
 import org.apache.geode.internal.cache.DistributedPutAllOperation.PutAllEntryData;
 import org.apache.geode.internal.cache.DistributedRemoveAllOperation.RemoveAllEntryData;
 import org.apache.geode.internal.cache.FilterRoutingInfo.FilterInfo;
+import org.apache.geode.internal.cache.LocalRegion.InitializationLevel;
 import org.apache.geode.internal.cache.tier.InterestType;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.ClientProxyMembershipID;
 import org.apache.geode.internal.cache.tier.sockets.UnregisterAllInterest;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
 import org.apache.geode.internal.offheap.annotations.Unretained;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 import org.apache.geode.internal.util.concurrent.CopyOnWriteHashMap;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * FilterProfile represents a distributed system member and is used for two purposes: processing
@@ -108,7 +114,8 @@ public class FilterProfile implements DataSerializableFixedID {
   /**
    * these booleans tell whether the associated operationType pertains to CQs or not
    */
-  static boolean[] isCQOperation =
+  @Immutable
+  private static final boolean[] isCQOperation =
       {false, false, false, false, false, false, false, false, false, true, true, true, true, true};
 
   /**
@@ -290,7 +297,7 @@ public class FilterProfile implements DataSerializableFixedID {
 
         default:
           throw new InternalGemFireError(
-              LocalizedStrings.CacheClientProxy_UNKNOWN_INTEREST_TYPE.toLocalizedString());
+              "Unknown interest type");
       } // switch
       if (this.isLocalProfile && opType != null) {
         sendProfileOperation(clientID, opType, interest, updatesAsInvalidates);
@@ -307,11 +314,11 @@ public class FilterProfile implements DataSerializableFixedID {
       filterClass = ClassLoadUtil.classFromName((String) interest);
       filter = (InterestFilter) filterClass.newInstance();
     } catch (ClassNotFoundException cnfe) {
-      throw new RuntimeException(LocalizedStrings.CacheClientProxy_CLASS_0_NOT_FOUND_IN_CLASSPATH
-          .toLocalizedString(interest), cnfe);
+      throw new RuntimeException(String.format("Class %s not found in classpath.",
+          interest), cnfe);
     } catch (Exception e) {
-      throw new RuntimeException(LocalizedStrings.CacheClientProxy_CLASS_0_COULD_NOT_BE_INSTANTIATED
-          .toLocalizedString(interest), e);
+      throw new RuntimeException(String.format("Class %s could not be instantiated.",
+          interest), e);
     }
     Map interestMap = filts.get(clientID);
     if (interestMap == null) {
@@ -392,7 +399,7 @@ public class FilterProfile implements DataSerializableFixedID {
         }
         default:
           throw new InternalGemFireError(
-              LocalizedStrings.CacheClientProxy_BAD_INTEREST_TYPE.toLocalizedString());
+              "bad interest type");
       }
       if (this.region != null && this.isLocalProfile) {
         sendProfileOperation(clientID, opType, interest, false);
@@ -944,6 +951,9 @@ public class FilterProfile implements DataSerializableFixedID {
         this.closeCq(cq);
       }
     }
+
+    // Remove the client from the clientMap
+    this.clientMap.removeIDMapping(client);
   }
 
   /**
@@ -982,7 +992,7 @@ public class FilterProfile implements DataSerializableFixedID {
 
   private void sendProfileOperation(Long clientID, operationType opType, Object interest,
       boolean updatesAsInvalidates) {
-    if (this.region == null || !(this.region instanceof PartitionedRegion)) {
+    if (!(this.region instanceof PartitionedRegion)) {
       return;
     }
     OperationMessage msg = new OperationMessage();
@@ -1030,6 +1040,7 @@ public class FilterProfile implements DataSerializableFixedID {
     }
   }
 
+  @Immutable
   static final Profile[] NO_PROFILES = new Profile[0];
 
   private final CacheProfile localProfile = new CacheProfile(this);
@@ -1072,21 +1083,32 @@ public class FilterProfile implements DataSerializableFixedID {
     }
 
     FilterRoutingInfo frInfo = null;
+    // bug #50809 - local routing for transactional ops must be done here
+    // because the event isn't available later and we lose the old value for the entry
+    boolean processLocalProfile = false;
 
     CqService cqService = getCqService(event.getRegion());
     if (cqService.isRunning()) {
-      frInfo = new FilterRoutingInfo();
-      // bug #50809 - local routing for transactional ops must be done here
-      // because the event isn't available later and we lose the old value for the entry
-      final boolean processLocalProfile =
+      processLocalProfile =
           event.getOperation().isEntry() && ((EntryEvent) event).getTransactionId() != null;
+      frInfo = new FilterRoutingInfo();
       fillInCQRoutingInfo(event, processLocalProfile, peerProfiles, frInfo);
+    }
+
+    Profile[] tempProfiles = peerProfiles;
+
+    if (processLocalProfile) {
+      tempProfiles = new Profile[peerProfiles.length + 1];
+      for (int i = 0; i < peerProfiles.length; i++) {
+        tempProfiles[i] = peerProfiles[i];
+      }
+      tempProfiles[peerProfiles.length] = localProfile;
     }
 
     // Process InterestList.
     // return fillInInterestRoutingInfo(event, peerProfiles, frInfo, cacheOpRecipients);
-    frInfo = fillInInterestRoutingInfo(event, peerProfiles, frInfo, cacheOpRecipients);
-    if (frInfo == null || !frInfo.hasMemberWithFilterInfo()) {
+    frInfo = fillInInterestRoutingInfo(event, tempProfiles, frInfo, cacheOpRecipients);
+    if (frInfo == null || (!frInfo.hasMemberWithFilterInfo() && !processLocalProfile)) {
       return null;
     } else {
       return frInfo;
@@ -1150,8 +1172,7 @@ public class FilterProfile implements DataSerializableFixedID {
         throw err;
       } catch (Throwable t) {
         SystemFailure.checkFailure();
-        logger.error(LocalizedMessage.create(
-            LocalizedStrings.CacheClientNotifier_EXCEPTION_OCCURRED_WHILE_PROCESSING_CQS), t);
+        logger.error("Exception occurred while processing CQs", t);
       }
     }
   }
@@ -1172,11 +1193,7 @@ public class FilterProfile implements DataSerializableFixedID {
       Set clients = null;
       int size = putAllData.length;
       CqService cqService = getCqService(dpao.getRegion());
-      boolean doCQs = cqService.isRunning()
-          && this.region != null /*
-                                  * && !(this.region.isUsedForPartitionedRegionBucket() ||
-                                  * (this.region instanceof PartitionedRegion))
-                                  */;
+      boolean doCQs = cqService.isRunning();
       for (int idx = 0; idx < size; idx++) {
         PutAllEntryData pEntry = putAllData[idx];
         if (pEntry != null) {
@@ -1197,16 +1214,10 @@ public class FilterProfile implements DataSerializableFixedID {
             fillInCQRoutingInfo(ev, true, NO_PROFILES, fri);
             fi = fri.getLocalFilterInfo();
           }
-          if (this.allKeyClientsInv != null || this.keysOfInterestInv != null
-              || this.patternsOfInterestInv != null || this.filtersOfInterestInv != null) {
-            clientsInv = this.getInterestedClients(ev, this.allKeyClientsInv,
-                this.keysOfInterestInv, this.patternsOfInterestInv, this.filtersOfInterestInv);
-          }
-          if (this.allKeyClients != null || this.keysOfInterest != null
-              || this.patternsOfInterest != null || this.filtersOfInterest != null) {
-            clients = this.getInterestedClients(ev, this.allKeyClients, this.keysOfInterest,
-                this.patternsOfInterest, this.filtersOfInterest);
-          }
+          clientsInv = this.getInterestedClients(ev, this.allKeyClientsInv,
+              this.keysOfInterestInv, this.patternsOfInterestInv, this.filtersOfInterestInv);
+          clients = this.getInterestedClients(ev, this.allKeyClients, this.keysOfInterest,
+              this.patternsOfInterest, this.filtersOfInterest);
           if (clients != null || clientsInv != null) {
             if (fi == null) {
               fi = new FilterInfo();
@@ -1231,7 +1242,7 @@ public class FilterProfile implements DataSerializableFixedID {
       Set clients = null;
       int size = removeAllData.length;
       CqService cqService = getCqService(op.getRegion());
-      boolean doCQs = cqService.isRunning() && this.region != null;
+      boolean doCQs = cqService.isRunning();
       for (int idx = 0; idx < size; idx++) {
         RemoveAllEntryData pEntry = removeAllData[idx];
         if (pEntry != null) {
@@ -1252,16 +1263,10 @@ public class FilterProfile implements DataSerializableFixedID {
             fillInCQRoutingInfo(ev, true, NO_PROFILES, fri);
             fi = fri.getLocalFilterInfo();
           }
-          if (this.allKeyClientsInv != null || this.keysOfInterestInv != null
-              || this.patternsOfInterestInv != null || this.filtersOfInterestInv != null) {
-            clientsInv = this.getInterestedClients(ev, this.allKeyClientsInv,
-                this.keysOfInterestInv, this.patternsOfInterestInv, this.filtersOfInterestInv);
-          }
-          if (this.allKeyClients != null || this.keysOfInterest != null
-              || this.patternsOfInterest != null || this.filtersOfInterest != null) {
-            clients = this.getInterestedClients(ev, this.allKeyClients, this.keysOfInterest,
-                this.patternsOfInterest, this.filtersOfInterest);
-          }
+          clientsInv = this.getInterestedClients(ev, this.allKeyClientsInv,
+              this.keysOfInterestInv, this.patternsOfInterestInv, this.filtersOfInterestInv);
+          clients = this.getInterestedClients(ev, this.allKeyClients, this.keysOfInterest,
+              this.patternsOfInterest, this.filtersOfInterest);
           if (clients != null || clientsInv != null) {
             if (fi == null) {
               fi = new FilterInfo();
@@ -1334,18 +1339,16 @@ public class FilterProfile implements DataSerializableFixedID {
         continue;
       }
 
+      if (event.getOperation() == null) {
+        continue;
+      }
+
       if (event.getOperation().isEntry()) {
         EntryEvent entryEvent = (EntryEvent) event;
-        if (pf.allKeyClientsInv != null || pf.keysOfInterestInv != null
-            || pf.patternsOfInterestInv != null || pf.filtersOfInterestInv != null) {
-          clientsInv = pf.getInterestedClients(entryEvent, pf.allKeyClientsInv,
-              pf.keysOfInterestInv, pf.patternsOfInterestInv, pf.filtersOfInterestInv);
-        }
-        if (pf.allKeyClients != null || pf.keysOfInterest != null || pf.patternsOfInterest != null
-            || pf.filtersOfInterest != null) {
-          clients = pf.getInterestedClients(entryEvent, pf.allKeyClients, pf.keysOfInterest,
-              pf.patternsOfInterest, pf.filtersOfInterest);
-        }
+        clientsInv = pf.getInterestedClients(entryEvent, pf.allKeyClientsInv,
+            pf.keysOfInterestInv, pf.patternsOfInterestInv, pf.filtersOfInterestInv);
+        clients = pf.getInterestedClients(entryEvent, pf.allKeyClients, pf.keysOfInterest,
+            pf.patternsOfInterest, pf.filtersOfInterest);
       } else {
         if (event.getOperation().isRegionDestroy() || event.getOperation().isClear()) {
           clientsInv = pf.getAllClientsWithInterestInv();
@@ -1475,7 +1478,9 @@ public class FilterProfile implements DataSerializableFixedID {
   }
 
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {
     InternalDistributedMember id = new InternalDistributedMember();
     InternalDataSerializer.invokeFromData(id, in);
     this.memberID = id;
@@ -1493,11 +1498,7 @@ public class FilterProfile implements DataSerializableFixedID {
     // Read CQ Info.
     int numCQs = InternalDataSerializer.readArrayLength(in);
     if (numCQs > 0) {
-      int oldLevel = LocalRegion.setThreadInitLevelRequirement(LocalRegion.ANY_INIT); // do this
-                                                                                      // before
-                                                                                      // CacheFactory.getInstance
-                                                                                      // for bug
-                                                                                      // 33471
+      final InitializationLevel oldLevel = LocalRegion.setThreadInitLevelRequirement(ANY_INIT);
       try {
         for (int i = 0; i < numCQs; i++) {
           String serverCqName = DataSerializer.readString(in);
@@ -1512,11 +1513,14 @@ public class FilterProfile implements DataSerializableFixedID {
 
   }
 
+  @Override
   public int getDSFID() {
     return FILTER_PROFILE;
   }
 
-  public void toData(DataOutput out) throws IOException {
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {
     InternalDataSerializer.invokeToData(memberID, out);
     InternalDataSerializer.writeSetOfLongs(this.allKeyClients.getSnapshot(),
         this.clientMap.hasLongID, out);
@@ -1706,6 +1710,28 @@ public class FilterProfile implements DataSerializableFixedID {
    */
   public String getRealCqID(Long integerID) {
     return (String) cqMap.getRealID(integerID);
+  }
+
+  /**
+   * Return the set of real client proxy ids
+   *
+   * @return the set of real client proxy ids
+   */
+  @VisibleForTesting
+  public Set getRealClientIds() {
+    return clientMap == null ? Collections.emptySet()
+        : Collections.unmodifiableSet(clientMap.realIDs.keySet());
+  }
+
+  /**
+   * Return the set of wire client proxy ids
+   *
+   * @return the set of wire client proxy ids
+   */
+  @VisibleForTesting
+  public Set getWireClientIds() {
+    return clientMap == null ? Collections.emptySet()
+        : Collections.unmodifiableSet(clientMap.wireIDs.keySet());
   }
 
   /**
@@ -1948,15 +1974,17 @@ public class FilterProfile implements DataSerializableFixedID {
     /*
      * (non-Javadoc)
      *
-     * @see org.apache.geode.internal.DataSerializableFixedID#getDSFID()
+     * @see org.apache.geode.internal.serialization.DataSerializableFixedID#getDSFID()
      */
+    @Override
     public int getDSFID() {
       return FILTER_PROFILE_UPDATE;
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeInt(this.processorId);
       out.writeUTF(this.regionName);
       out.writeShort(this.opType.ordinal());
@@ -1973,13 +2001,14 @@ public class FilterProfile implements DataSerializableFixedID {
       } else {
         // For interest list.
         out.writeLong(this.clientID);
-        DataSerializer.writeObject(this.interest, out);
+        context.getSerializer().writeObject(this.interest, out);
       }
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.processorId = in.readInt();
       this.regionName = in.readUTF();
       this.opType = operationType.values()[in.readShort()];
@@ -1992,7 +2021,7 @@ public class FilterProfile implements DataSerializableFixedID {
         }
       } else {
         this.clientID = in.readLong();
-        this.interest = DataSerializer.readObject(in);
+        this.interest = context.getDeserializer().readObject(in);
       }
     }
 
@@ -2077,6 +2106,15 @@ public class FilterProfile implements DataSerializableFixedID {
       }
     }
 
+    /**
+     * remove the mapping for the given proxy ID
+     */
+    void removeIDMapping(Object clientId) {
+      Long mappedId = this.realIDs.remove(clientId);
+      if (mappedId != null) {
+        this.wireIDs.remove(mappedId);
+      }
+    }
   }
 
   /**
@@ -2216,6 +2254,7 @@ public class FilterProfile implements DataSerializableFixedID {
     return null;
   }
 
+  @MutableForTesting
   public static TestHook testHook = null;
 
   /** Test Hook */

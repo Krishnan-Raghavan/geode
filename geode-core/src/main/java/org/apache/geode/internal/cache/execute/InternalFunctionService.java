@@ -16,25 +16,33 @@ package org.apache.geode.internal.cache.execute;
 
 import java.util.Set;
 
+import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionService;
 import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.client.ClientCacheFactory;
 import org.apache.geode.cache.client.Pool;
 import org.apache.geode.cache.execute.Execution;
-import org.apache.geode.cache.execute.internal.FunctionServiceManager;
-import org.apache.geode.internal.cache.LocalRegion;
-import org.apache.geode.internal.i18n.LocalizedStrings;
+import org.apache.geode.cache.execute.FunctionService;
 
 /**
- *
  * Provides internal methods for tests
  *
- *
  * @since GemFire 6.1
- *
  */
-public class InternalFunctionService {
+public class InternalFunctionService extends FunctionService {
+
+  @MakeNotStatic
+  private static final InternalFunctionService INSTANCE =
+      new InternalFunctionService(new InternalFunctionExecutionServiceImpl());
+
+  private final InternalFunctionExecutionService internalFunctionExecutionService;
+
+  private InternalFunctionService(
+      InternalFunctionExecutionService internalFunctionExecutionService) {
+    super(internalFunctionExecutionService);
+    this.internalFunctionExecutionService = internalFunctionExecutionService;
+  }
 
   /**
    * Returns an {@link Execution} object that can be used to execute a function on the set of
@@ -56,45 +64,10 @@ public class InternalFunctionService {
    * {@link UnsupportedOperationException}
    *
    * @see MultiRegionFunctionContext
-   *
-   *
    */
   public static Execution onRegions(Set<Region> regions) {
-    if (regions == null) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.ExecuteRegionFunction_THE_INPUT_0_FOR_THE_EXECUTE_FUNCTION_REQUEST_IS_NULL
-              .toLocalizedString("regions set"));
-    }
-    if (regions.contains(null)) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.OnRegionsFunctions_THE_REGION_SET_FOR_ONREGIONS_HAS_NULL
-              .toLocalizedString());
-    }
-    if (regions.isEmpty()) {
-      throw new IllegalArgumentException(
-          LocalizedStrings.OnRegionsFunctions_THE_REGION_SET_IS_EMPTY_FOR_ONREGIONS
-              .toLocalizedString());
-    }
-    for (Region region : regions) {
-      if (isClientRegion(region)) {
-        throw new UnsupportedOperationException(
-            LocalizedStrings.OnRegionsFunctions_NOT_SUPPORTED_FOR_CLIENT_SERVER
-                .toLocalizedString());
-      }
-    }
-    return new MultiRegionFunctionExecutor(regions);
+    return getInternalFunctionExecutionService().onRegions(regions);
   }
-
-  /**
-   * @return true if the method is called on a region has a {@link Pool}.
-   * @since GemFire 6.0
-   */
-  private static boolean isClientRegion(Region region) {
-    LocalRegion localRegion = (LocalRegion) region;
-    return localRegion.hasServerProxy();
-  }
-
-  private static final FunctionServiceManager funcServiceManager = new FunctionServiceManager();
 
   /**
    * Returns an {@link Execution} object that can be used to execute a data independent function on
@@ -112,7 +85,7 @@ public class InternalFunctionService {
    * @since GemFire 7.0
    */
   public static Execution onServers(RegionService regionService, String... groups) {
-    return funcServiceManager.onServers(regionService, groups);
+    return getInternalFunctionExecutionService().onServers(regionService, groups);
   }
 
   /**
@@ -131,7 +104,7 @@ public class InternalFunctionService {
    * @since GemFire 7.0
    */
   public static Execution onServer(RegionService regionService, String... groups) {
-    return funcServiceManager.onServer(regionService, groups);
+    return getInternalFunctionExecutionService().onServer(regionService, groups);
   }
 
   /**
@@ -149,7 +122,7 @@ public class InternalFunctionService {
    * @since GemFire 7.0
    */
   public static Execution onServers(Pool pool, String... groups) {
-    return funcServiceManager.onServers(pool, groups);
+    return getInternalFunctionExecutionService().onServers(pool, groups);
   }
 
   /**
@@ -167,6 +140,20 @@ public class InternalFunctionService {
    * @since GemFire 7.0
    */
   public static Execution onServer(Pool pool, String... groups) {
-    return funcServiceManager.onServer(pool, groups);
+    return getInternalFunctionExecutionService().onServer(pool, groups);
+  }
+
+  /**
+   * Unregisters all functions.
+   */
+  public static void unregisterAllFunctions() {
+    getInternalFunctionExecutionService().unregisterAllFunctions();
+  }
+
+  /**
+   * Returns non-static reference to {@code InternalFunctionExecutionService} singleton instance.
+   */
+  public static InternalFunctionExecutionService getInternalFunctionExecutionService() {
+    return INSTANCE.internalFunctionExecutionService;
   }
 }

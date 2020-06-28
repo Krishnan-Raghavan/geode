@@ -19,21 +19,19 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.admin.GemFireHealthConfig;
+import org.apache.geode.alerting.internal.api.AlertingService;
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheClosedException;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.Role;
 import org.apache.geode.distributed.internal.locks.ElderState;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.distributed.internal.membership.MembershipManager;
-import org.apache.geode.internal.Version;
 import org.apache.geode.internal.cache.InternalCache;
 import org.apache.geode.internal.monitoring.ThreadsMonitoring;
+import org.apache.geode.internal.serialization.Version;
 
 /**
  * This interface defines the services provided by any class that is a distribution manager.
@@ -105,17 +103,17 @@ public interface DistributionManager extends ReplySender {
   Set<InternalDistributedMember> getDistributionManagerIdsIncludingAdmin();
 
   /**
-   * Returns a private-memory list containing getDistributionManagerIds() minus our id.
+   * Returns a private-memory set containing getDistributionManagerIds() minus our id.
    */
   Set<InternalDistributedMember> getOtherDistributionManagerIds();
 
   /**
-   * Returns a private-memory list containing getNormalDistributionManagerIds() minus our id.
+   * Returns a private-memory set containing getNormalDistributionManagerIds() minus our id.
    */
   Set<InternalDistributedMember> getOtherNormalDistributionManagerIds();
 
   /**
-   * Add a membership listener and return other DistribtionManagerIds as an atomic operation
+   * Add a membership listener and return other DistributionManagerIds as an atomic operation
    */
   Set<InternalDistributedMember> addMembershipListenerAndGetDistributionManagerIds(
       MembershipListener l);
@@ -165,20 +163,14 @@ public interface DistributionManager extends ReplySender {
    * @throws IllegalStateException if elder try lock fails
    * @since GemFire 4.0
    */
-  ElderState getElderState(boolean force);
-
-  /**
-   * Returns the membership port of the underlying distribution manager used for communication.
-   *
-   * @since GemFire 3.0
-   */
-  long getMembershipPort();
+  ElderState getElderState(boolean force) throws InterruptedException;
 
   /**
    * Sends a message
    *
    * @return recipients who did not receive the message
    */
+  @Override
   Set<InternalDistributedMember> putOutgoing(DistributionMessage msg);
 
   /**
@@ -197,6 +189,8 @@ public interface DistributionManager extends ReplySender {
    * @throws IllegalArgumentException <code>l</code> was not registered on this distribution manager
    */
   void removeMembershipListener(MembershipListener l);
+
+  Collection<MembershipListener> getMembershipListeners();
 
   /**
    * Removes a <code>MembershipListener</code> listening for all members from this distribution
@@ -233,30 +227,10 @@ public interface DistributionManager extends ReplySender {
    */
   void handleManagerDeparture(InternalDistributedMember theId, boolean crashed, String reason);
 
-  /**
-   * getThreadPool gets this distribution manager's message-processing thread pool
-   */
-  ExecutorService getThreadPool();
+  OperationExecutors getExecutors();
 
-  /**
-   * Return the high-priority message-processing executor
-   */
-  ExecutorService getHighPriorityThreadPool();
-
-  /**
-   * Return the waiting message-processing executor
-   */
-  ExecutorService getWaitingThreadPool();
-
-  /**
-   * Return the special waiting message-processing executor
-   */
-  ExecutorService getPrMetaDataCleanupThreadPool();
-
-  /**
-   * Return the executor used for function processing
-   */
-  Executor getFunctionExecutor();
+  /** returns the Threads Monitoring instance */
+  ThreadsMonitoring getThreadMonitoring();
 
   void close();
 
@@ -311,7 +285,7 @@ public interface DistributionManager extends ReplySender {
    *
    * @return the membership manager
    */
-  MembershipManager getMembershipManager();
+  Distribution getDistribution();
 
   /**
    * Set the root cause for DM failure
@@ -362,7 +336,9 @@ public interface DistributionManager extends ReplySender {
    */
   boolean areOnEquivalentHost(InternalDistributedMember member1, InternalDistributedMember member2);
 
-  Set<InetAddress> getEquivalents(InetAddress in);
+  default Set<InetAddress> getEquivalents(InetAddress in) {
+    throw new UnsupportedOperationException();
+  }
 
   Set<DistributedMember> getGroupMembers(String group);
 
@@ -474,6 +450,22 @@ public interface DistributionManager extends ReplySender {
    */
   DistributedMember getMemberWithName(String name);
 
-  /** returns the Threads Monitoring instance */
-  public ThreadsMonitoring getThreadMonitoring();
+  /**
+   * Returns the {@link AlertingService}.
+   */
+  AlertingService getAlertingService();
+
+  /**
+   * register a test hook for membership events
+   *
+   * @see MembershipTestHook
+   */
+  void registerTestHook(MembershipTestHook mth);
+
+  /**
+   * remove a test hook previously registered with the manager
+   */
+  void unregisterTestHook(MembershipTestHook mth);
+
+  String getRedundancyZone(InternalDistributedMember member);
 }

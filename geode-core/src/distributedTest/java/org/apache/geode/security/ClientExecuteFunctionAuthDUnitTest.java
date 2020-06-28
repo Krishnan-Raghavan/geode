@@ -32,6 +32,7 @@ import org.apache.geode.cache.client.ClientCache;
 import org.apache.geode.cache.execute.Function;
 import org.apache.geode.cache.execute.ResultCollector;
 import org.apache.geode.distributed.ConfigurationProperties;
+import org.apache.geode.examples.SimpleSecurityManager;
 import org.apache.geode.management.internal.security.TestFunctions.ReadFunction;
 import org.apache.geode.management.internal.security.TestFunctions.WriteFunction;
 import org.apache.geode.test.dunit.rules.ClientVM;
@@ -54,7 +55,7 @@ public class ClientExecuteFunctionAuthDUnitTest {
   @BeforeClass
   public static void beforeClass() throws Exception {
     Properties properties = new Properties();
-    properties.setProperty(SECURITY_MANAGER, SimpleTestSecurityManager.class.getName());
+    properties.setProperty(SECURITY_MANAGER, SimpleSecurityManager.class.getName());
     properties.setProperty(ConfigurationProperties.SERIALIZABLE_OBJECT_FILTER,
         "org.apache.geode.management.internal.security.TestFunctions*");
     server = cluster.startServerVM(0, properties);
@@ -62,8 +63,13 @@ public class ClientExecuteFunctionAuthDUnitTest {
     server.invoke(() -> {
       ClusterStartupRule.getCache().createRegionFactory(RegionShortcut.REPLICATE).create("region");
     });
-    client1 = cluster.startClientVM(1, "dataRead", "dataRead", true, server.getPort());
-    client2 = cluster.startClientVM(2, "dataWrite", "dataWrite", true, server.getPort());
+    int serverPort = server.getPort();
+    client1 = cluster.startClientVM(1, c1 -> c1.withCredential("dataRead", "dataRead")
+        .withPoolSubscription(true)
+        .withServerConnection(serverPort));
+    client2 = cluster.startClientVM(2, c -> c.withCredential("dataWrite", "dataWrite")
+        .withPoolSubscription(true)
+        .withServerConnection(serverPort));
 
     VMProvider.invokeInEveryMember(() -> {
       writeFunction = new WriteFunction();

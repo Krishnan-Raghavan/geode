@@ -46,10 +46,10 @@ import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientNotifier;
 import org.apache.geode.internal.cache.tier.sockets.CacheClientProxy;
 import org.apache.geode.internal.tcp.ConnectionTable;
+import org.apache.geode.test.awaitility.GeodeAwaitility;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.NetworkUtils;
 import org.apache.geode.test.dunit.VM;
-import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.WaitCriterion;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 
@@ -322,15 +322,17 @@ public class DeltaPropagationStatsDUnitTest extends JUnit4DistributedTestCase {
 
   public static void waitForLastKey() {
     WaitCriterion wc = new WaitCriterion() {
+      @Override
       public boolean done() {
         return lastKeyReceived;
       }
 
+      @Override
       public String description() {
         return "Last key NOT received.";
       }
     };
-    Wait.waitForCriterion(wc, 15 * 1000, 100, true);
+    GeodeAwaitility.await().untilAsserted(wc);
   }
 
   public static void putCleanDelta(Integer keys, Long updates) {
@@ -418,7 +420,7 @@ public class DeltaPropagationStatsDUnitTest extends JUnit4DistributedTestCase {
         } catch (InvalidDeltaException ide) {
           assertTrue("InvalidDeltaException not expected.",
               delta.getIntVar() == DeltaTestImpl.ERRONEOUS_INT_FOR_TO_DELTA);
-          cache.getLoggerI18n().fine("Received InvalidDeltaException as expected.");
+          cache.getLogger().fine("Received InvalidDeltaException as expected.");
         }
       }
     }
@@ -510,10 +512,9 @@ public class DeltaPropagationStatsDUnitTest extends JUnit4DistributedTestCase {
     props.setProperty(MCAST_PORT, "0");
     props.setProperty(LOCATORS, "");
     cache = new DeltaPropagationStatsDUnitTest().createCache(props);
-    pool = PoolManager.createFactory().addServer(host, port).setThreadLocalConnections(true)
-        .setMinConnections(1).setSubscriptionEnabled(true).setSubscriptionRedundancy(0)
-        .setReadTimeout(10000).setSocketBufferSize(32768)
-        .create("DeltaPropagationStatsDunitTestPool");
+    pool = PoolManager.createFactory().addServer(host, port).setMinConnections(1)
+        .setSubscriptionEnabled(true).setSubscriptionRedundancy(0).setReadTimeout(10000)
+        .setSocketBufferSize(32768).create("DeltaPropagationStatsDunitTestPool");
     AttributesFactory factory = new AttributesFactory();
     factory.setScope(Scope.DISTRIBUTED_ACK);
     factory.setDataPolicy(DataPolicy.NORMAL);
@@ -521,6 +522,7 @@ public class DeltaPropagationStatsDUnitTest extends JUnit4DistributedTestCase {
     factory.setCloningEnabled(false);
 
     factory.addCacheListener(new CacheListenerAdapter() {
+      @Override
       public void afterCreate(EntryEvent event) {
         if (LAST_KEY.equals(event.getKey())) {
           lastKeyReceived = true;
@@ -552,6 +554,7 @@ public class DeltaPropagationStatsDUnitTest extends JUnit4DistributedTestCase {
 
     if (listener) {
       factory.addCacheListener(new CacheListenerAdapter() {
+        @Override
         public void afterCreate(EntryEvent event) {
           if (event.getKey().equals(LAST_KEY)) {
             lastKeyReceived = true;

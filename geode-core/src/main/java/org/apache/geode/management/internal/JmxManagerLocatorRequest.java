@@ -17,18 +17,21 @@ package org.apache.geode.management.internal;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.Properties;
 
-import org.apache.geode.distributed.internal.tcpserver.LocatorCancelException;
+import org.apache.geode.annotations.Immutable;
+import org.apache.geode.distributed.internal.tcpserver.HostAndPort;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
-import org.apache.geode.internal.DataSerializableFixedID;
-import org.apache.geode.internal.Version;
+import org.apache.geode.distributed.internal.tcpserver.TcpSocketFactory;
+import org.apache.geode.internal.InternalDataSerializer;
 import org.apache.geode.internal.admin.SSLConfig;
 import org.apache.geode.internal.net.SSLConfigurationFactory;
 import org.apache.geode.internal.net.SocketCreator;
 import org.apache.geode.internal.security.SecurableCommunicationChannel;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
+import org.apache.geode.internal.serialization.Version;
 
 /**
  * Sent to a locator to request it to find (and possibly start) a jmx manager for us. It returns a
@@ -39,10 +42,15 @@ import org.apache.geode.internal.security.SecurableCommunicationChannel;
  */
 public class JmxManagerLocatorRequest implements DataSerializableFixedID {
 
-  public void fromData(DataInput in) throws IOException, ClassNotFoundException {}
+  @Override
+  public void fromData(DataInput in,
+      DeserializationContext context) throws IOException, ClassNotFoundException {}
 
-  public void toData(DataOutput out) throws IOException {}
+  @Override
+  public void toData(DataOutput out,
+      SerializationContext context) throws IOException {}
 
+  @Override
   public int getDSFID() {
     return DataSerializableFixedID.JMX_MANAGER_LOCATOR_REQUEST;
   }
@@ -52,6 +60,7 @@ public class JmxManagerLocatorRequest implements DataSerializableFixedID {
     return "JmxManagerLocatorRequest";
   }
 
+  @Immutable
   private static final JmxManagerLocatorRequest SINGLETON = new JmxManagerLocatorRequest();
 
   /**
@@ -68,20 +77,22 @@ public class JmxManagerLocatorRequest implements DataSerializableFixedID {
    */
   public static JmxManagerLocatorResponse send(String locatorHost, int locatorPort, int msTimeout,
       Properties sslConfigProps) throws IOException, ClassNotFoundException {
-    InetAddress networkAddress = InetAddress.getByName(locatorHost);
-    InetSocketAddress inetSockAddr = new InetSocketAddress(networkAddress, locatorPort);
 
     // simply need to turn sslConfigProps into sslConfig for locator
     SSLConfig sslConfig = SSLConfigurationFactory.getSSLConfigForComponent(sslConfigProps,
         SecurableCommunicationChannel.LOCATOR);
     SocketCreator socketCreator = new SocketCreator(sslConfig);
-    TcpClient client = new TcpClient(socketCreator);
-    Object responseFromServer = client.requestToServer(inetSockAddr, SINGLETON, msTimeout, true);
+    TcpClient client = new TcpClient(socketCreator,
+        InternalDataSerializer.getDSFIDSerializer().getObjectSerializer(),
+        InternalDataSerializer.getDSFIDSerializer().getObjectDeserializer(),
+        TcpSocketFactory.DEFAULT);
+    Object responseFromServer = client.requestToServer(new HostAndPort(locatorHost, locatorPort),
+        SINGLETON, msTimeout, true);
 
     if (responseFromServer instanceof JmxManagerLocatorResponse)
       return (JmxManagerLocatorResponse) responseFromServer;
     else {
-      throw new LocatorCancelException(
+      throw new IllegalStateException(
           "Unrecognisable response received: This could be the result of trying to connect a non-SSL-enabled client to an SSL-enabled locator.");
     }
   }

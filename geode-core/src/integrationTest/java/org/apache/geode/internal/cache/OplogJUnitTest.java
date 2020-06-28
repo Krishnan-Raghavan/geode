@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.cache;
 
+import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -36,7 +37,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import org.apache.commons.io.FileUtils;
-import org.awaitility.Awaitility;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -1046,24 +1046,24 @@ public class OplogJUnitTest extends DiskRegionTestingBase {
 
     assertEquals(0, dss.getQueueSize());
     put100Int();
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(100, dss.getQueueSize()));
 
     assertEquals(0, dss.getFlushes());
 
     DiskRegion diskRegion = ((LocalRegion) region).getDiskRegion();
     diskRegion.getDiskStore().flush();
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(0, dss.getQueueSize()));
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(100, dss.getFlushes()));
     put100Int();
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(100, dss.getQueueSize()));
     diskRegion.getDiskStore().flush();
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(0, dss.getQueueSize()));
-    Awaitility.await().pollInterval(10, TimeUnit.MILLISECONDS).pollDelay(10, TimeUnit.MILLISECONDS)
+    await()
         .timeout(10, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(200, dss.getFlushes()));
     closeDown();
   }
@@ -1590,14 +1590,14 @@ public class OplogJUnitTest extends DiskRegionTestingBase {
     final int extra_byte_num_per_entry =
         InternalDataSerializer.calculateBytesForTSandDSID(getDSID((LocalRegion) region));
     final int key3_size =
-        DiskOfflineCompactionJUnitTest.getSize4Create(extra_byte_num_per_entry, "key3", val);
+        CompactOfflineDiskStoreJUnitTest.getSize4Create(extra_byte_num_per_entry, "key3", val);
     final int tombstone_key1 =
-        DiskOfflineCompactionJUnitTest.getSize4TombstoneWithKey(extra_byte_num_per_entry, "key1");
+        CompactOfflineDiskStoreJUnitTest.getSize4TombstoneWithKey(extra_byte_num_per_entry, "key1");
     final int tombstone_key2 =
-        DiskOfflineCompactionJUnitTest.getSize4TombstoneWithKey(extra_byte_num_per_entry, "key2");
+        CompactOfflineDiskStoreJUnitTest.getSize4TombstoneWithKey(extra_byte_num_per_entry, "key2");
 
     CountDownLatch putsCompleted = new CountDownLatch(1);
-    // TODO: move static methods from DiskOfflineCompactionJUnitTest to shared util class
+    // TODO: move static methods from CompactOfflineDiskStoreJUnitTest to shared util class
     StatSizeTestCacheObserverAdapter testObserver = new StatSizeTestCacheObserverAdapter(dr,
         key3_size, tombstone_key1, tombstone_key2, putsCompleted);
     CacheObserver old = CacheObserverHolder.setInstance(testObserver);
@@ -1623,7 +1623,7 @@ public class OplogJUnitTest extends DiskRegionTestingBase {
       region.put("key3", val);
       putsCompleted.countDown();
       cache.getLogger().info("waiting for compaction");
-      Awaitility.await().atMost(9, TimeUnit.SECONDS).until(() -> testObserver.hasCompacted());
+      await().until(() -> testObserver.hasCompacted());
       assertFalse(testObserver.exceptionOccured());
 
       region.close();
@@ -1752,7 +1752,7 @@ public class OplogJUnitTest extends DiskRegionTestingBase {
 
   private void verifyOplogHeader(File dir, String... oplogTypes) throws IOException {
 
-    Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> {
+    await().until(() -> {
       List<String> types = new ArrayList<>(Arrays.asList(oplogTypes));
       Arrays.stream(dir.listFiles()).map(File::getName).map(f -> f.substring(f.indexOf(".")))
           .forEach(types::remove);
@@ -1991,10 +1991,10 @@ public class OplogJUnitTest extends DiskRegionTestingBase {
         // _2.drf contained a rvvgc with drMap.size()==1
         int expectedDrfSize = Oplog.OPLOG_DISK_STORE_REC_SIZE + Oplog.OPLOG_MAGIC_SEQ_REC_SIZE
             + Oplog.OPLOG_GEMFIRE_VERSION_REC_SIZE
-            + DiskOfflineCompactionJUnitTest.getRVVSize(1, new int[] {0}, true);
+            + CompactOfflineDiskStoreJUnitTest.getRVVSize(1, new int[] {0}, true);
         int expectedCrfSize = Oplog.OPLOG_DISK_STORE_REC_SIZE + Oplog.OPLOG_MAGIC_SEQ_REC_SIZE
             + Oplog.OPLOG_GEMFIRE_VERSION_REC_SIZE
-            + DiskOfflineCompactionJUnitTest.getRVVSize(1, new int[] {1}, false)
+            + CompactOfflineDiskStoreJUnitTest.getRVVSize(1, new int[] {1}, false)
             + Oplog.OPLOG_NEW_ENTRY_BASE_REC_SIZE + key3Size + tombstoneKey1 + tombstoneKey2;
         int oplog2Size = expectedDrfSize + expectedCrfSize;
         if (after != oplog2Size) {

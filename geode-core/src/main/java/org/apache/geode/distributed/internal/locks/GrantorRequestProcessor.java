@@ -24,6 +24,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelCriterion;
 import org.apache.geode.DataSerializer;
+import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
@@ -35,12 +36,12 @@ import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.ReplyProcessor21;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Assert;
-import org.apache.geode.internal.i18n.LocalizedStrings;
-import org.apache.geode.internal.logging.LogService;
-import org.apache.geode.internal.logging.log4j.LocalizedMessage;
 import org.apache.geode.internal.logging.log4j.LogMarker;
+import org.apache.geode.internal.serialization.DeserializationContext;
+import org.apache.geode.internal.serialization.SerializationContext;
 import org.apache.geode.internal.util.concurrent.StoppableCondition;
 import org.apache.geode.internal.util.concurrent.StoppableReentrantLock;
+import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
  * A processor for sending a message to the elder asking it for the grantor of a dlock service.
@@ -67,6 +68,7 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
   private static final byte PEEK_OP = 3;
   private static final byte CLEAR_WITH_LOCKS_OP = 4;
 
+  @Immutable
   private static final GrantorInfo CLEAR_COMPLETE = new GrantorInfo(null, 0, 0, false);
 
   /**
@@ -187,8 +189,8 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
       InternalDistributedMember newElder, DLockService dls) {
     GrantorRequestContext grc = sys.getGrantorRequestContext();
     grc.waitingToChangeElder = true;
-    final LocalizedMessage message = LocalizedMessage.create(
-        LocalizedStrings.GrantorRequestProcessor_GRANTORREQUESTPROCESSOR_ELDERSYNCWAIT_THE_CURRENT_ELDER_0_IS_WAITING_FOR_THE_NEW_ELDER_1,
+    final String message = String.format(
+        "GrantorRequestProcessor.elderSyncWait: The current Elder %s is waiting for the new Elder %s.",
         new Object[] {grc.currentElder, newElder});
     while (grc.waitingToChangeElder) {
       logger.info(LogMarker.DLS_MARKER, message);
@@ -209,7 +211,8 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
    * Sets currentElder to the memberId of the current elder if elder is remote; null if elder is in
    * our vm.
    */
-  private static ElderState startElderCall(InternalDistributedSystem sys, DLockService dls) {
+  private static ElderState startElderCall(InternalDistributedSystem sys, DLockService dls)
+      throws InterruptedException {
     InternalDistributedMember elder;
     ElderState es = null;
 
@@ -328,7 +331,12 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
     try {
       do {
         tryNewElder = false;
-        final ElderState es = startElderCall(system, service);
+        ElderState es = null;
+        try {
+          es = startElderCall(system, service);
+        } catch (InterruptedException e) {
+          interrupted = true;
+        }
         dm.throwIfDistributionStopped();
         try {
           if (es != null) {
@@ -394,7 +402,7 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
               if (opCode != CLEAR_OP && opCode != CLEAR_WITH_LOCKS_OP) {
                 // Note we do not try a new elder if doing a clear because
                 // the new elder will not have anything for us to clear.
-                // He will have done an ElderInit.
+                // It will have done an ElderInit.
                 tryNewElder = true;
               }
             }
@@ -491,7 +499,13 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
 
     protected void basicProcess(final DistributionManager dm) {
       // we should be in the elder
-      ElderState es = dm.getElderState(true);
+      final ElderState es;
+      try {
+        es = dm.getElderState(true);
+      } catch (InterruptedException e) {
+        logger.info("Interrupted while processing {}", this);
+        return;
+      }
       switch (this.opCode) {
         case GET_OP:
           replyGrantorInfo(dm, es.getGrantor(this.serviceName, getSender(), this.dlsSerialNumber));
@@ -518,13 +532,15 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
       }
     }
 
+    @Override
     public int getDSFID() {
       return GRANTOR_REQUEST_MESSAGE;
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.grantorVersion = in.readLong();
       this.dlsSerialNumber = in.readInt();
       this.serviceName = DataSerializer.readString(in);
@@ -536,8 +552,9 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       out.writeLong(this.grantorVersion);
       out.writeInt(this.dlsSerialNumber);
       DataSerializer.writeString(this.serviceName, out);
@@ -614,8 +631,9 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void fromData(DataInput in) throws IOException, ClassNotFoundException {
-      super.fromData(in);
+    public void fromData(DataInput in,
+        DeserializationContext context) throws IOException, ClassNotFoundException {
+      super.fromData(in, context);
       this.grantor = (InternalDistributedMember) DataSerializer.readObject(in);
       this.elderVersionId = in.readLong();
       this.grantorSerialNumber = in.readInt();
@@ -623,8 +641,9 @@ public class GrantorRequestProcessor extends ReplyProcessor21 {
     }
 
     @Override
-    public void toData(DataOutput out) throws IOException {
-      super.toData(out);
+    public void toData(DataOutput out,
+        SerializationContext context) throws IOException {
+      super.toData(out, context);
       DataSerializer.writeObject(this.grantor, out);
       out.writeLong(this.elderVersionId);
       out.writeInt(this.grantorSerialNumber);

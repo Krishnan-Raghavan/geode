@@ -22,7 +22,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -33,7 +32,6 @@ import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.Enumeration;
-import java.util.List;
 import java.util.Vector;
 
 import org.apache.bcel.Constants;
@@ -46,23 +44,17 @@ import org.junit.Test;
 import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.junit.rules.TemporaryFolder;
 
-import org.apache.geode.cache.execute.Execution;
 import org.apache.geode.cache.execute.Function;
 import org.apache.geode.cache.execute.FunctionContext;
 import org.apache.geode.cache.execute.FunctionService;
-import org.apache.geode.cache.execute.ResultCollector;
 import org.apache.geode.cache.execute.ResultSender;
-import org.apache.geode.distributed.DistributedSystem;
-import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.cache.execute.FunctionContextImpl;
 import org.apache.geode.test.compiler.ClassBuilder;
+import org.apache.geode.test.compiler.JarBuilder;
 import org.apache.geode.test.junit.rules.RestoreTCCLRule;
-import org.apache.geode.test.junit.rules.ServerStarterRule;
 
 /**
  * Integration tests for {@link ClassPathLoader}.
- *
- * Extracted from ClassPathLoaderTest.
  */
 public class ClassPathLoaderIntegrationTest {
 
@@ -109,10 +101,10 @@ public class ClassPathLoaderIntegrationTest {
 
     String classAName = "integration.parent.ClassA";
 
-    File firstJar = createJarWithClass("ClassA");
+    File firstJar = createJarWithClass(jarName, "ClassA");
 
     // First deploy of the JAR file
-    ClassPathLoader.getLatest().getJarDeployer().deploy(jarName, firstJar).getFile();
+    ClassPathLoader.getLatest().getJarDeployer().deploy(firstJar).getFile();
 
     assertThatClassCanBeLoaded(classAName);
     assertThatResourceCanBeLoaded(classAResource);
@@ -128,13 +120,13 @@ public class ClassPathLoaderIntegrationTest {
     String classAName = "integration.parent.ClassA";
     String classBName = "integration.parent.ClassB";
 
-    File firstJar = createJarWithClass("ClassA");
+    File firstJar = createJarWithClass(jarName, "ClassA");
     ByteArrayOutputStream firstJarBytes = new ByteArrayOutputStream();
     IOUtils.copy(new FileInputStream(firstJar), firstJarBytes);
 
     // First deploy of the JAR file
     File firstDeployedJarFile =
-        ClassPathLoader.getLatest().getJarDeployer().deploy(jarName, firstJar).getFile();
+        ClassPathLoader.getLatest().getJarDeployer().deploy(firstJar).getFile();
 
     assertThat(firstDeployedJarFile).exists().hasBinaryContent(firstJarBytes.toByteArray());
     assertThat(firstDeployedJarFile.getName()).contains(".v1.").doesNotContain(".v2.");
@@ -147,12 +139,12 @@ public class ClassPathLoaderIntegrationTest {
 
     // Now deploy an updated JAR file and make sure that the next version of the JAR file
     // was created and the first one is no longer used
-    File secondJar = createJarWithClass("ClassB");
+    File secondJar = createJarWithClass(jarName, "ClassB");
     ByteArrayOutputStream secondJarBytes = new ByteArrayOutputStream();
     IOUtils.copy(new FileInputStream(secondJar), secondJarBytes);
 
     File secondDeployedJarFile =
-        ClassPathLoader.getLatest().getJarDeployer().deploy(jarName, secondJar).getFile();
+        ClassPathLoader.getLatest().getJarDeployer().deploy(secondJar).getFile();
 
     assertThat(secondDeployedJarFile).exists().hasBinaryContent(secondJarBytes.toByteArray());
     assertThat(secondDeployedJarFile.getName()).contains(".v2.").doesNotContain(".v1.");
@@ -178,10 +170,10 @@ public class ClassPathLoaderIntegrationTest {
 
     // First deploy of the JAR file
     byte[] jarBytes = new ClassBuilder().createJarFromName("JarDeployerDUnitDNUWNC");
-    File jarFile = temporaryFolder.newFile();
+    File jarFile = temporaryFolder.newFile(jarName);
     writeJarBytesToFile(jarFile, jarBytes);
     DeployedJar jarClassLoader =
-        ClassPathLoader.getLatest().getJarDeployer().deploy(jarName, jarFile);
+        ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile);
     File deployedJar = new File(jarClassLoader.getFileCanonicalPath());
 
     assertThat(deployedJar).exists();
@@ -189,129 +181,10 @@ public class ClassPathLoaderIntegrationTest {
 
     // Re-deploy of the same JAR should do nothing
     DeployedJar newJarClassLoader =
-        ClassPathLoader.getLatest().getJarDeployer().deploy(jarName, jarFile);
+        ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile);
     assertThat(newJarClassLoader).isNull();
     assertThat(deployedJar).exists();
 
-  }
-
-  @Test
-  public void testDeployWithExistingDependentJars() throws Exception {
-    ClassBuilder classBuilder = new ClassBuilder();
-    final File parentJarFile =
-        new File(temporaryFolder.getRoot(), "JarDeployerDUnitAParent.v1.jar");
-    final File usesJarFile = new File(temporaryFolder.getRoot(), "JarDeployerDUnitUses.v1.jar");
-    final File functionJarFile =
-        new File(temporaryFolder.getRoot(), "JarDeployerDUnitFunction.v1.jar");
-
-    // Write out a JAR files.
-    StringBuffer stringBuffer = new StringBuffer();
-    stringBuffer.append("package jddunit.parent;");
-    stringBuffer.append("public class JarDeployerDUnitParent {");
-    stringBuffer.append("public String getValueParent() {");
-    stringBuffer.append("return \"PARENT\";}}");
-
-    byte[] jarBytes = classBuilder.createJarFromClassContent(
-        "jddunit/parent/JarDeployerDUnitParent", stringBuffer.toString());
-    FileOutputStream outStream = new FileOutputStream(parentJarFile);
-    outStream.write(jarBytes);
-    outStream.close();
-
-    stringBuffer = new StringBuffer();
-    stringBuffer.append("package jddunit.uses;");
-    stringBuffer.append("public class JarDeployerDUnitUses {");
-    stringBuffer.append("public String getValueUses() {");
-    stringBuffer.append("return \"USES\";}}");
-
-    jarBytes = classBuilder.createJarFromClassContent("jddunit/uses/JarDeployerDUnitUses",
-        stringBuffer.toString());
-    outStream = new FileOutputStream(usesJarFile);
-    outStream.write(jarBytes);
-    outStream.close();
-
-    stringBuffer = new StringBuffer();
-    stringBuffer.append("package jddunit.function;");
-    stringBuffer.append("import jddunit.parent.JarDeployerDUnitParent;");
-    stringBuffer.append("import jddunit.uses.JarDeployerDUnitUses;");
-    stringBuffer.append("import org.apache.geode.cache.execute.Function;");
-    stringBuffer.append("import org.apache.geode.cache.execute.FunctionContext;");
-    stringBuffer.append(
-        "public class JarDeployerDUnitFunction  extends JarDeployerDUnitParent implements Function {");
-    stringBuffer.append("private JarDeployerDUnitUses uses = new JarDeployerDUnitUses();");
-    stringBuffer.append("public boolean hasResult() {return true;}");
-    stringBuffer.append(
-        "public void execute(FunctionContext context) {context.getResultSender().lastResult(getValueParent() + \":\" + uses.getValueUses());}");
-    stringBuffer.append("public String getId() {return \"JarDeployerDUnitFunction\";}");
-    stringBuffer.append("public boolean optimizeForWrite() {return false;}");
-    stringBuffer.append("public boolean isHA() {return false;}}");
-
-    ClassBuilder functionClassBuilder = new ClassBuilder();
-    functionClassBuilder.addToClassPath(parentJarFile.getAbsolutePath());
-    functionClassBuilder.addToClassPath(usesJarFile.getAbsolutePath());
-    jarBytes = functionClassBuilder.createJarFromClassContent(
-        "jddunit/function/JarDeployerDUnitFunction", stringBuffer.toString());
-    outStream = new FileOutputStream(functionJarFile);
-    outStream.write(jarBytes);
-    outStream.close();
-
-    ServerStarterRule serverStarterRule =
-        new ServerStarterRule().withWorkingDir(temporaryFolder.getRoot());
-    serverStarterRule.startServer();
-
-    GemFireCacheImpl gemFireCache = GemFireCacheImpl.getInstance();
-    DistributedSystem distributedSystem = gemFireCache.getDistributedSystem();
-    Execution execution = FunctionService.onMember(distributedSystem.getDistributedMember());
-    ResultCollector resultCollector = execution.execute("JarDeployerDUnitFunction");
-    @SuppressWarnings("unchecked")
-    List<String> result = (List<String>) resultCollector.getResult();
-    assertEquals("PARENT:USES", result.get(0));
-
-    serverStarterRule.after();
-  }
-
-  @Test
-  public void deployNewVersionOfFunctionOverOldVersion() throws Exception {
-    File jarVersion1 = createVersionOfJar("Version1", "MyFunction", "MyJar.jar");
-    File jarVersion2 = createVersionOfJar("Version2", "MyFunction", "MyJar.jar");
-
-    ServerStarterRule serverStarterRule = new ServerStarterRule();
-    serverStarterRule.startServer();
-
-    GemFireCacheImpl gemFireCache = GemFireCacheImpl.getInstance();
-    DistributedSystem distributedSystem = gemFireCache.getDistributedSystem();
-
-    ClassPathLoader.getLatest().getJarDeployer().deploy("MyJar.jar", jarVersion1);
-
-    assertThatClassCanBeLoaded("jddunit.function.MyFunction");
-    Execution execution = FunctionService.onMember(distributedSystem.getDistributedMember());
-
-    List<String> result = (List<String>) execution.execute("MyFunction").getResult();
-    assertThat(result.get(0)).isEqualTo("Version1");
-
-    ClassPathLoader.getLatest().getJarDeployer().deploy("MyJar.jar", jarVersion2);
-    result = (List<String>) execution.execute("MyFunction").getResult();
-    assertThat(result.get(0)).isEqualTo("Version2");
-
-    serverStarterRule.after();
-  }
-
-
-  private File createVersionOfJar(String version, String functionName, String jarName)
-      throws IOException {
-    String classContents =
-        "package jddunit.function;" + "import org.apache.geode.cache.execute.Function;"
-            + "import org.apache.geode.cache.execute.FunctionContext;" + "public class "
-            + functionName + " implements Function {" + "public boolean hasResult() {return true;}"
-            + "public String getId() {return \"" + functionName + "\";}"
-            + "public void execute(FunctionContext context) {context.getResultSender().lastResult(\""
-            + version + "\");}}";
-
-    File jar = new File(this.temporaryFolder.newFolder(version), jarName);
-    ClassBuilder functionClassBuilder = new ClassBuilder();
-    functionClassBuilder.writeJarFromContent("jddunit/function/" + functionName, classContents,
-        jar);
-
-    return jar;
   }
 
   private void assertThatClassCanBeLoaded(String className) throws ClassNotFoundException {
@@ -482,10 +355,10 @@ public class ClassPathLoaderIntegrationTest {
 
     byte[] jarBytes = this.classBuilder
         .createJarFromClassContent("JarClassLoaderJUnitFunctionNoXml", functionString);
-    File jarFile = temporaryFolder.newFile();
+    File jarFile = temporaryFolder.newFile(jarFilename);
     writeJarBytesToFile(jarFile, jarBytes);
 
-    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFilename, jarFile);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile);
 
     ClassPathLoader.getLatest().forName("JarClassLoaderJUnitFunctionNoXml");
 
@@ -512,7 +385,7 @@ public class ClassPathLoaderIntegrationTest {
     byte[] jarBytes = this.classBuilder.createJarFromClassContent(
         "jcljunit/parent/JarClassLoaderJUnitParent", stringBuffer.toString());
     writeJarBytesToFile(parentJarFile, jarBytes);
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitParent.jar",
+    ClassPathLoader.getLatest().getJarDeployer().deploy(
         parentJarFile);
 
     stringBuffer = new StringBuffer();
@@ -524,7 +397,7 @@ public class ClassPathLoaderIntegrationTest {
     jarBytes = this.classBuilder.createJarFromClassContent("jcljunit/uses/JarClassLoaderJUnitUses",
         stringBuffer.toString());
     writeJarBytesToFile(usesJarFile, jarBytes);
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitUses.jar", usesJarFile);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(usesJarFile);
 
     stringBuffer = new StringBuffer();
     stringBuffer.append("package jcljunit.function;");
@@ -547,10 +420,10 @@ public class ClassPathLoaderIntegrationTest {
     functionClassBuilder.addToClassPath(usesJarFile.getAbsolutePath());
     jarBytes = functionClassBuilder.createJarFromClassContent(
         "jcljunit/function/JarClassLoaderJUnitFunction", stringBuffer.toString());
-    File jarFunction = temporaryFolder.newFile();
+    File jarFunction = temporaryFolder.newFile("JarClassLoaderJUnitFunction.jar");
     writeJarBytesToFile(jarFunction, jarBytes);
 
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitFunction.jar",
+    ClassPathLoader.getLatest().getJarDeployer().deploy(
         jarFunction);
 
     Function function = FunctionService.getFunction("JarClassLoaderJUnitFunction");
@@ -568,9 +441,9 @@ public class ClassPathLoaderIntegrationTest {
     final String fileContent = "FILE CONTENT";
 
     byte[] jarBytes = this.classBuilder.createJarFromFileContent(fileName, fileContent);
-    File tempJar = temporaryFolder.newFile();
+    File tempJar = temporaryFolder.newFile("JarClassLoaderJUnitResource.jar");
     writeJarBytesToFile(tempJar, jarBytes);
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitResource.jar", tempJar);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(tempJar);
 
     InputStream inputStream = ClassPathLoader.getLatest().getResourceAsStream(fileName);
     assertThat(inputStream).isNotNull();
@@ -587,9 +460,9 @@ public class ClassPathLoaderIntegrationTest {
     // First use of the JAR file
     byte[] jarBytes = this.classBuilder.createJarFromClassContent("JarClassLoaderJUnitTestClass",
         "public class JarClassLoaderJUnitTestClass { public Integer getValue5() { return new Integer(5); } }");
-    File jarFile = temporaryFolder.newFile();
+    File jarFile = temporaryFolder.newFile("JarClassLoaderJUnitUpdate.jar");
     writeJarBytesToFile(jarFile, jarBytes);
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitUpdate.jar", jarFile);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile);
 
     Class<?> clazz = ClassPathLoader.getLatest().forName("JarClassLoaderJUnitTestClass");
     Object object = clazz.newInstance();
@@ -601,9 +474,9 @@ public class ClassPathLoaderIntegrationTest {
     // class is available.
     jarBytes = this.classBuilder.createJarFromClassContent("JarClassLoaderJUnitTestClass",
         "public class JarClassLoaderJUnitTestClass { public Integer getValue10() { return new Integer(10); } }");
-    File jarFile2 = temporaryFolder.newFile();
+    File jarFile2 = new File(temporaryFolder.getRoot(), "JarClassLoaderJUnitUpdate.jar");
     writeJarBytesToFile(jarFile2, jarBytes);
-    ClassPathLoader.getLatest().getJarDeployer().deploy("JarClassLoaderJUnitUpdate.jar", jarFile2);
+    ClassPathLoader.getLatest().getJarDeployer().deploy(jarFile2);
 
     clazz = ClassPathLoader.getLatest().forName("JarClassLoaderJUnitTestClass");
     object = clazz.newInstance();
@@ -681,26 +554,14 @@ public class ClassPathLoaderIntegrationTest {
     }
   }
 
-  /**
-   * Custom class loader which uses BCEL to always dynamically generate a class for any class name
-   * it tries to load.
-   */
-  private class GeneratingClassLoader2 extends GeneratingClassLoader {
-    @Override
-    protected File getTempFile() {
-      return tempFile2;
-    }
-  }
-
-  private File createJarWithClass(String className) throws IOException {
+  private File createJarWithClass(String fileName, String className) throws IOException {
     String stringBuilder = "package integration.parent;" + "public class " + className + " {}";
-
-    byte[] jarBytes = new ClassBuilder()
-        .createJarFromClassContent("integration/parent/" + className, stringBuilder);
-
-    File jarFile = temporaryFolder.newFile();
-    IOUtils.copy(new ByteArrayInputStream(jarBytes), new FileOutputStream(jarFile));
-
+    File jarFile = new File(temporaryFolder.getRoot(), fileName);
+    if (jarFile.exists()) {
+      jarFile = new File(temporaryFolder.newFolder(), fileName);
+    }
+    JarBuilder jarBuilder = new JarBuilder();
+    jarBuilder.buildJar(jarFile, stringBuilder);
     return jarFile;
   }
 

@@ -15,15 +15,17 @@
  * limitations under the License.
  */
 
+apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
+
+
+
 
 dependencies {
-  compileOnly project(':geode-protobuf')
-  compileOnly project(':geode-core')
+  compile(platform(project(':boms:geode-all-bom')))
+  compile(project(':geode-core'))
+  compileOnly(project(':geode-protobuf'))
 
-  compile project(':geode-common')
-  compile 'junit:junit:' + project.'junit.version'
-  compile 'org.mockito:mockito-core:' + project.'mockito-core.version'
-
+  implementation('junit:junit')
+  implementation('org.mockito:mockito-core')
 }
 
-disableMavenPublishing()
